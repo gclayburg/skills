@@ -74,7 +74,7 @@ log_error() {
 # Banner for major status changes
 log_banner() {
     local status="$1"
-    local message="$2"
+    local message="${2:-}"
     echo ""
     if [[ "$status" == "success" ]]; then
         echo "${COLOR_GREEN}${COLOR_BOLD}╔════════════════════════════════════════╗${COLOR_RESET}"
