@@ -25,6 +25,7 @@ if [[ -t 1 ]] && command -v tput &>/dev/null && [[ $(tput colors 2>/dev/null || 
     COLOR_GREEN=$(tput setaf 2)
     COLOR_YELLOW=$(tput setaf 3)
     COLOR_RED=$(tput setaf 1)
+    COLOR_CYAN=$(tput setaf 6)
     COLOR_BOLD=$(tput bold)
 else
     COLOR_RESET=""
@@ -32,6 +33,7 @@ else
     COLOR_GREEN=""
     COLOR_YELLOW=""
     COLOR_RED=""
+    COLOR_CYAN=""
     COLOR_BOLD=""
 fi
 
@@ -691,6 +693,31 @@ extract_stage_logs() {
     '
 }
 
+# Extract and display build metadata from console output (user, agent, pipeline)
+# Only called on build failure to provide context
+display_build_metadata() {
+    local console_output="$1"
+
+    # Extract user who started the build
+    local started_by
+    started_by=$(echo "$console_output" | grep -m1 "^Started by user " | sed 's/^Started by user //')
+
+    # Extract Jenkins agent
+    local agent
+    agent=$(echo "$console_output" | grep -m1 "^Running on " | sed 's/^Running on \([^ ]*\).*/\1/')
+
+    # Extract pipeline/repo name from Jenkinsfile source
+    local pipeline
+    pipeline=$(echo "$console_output" | grep -m1 "^Obtained Jenkinsfile from git " | sed 's|^Obtained Jenkinsfile from git ||' | sed 's|.*/||' | sed 's|\.git$||')
+
+    echo ""
+    echo "${COLOR_CYAN}=== Build Info ===${COLOR_RESET}"
+    [[ -n "$started_by" ]] && echo "  Started by:  $started_by"
+    [[ -n "$agent" ]] && echo "  Agent:       $agent"
+    [[ -n "$pipeline" ]] && echo "  Pipeline:    $pipeline"
+    echo "${COLOR_CYAN}==================${COLOR_RESET}"
+}
+
 # Analyze build failure (see spec: Section 7)
 analyze_failure() {
     local job_name="$1"
@@ -707,6 +734,9 @@ analyze_failure() {
         log_info "View full console: ${JOB_URL}/${build_number}/console"
         return
     fi
+
+    # Display build metadata (user, agent, pipeline) for failure context
+    display_build_metadata "$console_output"
 
     # Check for downstream build failure (see spec: Section 7.2)
     # For parallel stages, find the specific downstream build that failed
