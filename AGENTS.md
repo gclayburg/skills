@@ -1,10 +1,17 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) amd other agents like Cursor when working with code in this repository.
 
 ## Project Overview
 
 This repository contains **jbuildmon** (Jenkins Build Monitor), a CLI tool that automates the developer workflow of committing code, pushing to a remote repository, and monitoring the resulting Jenkins CI/CD build until completion.
+
+
+## Building
+
+- Jenkins build server will build automatically on a git push to origin
+- JOB_NAME=ralph1
+
 
 ## Key Commands
 
