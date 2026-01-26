@@ -706,9 +706,10 @@ display_build_metadata() {
     local agent
     agent=$(echo "$console_output" | grep -m1 "^Running on " | sed 's/^Running on \([^ ]*\).*/\1/')
 
-    # Extract pipeline source (Jenkinsfile from git URL)
+    # Extract pipeline source (pipeline name + git URL)
+    # Format: "Obtained <pipeline-name> from git <url>"
     local pipeline
-    pipeline=$(echo "$console_output" | grep -m1 "^Obtained Jenkinsfile from git " | sed 's|^Obtained ||')
+    pipeline=$(echo "$console_output" | grep -m1 "^Obtained .* from git " | sed 's|^Obtained ||')
 
     echo ""
     echo "${COLOR_CYAN}=== Build Info ===${COLOR_RESET}"
