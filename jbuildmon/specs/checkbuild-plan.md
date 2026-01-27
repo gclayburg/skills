@@ -248,7 +248,7 @@ This plan breaks down the checkbuild-spec.md into independent, implementable chu
 
 ## Chunk 10: JSON Output Mode
 
-- [ ] **Implement JSON output mode**
+- [x] **Implement JSON output mode**
 
   **Scope:** Format and output build status as JSON when --json flag is provided.
 

@@ -1371,3 +1371,266 @@ get_correlation_symbol() {
             ;;
     esac
 }
+
+# =============================================================================
+# JSON Output Functions
+# =============================================================================
+
+# Global flag for JSON output mode
+JSON_OUTPUT_MODE="${JSON_OUTPUT_MODE:-false}"
+
+# Output build status as JSON
+# Usage: output_json "job_name" "build_number" "build_json" "trigger_type" "trigger_user" "commit_sha" "commit_msg" "correlation_status" ["console_output"]
+# For failed builds, also extracts failure info from console_output
+output_json() {
+    local job_name="$1"
+    local build_number="$2"
+    local build_json="$3"
+    local trigger_type="$4"
+    local trigger_user="$5"
+    local commit_sha="$6"
+    local commit_msg="$7"
+    local correlation_status="$8"
+    local console_output="${9:-}"
+
+    # Extract values from build JSON
+    local result building duration timestamp url
+    result=$(echo "$build_json" | jq -r '.result // null')
+    building=$(echo "$build_json" | jq -r '.building // false')
+    duration=$(echo "$build_json" | jq -r '.duration // 0')
+    timestamp=$(echo "$build_json" | jq -r '.timestamp // 0')
+    url=$(echo "$build_json" | jq -r '.url // empty')
+
+    # Calculate duration in seconds
+    local duration_seconds=0
+    if [[ "$duration" =~ ^[0-9]+$ ]]; then
+        duration_seconds=$((duration / 1000))
+    fi
+
+    # Determine if build is failed
+    local is_failed=false
+    if [[ "$result" == "FAILURE" || "$result" == "UNSTABLE" || "$result" == "ABORTED" ]]; then
+        is_failed=true
+    fi
+
+    # Determine correlation booleans
+    local in_local_history=false
+    local reachable_from_head=false
+    local is_head=false
+
+    case "$correlation_status" in
+        your_commit)
+            in_local_history=true
+            reachable_from_head=true
+            is_head=true
+            ;;
+        in_history)
+            in_local_history=true
+            reachable_from_head=true
+            ;;
+        not_in_history)
+            in_local_history=true
+            ;;
+    esac
+
+    # Build base JSON
+    local json_output
+    json_output=$(jq -n \
+        --arg job "$job_name" \
+        --argjson build_number "$build_number" \
+        --arg status "$result" \
+        --argjson building "$building" \
+        --argjson duration_seconds "$duration_seconds" \
+        --arg timestamp "$(format_timestamp_iso "$timestamp")" \
+        --arg url "$url" \
+        --arg trigger_type "$trigger_type" \
+        --arg trigger_user "$trigger_user" \
+        --arg sha "$commit_sha" \
+        --arg message "$commit_msg" \
+        --argjson in_local_history "$in_local_history" \
+        --argjson reachable_from_head "$reachable_from_head" \
+        --argjson is_head "$is_head" \
+        --arg console_url "${url}console" \
+        '{
+            job: $job,
+            build: {
+                number: $build_number,
+                status: (if $status == "null" then null else $status end),
+                building: $building,
+                duration_seconds: $duration_seconds,
+                timestamp: (if $timestamp == "null" then null else $timestamp end),
+                url: $url
+            },
+            trigger: {
+                type: $trigger_type,
+                user: $trigger_user
+            },
+            commit: {
+                sha: $sha,
+                message: $message,
+                in_local_history: $in_local_history,
+                reachable_from_head: $reachable_from_head,
+                is_head: $is_head
+            },
+            console_url: $console_url
+        }')
+
+    # Add failure info if build failed
+    if [[ "$is_failed" == "true" && -n "$console_output" ]]; then
+        local failure_json
+        failure_json=$(_build_failure_json "$job_name" "$build_number" "$console_output")
+
+        local build_info_json
+        build_info_json=$(_build_info_json "$console_output")
+
+        # Merge failure and build_info into the output
+        json_output=$(echo "$json_output" | jq \
+            --argjson failure "$failure_json" \
+            --argjson build_info "$build_info_json" \
+            '. + {failure: $failure, build_info: $build_info}')
+    fi
+
+    echo "$json_output"
+}
+
+# Build failure JSON object
+# Usage: _build_failure_json "job_name" "build_number" "console_output"
+# Returns: JSON object with failed_jobs, root_cause_job, failed_stage, error_summary
+_build_failure_json() {
+    local job_name="$1"
+    local build_number="$2"
+    local console_output="$3"
+
+    local failed_jobs=()
+    local root_cause_job="$job_name"
+    local failed_stage=""
+    local error_summary=""
+
+    # Start with root job
+    failed_jobs+=("$job_name")
+
+    # Get failed stage for root job
+    failed_stage=$(get_failed_stage "$job_name" "$build_number" 2>/dev/null) || true
+
+    # Find downstream builds and their failure status
+    local downstream_builds
+    downstream_builds=$(detect_all_downstream_builds "$console_output")
+
+    if [[ -n "$downstream_builds" ]]; then
+        # Track the deepest failed job
+        local current_console="$console_output"
+        local current_job="$job_name"
+        local current_build="$build_number"
+
+        while true; do
+            local failed_downstream
+            failed_downstream=$(find_failed_downstream_build "$current_console")
+
+            if [[ -z "$failed_downstream" ]]; then
+                break
+            fi
+
+            local ds_job ds_build
+            ds_job=$(echo "$failed_downstream" | cut -d' ' -f1)
+            ds_build=$(echo "$failed_downstream" | cut -d' ' -f2)
+
+            if [[ -n "$ds_job" && "$ds_job" != "$current_job" ]]; then
+                failed_jobs+=("$ds_job")
+                root_cause_job="$ds_job"
+                current_job="$ds_job"
+                current_build="$ds_build"
+
+                # Get console for this downstream build
+                current_console=$(get_console_output "$ds_job" "$ds_build" 2>/dev/null) || break
+
+                # Update failed stage from root cause job
+                local ds_stage
+                ds_stage=$(get_failed_stage "$ds_job" "$ds_build" 2>/dev/null) || true
+                if [[ -n "$ds_stage" ]]; then
+                    failed_stage="$ds_stage"
+                fi
+            else
+                break
+            fi
+        done
+
+        # Get error summary from root cause
+        if [[ -n "$current_console" ]]; then
+            error_summary=$(_extract_error_summary "$current_console")
+        fi
+    else
+        # No downstream - get error summary from main console
+        error_summary=$(_extract_error_summary "$console_output")
+    fi
+
+    # Build JSON array for failed_jobs
+    local failed_jobs_json
+    failed_jobs_json=$(printf '%s\n' "${failed_jobs[@]}" | jq -R . | jq -s .)
+
+    jq -n \
+        --argjson failed_jobs "$failed_jobs_json" \
+        --arg root_cause_job "$root_cause_job" \
+        --arg failed_stage "$failed_stage" \
+        --arg error_summary "$error_summary" \
+        '{
+            failed_jobs: $failed_jobs,
+            root_cause_job: $root_cause_job,
+            failed_stage: (if $failed_stage == "" then null else $failed_stage end),
+            error_summary: (if $error_summary == "" then null else $error_summary end)
+        }'
+}
+
+# Extract a brief error summary from console output
+# Usage: _extract_error_summary "console_output"
+# Returns: Single-line error summary
+_extract_error_summary() {
+    local console_output="$1"
+
+    # Try to find first meaningful error line
+    local error_line
+    error_line=$(echo "$console_output" | grep -iE '^(ERROR|FATAL|Exception|.*failed:)' 2>/dev/null | head -1) || true
+
+    if [[ -z "$error_line" ]]; then
+        # Try assertion errors
+        error_line=$(echo "$console_output" | grep -iE 'AssertionError|assertion failed' 2>/dev/null | head -1) || true
+    fi
+
+    if [[ -z "$error_line" ]]; then
+        # Try test failures
+        error_line=$(echo "$console_output" | grep -iE 'Test.*failed|failed.*test' 2>/dev/null | head -1) || true
+    fi
+
+    # Truncate to reasonable length
+    if [[ -n "$error_line" ]]; then
+        echo "${error_line:0:200}"
+    fi
+}
+
+# Build build_info JSON object from console output
+# Usage: _build_info_json "console_output"
+# Returns: JSON object with started_by, agent, pipeline
+_build_info_json() {
+    local console_output="$1"
+
+    # Extract user who started the build
+    local started_by
+    started_by=$(echo "$console_output" | grep -m1 "^Started by user " | sed 's/^Started by user //') || true
+
+    # Extract Jenkins agent
+    local agent
+    agent=$(echo "$console_output" | grep -m1 "^Running on " | sed 's/^Running on \([^ ]*\).*/\1/') || true
+
+    # Extract pipeline source
+    local pipeline
+    pipeline=$(echo "$console_output" | grep -m1 "^Obtained .* from git " | sed 's|^Obtained ||') || true
+
+    jq -n \
+        --arg started_by "$started_by" \
+        --arg agent "$agent" \
+        --arg pipeline "$pipeline" \
+        '{
+            started_by: (if $started_by == "" then null else $started_by end),
+            agent: (if $agent == "" then null else $agent end),
+            pipeline: (if $pipeline == "" then null else $pipeline end)
+        }'
+}
