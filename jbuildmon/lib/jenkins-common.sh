@@ -319,3 +319,75 @@ verify_job_exists() {
             ;;
     esac
 }
+
+# =============================================================================
+# Build Information Functions
+# =============================================================================
+
+# Get build information as JSON from Jenkins API
+# Usage: get_build_info "job-name" "build-number"
+# Returns: JSON with number, result, building, timestamp, duration, url fields
+#          Empty string on failure
+get_build_info() {
+    local job_name="$1"
+    local build_number="$2"
+
+    jenkins_api "/job/${job_name}/${build_number}/api/json" 2>/dev/null || echo ""
+}
+
+# Get console text output for a build
+# Usage: get_console_output "job-name" "build-number"
+# Returns: Console text, empty string on failure
+get_console_output() {
+    local job_name="$1"
+    local build_number="$2"
+
+    jenkins_api "/job/${job_name}/${build_number}/consoleText" 2>/dev/null || echo ""
+}
+
+# Get currently executing stage name from workflow API
+# Usage: get_current_stage "job-name" "build-number"
+# Returns: Stage name if a stage is IN_PROGRESS, empty string otherwise
+get_current_stage() {
+    local job_name="$1"
+    local build_number="$2"
+
+    local response
+    response=$(jenkins_api "/job/${job_name}/${build_number}/wfapi/describe" 2>/dev/null) || true
+
+    if [[ -n "$response" ]]; then
+        # Find the currently executing stage (status IN_PROGRESS)
+        echo "$response" | jq -r '.stages[] | select(.status == "IN_PROGRESS") | .name' 2>/dev/null | head -1
+    fi
+}
+
+# Get first failed stage name from workflow API
+# Usage: get_failed_stage "job-name" "build-number"
+# Returns: Stage name if a stage is FAILED or UNSTABLE, empty string otherwise
+get_failed_stage() {
+    local job_name="$1"
+    local build_number="$2"
+
+    local response
+    response=$(jenkins_api "/job/${job_name}/${build_number}/wfapi/describe" 2>/dev/null) || true
+
+    if [[ -n "$response" ]]; then
+        echo "$response" | jq -r '.stages[] | select(.status == "FAILED" or .status == "UNSTABLE") | .name' 2>/dev/null | head -1
+    fi
+}
+
+# Get the last build number for a job
+# Usage: get_last_build_number "job-name"
+# Returns: Build number (numeric), or 0 if no builds exist or on error
+get_last_build_number() {
+    local job_name="$1"
+    local response
+
+    response=$(jenkins_api "/job/${job_name}/api/json" 2>/dev/null) || true
+
+    if [[ -n "$response" ]]; then
+        echo "$response" | jq -r '.lastBuild.number // 0'
+    else
+        echo "0"
+    fi
+}
