@@ -129,3 +129,94 @@ log_banner() {
     esac
     echo ""
 }
+
+# =============================================================================
+# Validation Functions
+# =============================================================================
+
+# Validate required environment variables
+# Checks: JENKINS_URL, JENKINS_USER_ID, JENKINS_API_TOKEN
+# Exits with error if any are missing or malformed
+validate_environment() {
+    local missing=()
+
+    if [[ -z "${JENKINS_URL:-}" ]]; then
+        missing+=("JENKINS_URL")
+    fi
+    if [[ -z "${JENKINS_USER_ID:-}" ]]; then
+        missing+=("JENKINS_USER_ID")
+    fi
+    if [[ -z "${JENKINS_API_TOKEN:-}" ]]; then
+        missing+=("JENKINS_API_TOKEN")
+    fi
+
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        log_error "Missing required environment variables: ${missing[*]}"
+        log_info "Please set the following environment variables:"
+        for var in "${missing[@]}"; do
+            log_info "  - $var"
+        done
+        return 1
+    fi
+
+    # Validate JENKINS_URL format
+    if [[ ! "$JENKINS_URL" =~ ^https?:// ]]; then
+        log_error "JENKINS_URL must begin with http:// or https://"
+        log_error "Current value: $JENKINS_URL"
+        return 1
+    fi
+
+    # Normalize trailing slashes
+    JENKINS_URL="${JENKINS_URL%/}"
+    return 0
+}
+
+# Validate required external dependencies
+# Checks: jq, curl
+# Exits with error if any are missing
+validate_dependencies() {
+    local missing=()
+
+    if ! command -v jq &>/dev/null; then
+        missing+=("jq")
+    fi
+
+    if ! command -v curl &>/dev/null; then
+        missing+=("curl")
+    fi
+
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        log_error "Missing required dependencies: ${missing[*]}"
+        for dep in "${missing[@]}"; do
+            case "$dep" in
+                jq)
+                    log_info "Install jq: brew install jq (macOS) or apt-get install jq (Linux)"
+                    ;;
+                curl)
+                    log_info "Install curl: brew install curl (macOS) or apt-get install curl (Linux)"
+                    ;;
+            esac
+        done
+        return 1
+    fi
+
+    return 0
+}
+
+# Validate we're in a git repository with an origin remote
+# Exits with error if not in a git repo or no origin remote
+validate_git_repository() {
+    if ! git rev-parse --git-dir &>/dev/null; then
+        log_error "Not a git repository"
+        log_info "Run this command from within a git repository"
+        return 1
+    fi
+
+    if ! git remote get-url origin &>/dev/null; then
+        log_error "No 'origin' remote found"
+        log_info "This repository must have an 'origin' remote configured"
+        return 1
+    fi
+
+    return 0
+}

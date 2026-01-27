@@ -6,7 +6,7 @@ This plan breaks down the checkbuild-spec.md into independent, implementable chu
 
 ## Chunk 1: Shared Library - Core Infrastructure
 
-- [ ] **Create `jbuildmon/lib/jenkins-common.sh` with core infrastructure**
+- [x] **Create `jbuildmon/lib/jenkins-common.sh` with core infrastructure**
 
   **Scope:** Color support, logging functions, and timestamp utilities.
 
@@ -31,7 +31,7 @@ This plan breaks down the checkbuild-spec.md into independent, implementable chu
 
 ## Chunk 2: Shared Library - Validation Functions
 
-- [ ] **Implement environment and dependency validation functions**
+- [x] **Implement environment and dependency validation functions**
 
   **Scope:** Functions to validate environment variables, dependencies, and git repository state.
 
