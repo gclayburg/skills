@@ -831,6 +831,448 @@ extract_triggering_commit() {
 }
 
 # =============================================================================
+# Output Formatting Functions
+# =============================================================================
+
+# Format duration from milliseconds to human-readable format
+# Usage: format_duration 154000
+# Returns: "2m 34s" or "45s" or "1h 5m 30s"
+format_duration() {
+    local ms="$1"
+
+    # Handle empty or invalid input
+    if [[ -z "$ms" || "$ms" == "null" || ! "$ms" =~ ^[0-9]+$ ]]; then
+        echo "unknown"
+        return
+    fi
+
+    local total_seconds=$((ms / 1000))
+    local hours=$((total_seconds / 3600))
+    local minutes=$(((total_seconds % 3600) / 60))
+    local seconds=$((total_seconds % 60))
+
+    if [[ $hours -gt 0 ]]; then
+        echo "${hours}h ${minutes}m ${seconds}s"
+    elif [[ $minutes -gt 0 ]]; then
+        echo "${minutes}m ${seconds}s"
+    else
+        echo "${seconds}s"
+    fi
+}
+
+# Format epoch timestamp (milliseconds) to human-readable date
+# Usage: format_timestamp 1705329125000
+# Returns: "2024-01-15 14:32:05"
+format_timestamp() {
+    local epoch_ms="$1"
+
+    # Handle empty or invalid input
+    if [[ -z "$epoch_ms" || "$epoch_ms" == "null" || ! "$epoch_ms" =~ ^[0-9]+$ ]]; then
+        echo "unknown"
+        return
+    fi
+
+    local epoch_seconds=$((epoch_ms / 1000))
+
+    # Use date command (macOS and Linux compatible)
+    if [[ "$(uname)" == "Darwin" ]]; then
+        date -r "$epoch_seconds" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || echo "unknown"
+    else
+        date -d "@$epoch_seconds" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || echo "unknown"
+    fi
+}
+
+# Format ISO 8601 timestamp from epoch milliseconds (for JSON output)
+# Usage: format_timestamp_iso 1705329125000
+# Returns: "2024-01-15T14:32:05Z"
+format_timestamp_iso() {
+    local epoch_ms="$1"
+
+    # Handle empty or invalid input
+    if [[ -z "$epoch_ms" || "$epoch_ms" == "null" || ! "$epoch_ms" =~ ^[0-9]+$ ]]; then
+        echo "null"
+        return
+    fi
+
+    local epoch_seconds=$((epoch_ms / 1000))
+
+    # Use date command (macOS and Linux compatible)
+    if [[ "$(uname)" == "Darwin" ]]; then
+        date -r "$epoch_seconds" -u "+%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "null"
+    else
+        date -d "@$epoch_seconds" -u "+%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "null"
+    fi
+}
+
+# Display successful build output
+# Usage: display_success_output "job_name" "build_number" "build_json" "trigger_type" "trigger_user" "commit_sha" "commit_msg" "correlation_status"
+display_success_output() {
+    local job_name="$1"
+    local build_number="$2"
+    local build_json="$3"
+    local trigger_type="$4"
+    local trigger_user="$5"
+    local commit_sha="$6"
+    local commit_msg="$7"
+    local correlation_status="$8"
+
+    # Extract values from build JSON
+    local duration timestamp url
+    duration=$(echo "$build_json" | jq -r '.duration // 0')
+    timestamp=$(echo "$build_json" | jq -r '.timestamp // 0')
+    url=$(echo "$build_json" | jq -r '.url // empty')
+
+    # Format trigger display
+    local trigger_display
+    if [[ "$trigger_type" == "automated" ]]; then
+        trigger_display="Automated (git push)"
+    elif [[ "$trigger_type" == "manual" ]]; then
+        trigger_display="Manual (started by ${trigger_user})"
+    else
+        trigger_display="Unknown"
+    fi
+
+    # Format commit display
+    local commit_display
+    if [[ -n "$commit_sha" && "$commit_sha" != "unknown" ]]; then
+        local short_sha="${commit_sha:0:7}"
+        if [[ -n "$commit_msg" && "$commit_msg" != "unknown" ]]; then
+            commit_display="${short_sha} - \"${commit_msg}\""
+        else
+            commit_display="${short_sha}"
+        fi
+    else
+        commit_display="unknown"
+    fi
+
+    # Format correlation display
+    local correlation_symbol correlation_desc
+    correlation_symbol=$(get_correlation_symbol "$correlation_status")
+    correlation_desc=$(describe_commit_correlation "$correlation_status")
+    local correlation_color
+    if [[ "$correlation_status" == "your_commit" || "$correlation_status" == "in_history" ]]; then
+        correlation_color="${COLOR_GREEN}"
+    else
+        correlation_color="${COLOR_RED}"
+    fi
+
+    # Display banner
+    log_banner "success"
+
+    # Display build details
+    echo "Job:        ${job_name}"
+    echo "Build:      #${build_number}"
+    echo "Status:     ${COLOR_GREEN}SUCCESS${COLOR_RESET}"
+    echo "Trigger:    ${trigger_display}"
+    echo "Commit:     ${commit_display}"
+    echo "            ${correlation_color}${correlation_symbol} ${correlation_desc}${COLOR_RESET}"
+    echo "Duration:   $(format_duration "$duration")"
+    echo "Completed:  $(format_timestamp "$timestamp")"
+    echo ""
+    echo "Console:    ${url}console"
+}
+
+# Display failed build output
+# Usage: display_failure_output "job_name" "build_number" "build_json" "trigger_type" "trigger_user" "commit_sha" "commit_msg" "correlation_status" "console_output"
+display_failure_output() {
+    local job_name="$1"
+    local build_number="$2"
+    local build_json="$3"
+    local trigger_type="$4"
+    local trigger_user="$5"
+    local commit_sha="$6"
+    local commit_msg="$7"
+    local correlation_status="$8"
+    local console_output="$9"
+
+    # Extract values from build JSON
+    local result duration timestamp url
+    result=$(echo "$build_json" | jq -r '.result // "FAILURE"')
+    duration=$(echo "$build_json" | jq -r '.duration // 0')
+    timestamp=$(echo "$build_json" | jq -r '.timestamp // 0')
+    url=$(echo "$build_json" | jq -r '.url // empty')
+
+    # Format trigger display
+    local trigger_display
+    if [[ "$trigger_type" == "automated" ]]; then
+        trigger_display="Automated (git push)"
+    elif [[ "$trigger_type" == "manual" ]]; then
+        trigger_display="Manual (started by ${trigger_user})"
+    else
+        trigger_display="Unknown"
+    fi
+
+    # Format commit display
+    local commit_display
+    if [[ -n "$commit_sha" && "$commit_sha" != "unknown" ]]; then
+        local short_sha="${commit_sha:0:7}"
+        if [[ -n "$commit_msg" && "$commit_msg" != "unknown" ]]; then
+            commit_display="${short_sha} - \"${commit_msg}\""
+        else
+            commit_display="${short_sha}"
+        fi
+    else
+        commit_display="unknown"
+    fi
+
+    # Format correlation display
+    local correlation_symbol correlation_desc
+    correlation_symbol=$(get_correlation_symbol "$correlation_status")
+    correlation_desc=$(describe_commit_correlation "$correlation_status")
+    local correlation_color
+    if [[ "$correlation_status" == "your_commit" || "$correlation_status" == "in_history" ]]; then
+        correlation_color="${COLOR_GREEN}"
+    else
+        correlation_color="${COLOR_RED}"
+    fi
+
+    # Display banner
+    log_banner "failure"
+
+    # Display build details
+    echo "Job:        ${job_name}"
+    echo "Build:      #${build_number}"
+    echo "Status:     ${COLOR_RED}${result}${COLOR_RESET}"
+    echo "Trigger:    ${trigger_display}"
+    echo "Commit:     ${commit_display}"
+    echo "            ${correlation_color}${correlation_symbol} ${correlation_desc}${COLOR_RESET}"
+    echo "Duration:   $(format_duration "$duration")"
+    echo "Completed:  $(format_timestamp "$timestamp")"
+
+    # Display build metadata (user, agent, pipeline)
+    if [[ -n "$console_output" ]]; then
+        display_build_metadata "$console_output"
+    fi
+
+    # Display failed jobs tree
+    _display_failed_jobs_tree "$job_name" "$build_number" "$console_output"
+
+    # Display error logs
+    _display_error_logs "$job_name" "$build_number" "$console_output"
+
+    echo ""
+    echo "Console:    ${url}console"
+}
+
+# Display failed jobs tree for failure output
+# Usage: _display_failed_jobs_tree "job_name" "build_number" "console_output"
+_display_failed_jobs_tree() {
+    local job_name="$1"
+    local build_number="$2"
+    local console_output="$3"
+
+    echo ""
+    echo "${COLOR_YELLOW}=== Failed Jobs ===${COLOR_RESET}"
+
+    # Get failed stage for the root job
+    local failed_stage
+    failed_stage=$(get_failed_stage "$job_name" "$build_number")
+
+    local stage_suffix=""
+    if [[ -n "$failed_stage" ]]; then
+        stage_suffix=" (stage: ${failed_stage})"
+    fi
+
+    # Find downstream builds
+    local downstream_builds
+    downstream_builds=$(detect_all_downstream_builds "$console_output")
+
+    if [[ -z "$downstream_builds" ]]; then
+        # No downstream builds - root job failed directly
+        echo "  → ${job_name}${stage_suffix}  ${COLOR_RED}← FAILED${COLOR_RESET}"
+    else
+        # Has downstream builds - find the failed one
+        local failed_downstream
+        failed_downstream=$(find_failed_downstream_build "$console_output")
+
+        echo "  → ${job_name}${stage_suffix}"
+
+        # Display downstream builds with indentation
+        local indent="    "
+        while IFS=' ' read -r ds_job ds_build; do
+            if [[ -n "$ds_job" && -n "$ds_build" ]]; then
+                if check_build_failed "$ds_job" "$ds_build"; then
+                    # Check if this failed job has its own downstream builds
+                    local ds_console
+                    ds_console=$(get_console_output "$ds_job" "$ds_build")
+                    local ds_downstream
+                    ds_downstream=$(detect_all_downstream_builds "$ds_console")
+
+                    if [[ -n "$ds_downstream" ]]; then
+                        echo "${indent}→ ${ds_job}"
+                        # Recursively show nested downstream
+                        _display_nested_downstream "$ds_job" "$ds_build" "$ds_console" "${indent}  "
+                    else
+                        echo "${indent}→ ${ds_job}  ${COLOR_RED}← FAILED${COLOR_RESET}"
+                    fi
+                else
+                    echo "${indent}→ ${ds_job}  ✓"
+                fi
+            fi
+        done <<< "$downstream_builds"
+    fi
+
+    echo "${COLOR_YELLOW}====================${COLOR_RESET}"
+}
+
+# Helper to display nested downstream builds recursively
+# Usage: _display_nested_downstream "job_name" "build_number" "console_output" "indent"
+_display_nested_downstream() {
+    local job_name="$1"
+    local build_number="$2"
+    local console_output="$3"
+    local indent="$4"
+
+    local downstream_builds
+    downstream_builds=$(detect_all_downstream_builds "$console_output")
+
+    while IFS=' ' read -r ds_job ds_build; do
+        if [[ -n "$ds_job" && -n "$ds_build" ]]; then
+            if check_build_failed "$ds_job" "$ds_build"; then
+                local ds_console
+                ds_console=$(get_console_output "$ds_job" "$ds_build")
+                local ds_downstream
+                ds_downstream=$(detect_all_downstream_builds "$ds_console")
+
+                if [[ -n "$ds_downstream" ]]; then
+                    echo "${indent}→ ${ds_job}"
+                    _display_nested_downstream "$ds_job" "$ds_build" "$ds_console" "${indent}  "
+                else
+                    echo "${indent}→ ${ds_job}  ${COLOR_RED}← FAILED${COLOR_RESET}"
+                fi
+            else
+                echo "${indent}→ ${ds_job}  ✓"
+            fi
+        fi
+    done <<< "$downstream_builds"
+}
+
+# Display error logs section for failure output
+# Usage: _display_error_logs "job_name" "build_number" "console_output"
+_display_error_logs() {
+    local job_name="$1"
+    local build_number="$2"
+    local console_output="$3"
+
+    echo ""
+    echo "${COLOR_YELLOW}=== Error Logs ===${COLOR_RESET}"
+
+    # Check for downstream build failure first
+    local downstream
+    downstream=$(find_failed_downstream_build "$console_output")
+
+    if [[ -n "$downstream" ]]; then
+        local ds_job ds_build
+        ds_job=$(echo "$downstream" | cut -d' ' -f1)
+        ds_build=$(echo "$downstream" | cut -d' ' -f2)
+
+        local ds_console
+        ds_console=$(get_console_output "$ds_job" "$ds_build")
+
+        if [[ -n "$ds_console" ]]; then
+            extract_error_lines "$ds_console" 30
+        else
+            extract_error_lines "$console_output" 30
+        fi
+    else
+        # No downstream - try to get stage-specific logs
+        local failed_stage
+        failed_stage=$(get_failed_stage "$job_name" "$build_number")
+
+        if [[ -n "$failed_stage" ]]; then
+            local stage_logs
+            stage_logs=$(extract_stage_logs "$console_output" "$failed_stage")
+
+            if [[ -n "$stage_logs" ]]; then
+                extract_error_lines "$stage_logs" 30
+            else
+                extract_error_lines "$console_output" 30
+            fi
+        else
+            extract_error_lines "$console_output" 30
+        fi
+    fi
+
+    echo "${COLOR_YELLOW}==================${COLOR_RESET}"
+}
+
+# Display in-progress build output
+# Usage: display_building_output "job_name" "build_number" "build_json" "trigger_type" "trigger_user" "commit_sha" "commit_msg" "correlation_status" "current_stage"
+display_building_output() {
+    local job_name="$1"
+    local build_number="$2"
+    local build_json="$3"
+    local trigger_type="$4"
+    local trigger_user="$5"
+    local commit_sha="$6"
+    local commit_msg="$7"
+    local correlation_status="$8"
+    local current_stage="${9:-}"
+
+    # Extract values from build JSON
+    local timestamp url
+    timestamp=$(echo "$build_json" | jq -r '.timestamp // 0')
+    url=$(echo "$build_json" | jq -r '.url // empty')
+
+    # Calculate elapsed time
+    local now_ms elapsed_ms
+    now_ms=$(($(date +%s) * 1000))
+    elapsed_ms=$((now_ms - timestamp))
+
+    # Format trigger display
+    local trigger_display
+    if [[ "$trigger_type" == "automated" ]]; then
+        trigger_display="Automated (git push)"
+    elif [[ "$trigger_type" == "manual" ]]; then
+        trigger_display="Manual (started by ${trigger_user})"
+    else
+        trigger_display="Unknown"
+    fi
+
+    # Format commit display
+    local commit_display
+    if [[ -n "$commit_sha" && "$commit_sha" != "unknown" ]]; then
+        local short_sha="${commit_sha:0:7}"
+        if [[ -n "$commit_msg" && "$commit_msg" != "unknown" ]]; then
+            commit_display="${short_sha} - \"${commit_msg}\""
+        else
+            commit_display="${short_sha}"
+        fi
+    else
+        commit_display="unknown"
+    fi
+
+    # Format correlation display
+    local correlation_symbol correlation_desc
+    correlation_symbol=$(get_correlation_symbol "$correlation_status")
+    correlation_desc=$(describe_commit_correlation "$correlation_status")
+    local correlation_color
+    if [[ "$correlation_status" == "your_commit" || "$correlation_status" == "in_history" ]]; then
+        correlation_color="${COLOR_GREEN}"
+    else
+        correlation_color="${COLOR_RED}"
+    fi
+
+    # Display banner
+    log_banner "building"
+
+    # Display build details
+    echo "Job:        ${job_name}"
+    echo "Build:      #${build_number}"
+    echo "Status:     ${COLOR_YELLOW}BUILDING${COLOR_RESET}"
+    if [[ -n "$current_stage" ]]; then
+        echo "Stage:      ${current_stage}"
+    fi
+    echo "Trigger:    ${trigger_display}"
+    echo "Commit:     ${commit_display}"
+    echo "            ${correlation_color}${correlation_symbol} ${correlation_desc}${COLOR_RESET}"
+    echo "Started:    $(format_timestamp "$timestamp")"
+    echo "Elapsed:    $(format_duration "$elapsed_ms")"
+    echo ""
+    echo "Console:    ${url}console"
+}
+
+# =============================================================================
 # Git Commit Correlation Functions
 # =============================================================================
 
