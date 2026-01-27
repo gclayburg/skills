@@ -7,6 +7,12 @@
 set -euo pipefail
 
 # =============================================================================
+# Source Shared Library
+# =============================================================================
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/lib/jenkins-common.sh"
+
+# =============================================================================
 # Configuration Constants (see spec: Configuration Constants section)
 # =============================================================================
 BRANCH="${BRANCH:-main}"
@@ -16,79 +22,11 @@ BUILD_START_TIMEOUT="${BUILD_START_TIMEOUT:-120}"
 MAX_CONSECUTIVE_FAILURES="${MAX_CONSECUTIVE_FAILURES:-5}"
 
 # =============================================================================
-# Color Support
-# =============================================================================
-# Check if stdout is a terminal and supports colors
-if [[ -t 1 ]] && command -v tput &>/dev/null && [[ $(tput colors 2>/dev/null || echo 0) -ge 8 ]]; then
-    COLOR_RESET=$(tput sgr0)
-    COLOR_BLUE=$(tput setaf 4)
-    COLOR_GREEN=$(tput setaf 2)
-    COLOR_YELLOW=$(tput setaf 3)
-    COLOR_RED=$(tput setaf 1)
-    COLOR_CYAN=$(tput setaf 6)
-    COLOR_BOLD=$(tput bold)
-else
-    COLOR_RESET=""
-    COLOR_BLUE=""
-    COLOR_GREEN=""
-    COLOR_YELLOW=""
-    COLOR_RED=""
-    COLOR_CYAN=""
-    COLOR_BOLD=""
-fi
-
-# =============================================================================
 # Global State
 # =============================================================================
 BUILD_NUMBER=""
-JOB_URL=""
+# JOB_URL is provided by jenkins-common.sh
 HAS_STAGED_CHANGES=false
-
-# =============================================================================
-# Logging Functions (see spec: User Feedback Requirements - Logging Levels)
-# =============================================================================
-
-# Get timestamp in HH:MM:SS format
-_timestamp() {
-    date "+%H:%M:%S"
-}
-
-# INFO level - General status updates (blue indicator)
-log_info() {
-    echo "${COLOR_BLUE}[$(_timestamp)] ℹ${COLOR_RESET} $*"
-}
-
-# SUCCESS level - Successful operations (green checkmark)
-log_success() {
-    echo "${COLOR_GREEN}[$(_timestamp)] ✓${COLOR_RESET} $*"
-}
-
-# WARNING level - Non-fatal issues (yellow warning)
-log_warning() {
-    echo "${COLOR_YELLOW}[$(_timestamp)] ⚠${COLOR_RESET} $*"
-}
-
-# ERROR level - Fatal errors (red X, output to stderr)
-log_error() {
-    echo "${COLOR_RED}[$(_timestamp)] ✗${COLOR_RESET} $*" >&2
-}
-
-# Banner for major status changes
-log_banner() {
-    local status="$1"
-    local message="${2:-}"
-    echo ""
-    if [[ "$status" == "success" ]]; then
-        echo "${COLOR_GREEN}${COLOR_BOLD}╔════════════════════════════════════════╗${COLOR_RESET}"
-        echo "${COLOR_GREEN}${COLOR_BOLD}║           BUILD SUCCESSFUL             ║${COLOR_RESET}"
-        echo "${COLOR_GREEN}${COLOR_BOLD}╚════════════════════════════════════════╝${COLOR_RESET}"
-    else
-        echo "${COLOR_RED}${COLOR_BOLD}╔════════════════════════════════════════╗${COLOR_RESET}"
-        echo "${COLOR_RED}${COLOR_BOLD}║             BUILD FAILED               ║${COLOR_RESET}"
-        echo "${COLOR_RED}${COLOR_BOLD}╚════════════════════════════════════════╝${COLOR_RESET}"
-    fi
-    echo ""
-}
 
 # =============================================================================
 # Interrupt Handler (see spec: Interrupt Handling)
@@ -140,154 +78,6 @@ validate_arguments() {
         usage
         exit 1
     fi
-}
-
-# =============================================================================
-# Environment Variable Validation (see spec: Prerequisites)
-# =============================================================================
-validate_environment() {
-    local missing=()
-
-    if [[ -z "${JENKINS_URL:-}" ]]; then
-        missing+=("JENKINS_URL")
-    fi
-    if [[ -z "${JENKINS_USER_ID:-}" ]]; then
-        missing+=("JENKINS_USER_ID")
-    fi
-    if [[ -z "${JENKINS_API_TOKEN:-}" ]]; then
-        missing+=("JENKINS_API_TOKEN")
-    fi
-
-    if [[ ${#missing[@]} -gt 0 ]]; then
-        log_error "Missing required environment variables: ${missing[*]}"
-        log_info "Set these variables before running the script"
-        exit 1
-    fi
-
-    # Validate JENKINS_URL format (see spec: Section 1.3)
-    if [[ ! "$JENKINS_URL" =~ ^https?:// ]]; then
-        log_error "JENKINS_URL must begin with http:// or https://"
-        log_error "Current value: $JENKINS_URL"
-        exit 1
-    fi
-
-    # Normalize trailing slashes
-    JENKINS_URL="${JENKINS_URL%/}"
-}
-
-# =============================================================================
-# Git Repository Validation (see spec: Section 1.4-1.5)
-# =============================================================================
-validate_git_repository() {
-    if ! git rev-parse --git-dir &>/dev/null; then
-        log_error "Not a git repository"
-        log_info "Run this command from within a git repository"
-        exit 1
-    fi
-
-    if ! git remote get-url origin &>/dev/null; then
-        log_error "No 'origin' remote configured"
-        log_info "Add an origin remote: git remote add origin <url>"
-        exit 1
-    fi
-}
-
-# =============================================================================
-# JSON Parser Check (see spec: Section 1.6)
-# =============================================================================
-validate_dependencies() {
-    if ! command -v jq &>/dev/null; then
-        log_error "Required dependency 'jq' not found"
-        log_info "Install jq: brew install jq (macOS) or apt-get install jq (Linux)"
-        exit 1
-    fi
-
-    if ! command -v curl &>/dev/null; then
-        log_error "Required dependency 'curl' not found"
-        exit 1
-    fi
-}
-
-# =============================================================================
-# Jenkins API Helper
-# =============================================================================
-jenkins_api() {
-    local endpoint="$1"
-    local url="${JENKINS_URL}${endpoint}"
-
-    curl -s -f -u "${JENKINS_USER_ID}:${JENKINS_API_TOKEN}" "$url"
-}
-
-jenkins_api_with_status() {
-    local endpoint="$1"
-    local url="${JENKINS_URL}${endpoint}"
-
-    curl -s -w "\n%{http_code}" -u "${JENKINS_USER_ID}:${JENKINS_API_TOKEN}" "$url"
-}
-
-# =============================================================================
-# Jenkins Connectivity Verification (see spec: Section 2)
-# =============================================================================
-verify_jenkins_connection() {
-    log_info "Verifying Jenkins connectivity..."
-
-    local response
-    local http_code
-
-    # Test basic connectivity
-    response=$(jenkins_api_with_status "/api/json")
-    http_code=$(echo "$response" | tail -1)
-
-    case "$http_code" in
-        200)
-            log_success "Connected to Jenkins"
-            ;;
-        401)
-            log_error "Jenkins authentication failed (401)"
-            log_info "Check JENKINS_USER_ID and JENKINS_API_TOKEN"
-            exit 1
-            ;;
-        403)
-            log_error "Jenkins permission denied (403)"
-            log_info "User may not have required permissions"
-            exit 1
-            ;;
-        *)
-            log_error "Failed to connect to Jenkins (HTTP $http_code)"
-            log_info "Check JENKINS_URL: $JENKINS_URL"
-            exit 1
-            ;;
-    esac
-}
-
-# =============================================================================
-# Job Existence Verification (see spec: Section 2.3)
-# =============================================================================
-verify_job_exists() {
-    local job_name="$1"
-    log_info "Verifying job '$job_name' exists..."
-
-    local response
-    local http_code
-
-    response=$(jenkins_api_with_status "/job/${job_name}/api/json")
-    http_code=$(echo "$response" | tail -1)
-
-    case "$http_code" in
-        200)
-            log_success "Job '$job_name' found"
-            JOB_URL="${JENKINS_URL}/job/${job_name}"
-            ;;
-        404)
-            log_error "Jenkins job '$job_name' not found"
-            log_info "Verify the job name is correct"
-            exit 1
-            ;;
-        *)
-            log_error "Failed to verify job (HTTP $http_code)"
-            exit 1
-            ;;
-    esac
 }
 
 # =============================================================================
@@ -393,19 +183,7 @@ push_changes() {
 # Build Detection (see spec: Section 4)
 # =============================================================================
 
-# Get current build number baseline (see spec: Section 4.1)
-get_last_build_number() {
-    local job_name="$1"
-    local response
-
-    response=$(jenkins_api "/job/${job_name}/api/json" 2>/dev/null) || true
-
-    if [[ -n "$response" ]]; then
-        echo "$response" | jq -r '.lastBuild.number // 0'
-    else
-        echo "0"
-    fi
-}
+# get_last_build_number is provided by jenkins-common.sh
 
 # Check if job is queued (see spec: Section 4.2.4)
 check_job_queued() {
@@ -466,27 +244,7 @@ wait_for_build_start() {
 # Build Monitoring (see spec: Section 5)
 # =============================================================================
 
-# Get build info
-get_build_info() {
-    local job_name="$1"
-    local build_number="$2"
-
-    jenkins_api "/job/${job_name}/${build_number}/api/json" 2>/dev/null || echo ""
-}
-
-# Get current stage from workflow API (see spec: Section 5.1.3)
-get_current_stage() {
-    local job_name="$1"
-    local build_number="$2"
-
-    local response
-    response=$(jenkins_api "/job/${job_name}/${build_number}/wfapi/describe" 2>/dev/null) || true
-
-    if [[ -n "$response" ]]; then
-        # Find the currently executing stage (status IN_PROGRESS)
-        echo "$response" | jq -r '.stages[] | select(.status == "IN_PROGRESS") | .name' 2>/dev/null | head -1
-    fi
-}
+# get_build_info and get_current_stage are provided by jenkins-common.sh
 
 # Monitor build until completion (see spec: Section 5)
 monitor_build() {
@@ -586,222 +344,11 @@ handle_build_result() {
 
 # =============================================================================
 # Failure Analysis (see spec: Section 7)
+# All failure analysis functions are provided by jenkins-common.sh:
+#   get_failed_stage, get_console_output, detect_all_downstream_builds,
+#   check_build_failed, find_failed_downstream_build, extract_error_lines,
+#   extract_stage_logs, display_build_metadata, analyze_failure
 # =============================================================================
-
-# Find failed stage (see spec: Section 7.1)
-get_failed_stage() {
-    local job_name="$1"
-    local build_number="$2"
-
-    local response
-    response=$(jenkins_api "/job/${job_name}/${build_number}/wfapi/describe" 2>/dev/null) || true
-
-    if [[ -n "$response" ]]; then
-        echo "$response" | jq -r '.stages[] | select(.status == "FAILED" or .status == "UNSTABLE") | .name' 2>/dev/null | head -1
-    fi
-}
-
-# Get console output
-get_console_output() {
-    local job_name="$1"
-    local build_number="$2"
-
-    jenkins_api "/job/${job_name}/${build_number}/consoleText" 2>/dev/null || echo ""
-}
-
-# Detect all downstream builds from console output (see spec: Section 7.2)
-# Returns space-separated pairs: "job1 build1\njob2 build2\n..."
-detect_all_downstream_builds() {
-    local console_output="$1"
-
-    # Search for pattern: Starting building: <job-name> #<build-number>
-    echo "$console_output" | grep -oE 'Starting building: [^ ]+ #[0-9]+' | \
-        sed -E 's/Starting building: ([^ ]+) #([0-9]+)/\1 \2/'
-}
-
-# Check if a build failed (returns 0 if failed, 1 otherwise)
-check_build_failed() {
-    local job_name="$1"
-    local build_number="$2"
-
-    local build_info
-    build_info=$(get_build_info "$job_name" "$build_number")
-
-    if [[ -n "$build_info" ]]; then
-        local result
-        result=$(echo "$build_info" | jq -r '.result // empty')
-        if [[ "$result" == "FAILURE" || "$result" == "UNSTABLE" || "$result" == "ABORTED" ]]; then
-            return 0
-        fi
-    fi
-    return 1
-}
-
-# Find the failed downstream build from a list of downstream builds
-# For parallel stages, we need to check each one's status
-find_failed_downstream_build() {
-    local console_output="$1"
-
-    local all_builds
-    all_builds=$(detect_all_downstream_builds "$console_output")
-
-    if [[ -z "$all_builds" ]]; then
-        return
-    fi
-
-    # Check each downstream build to find the one that failed
-    while IFS=' ' read -r job_name build_number; do
-        if [[ -n "$job_name" && -n "$build_number" ]]; then
-            if check_build_failed "$job_name" "$build_number"; then
-                echo "$job_name $build_number"
-                return
-            fi
-        fi
-    done <<< "$all_builds"
-
-    # If no failed build found, return the last one (fallback)
-    echo "$all_builds" | tail -1
-}
-
-# Extract error lines from console output (see spec: Section 7.3.1)
-extract_error_lines() {
-    local console_output="$1"
-    local max_lines="${2:-50}"
-
-    local error_lines
-    error_lines=$(echo "$console_output" | grep -iE '(ERROR|Exception|FAILURE|failed|FATAL)' | tail -"$max_lines")
-
-    if [[ -n "$error_lines" ]]; then
-        echo "$error_lines"
-    else
-        # Fallback: show last 100 lines
-        echo "$console_output" | tail -100
-    fi
-}
-
-# Extract stage-specific logs (see spec: Section 7.3.2)
-extract_stage_logs() {
-    local console_output="$1"
-    local stage_name="$2"
-
-    # Extract content between [Pipeline] { (StageName) and [Pipeline] }
-    echo "$console_output" | awk -v stage="$stage_name" '
-        BEGIN { in_stage=0 }
-        /\[Pipeline\] \{ \(/ && index($0, "(" stage ")") { in_stage=1; next }
-        /\[Pipeline\] \}/ && in_stage { in_stage=0; next }
-        in_stage { print }
-    '
-}
-
-# Extract and display build metadata from console output (user, agent, pipeline)
-# Only called on build failure to provide context
-display_build_metadata() {
-    local console_output="$1"
-
-    # Extract user who started the build
-    local started_by
-    started_by=$(echo "$console_output" | grep -m1 "^Started by user " | sed 's/^Started by user //')
-
-    # Extract Jenkins agent
-    local agent
-    agent=$(echo "$console_output" | grep -m1 "^Running on " | sed 's/^Running on \([^ ]*\).*/\1/')
-
-    # Extract pipeline source (pipeline name + git URL)
-    # Format: "Obtained <pipeline-name> from git <url>"
-    local pipeline
-    pipeline=$(echo "$console_output" | grep -m1 "^Obtained .* from git " | sed 's|^Obtained ||')
-
-    echo ""
-    echo "${COLOR_CYAN}=== Build Info ===${COLOR_RESET}"
-    [[ -n "$started_by" ]] && echo "  Started by:  $started_by"
-    [[ -n "$agent" ]] && echo "  Agent:       $agent"
-    [[ -n "$pipeline" ]] && echo "  Pipeline:    $pipeline"
-    echo "${COLOR_CYAN}==================${COLOR_RESET}"
-}
-
-# Analyze build failure (see spec: Section 7)
-analyze_failure() {
-    local job_name="$1"
-    local build_number="$2"
-
-    log_info "Analyzing failure..."
-
-    # Get console output
-    local console_output
-    console_output=$(get_console_output "$job_name" "$build_number")
-
-    if [[ -z "$console_output" ]]; then
-        log_warning "Could not retrieve console output"
-        log_info "View full console: ${JOB_URL}/${build_number}/console"
-        return
-    fi
-
-    # Display build metadata (user, agent, pipeline) for failure context
-    display_build_metadata "$console_output"
-
-    # Check for downstream build failure (see spec: Section 7.2)
-    # For parallel stages, find the specific downstream build that failed
-    local downstream
-    downstream=$(find_failed_downstream_build "$console_output")
-
-    if [[ -n "$downstream" ]]; then
-        local downstream_job downstream_build
-        downstream_job=$(echo "$downstream" | cut -d' ' -f1)
-        downstream_build=$(echo "$downstream" | cut -d' ' -f2)
-
-        log_info "Failure originated from downstream build: ${downstream_job} #${downstream_build}"
-
-        local downstream_console
-        downstream_console=$(get_console_output "$downstream_job" "$downstream_build")
-
-        if [[ -n "$downstream_console" ]]; then
-            echo ""
-            echo "${COLOR_YELLOW}=== Downstream Build Errors ===${COLOR_RESET}"
-            extract_error_lines "$downstream_console" 50
-            echo "${COLOR_YELLOW}===============================${COLOR_RESET}"
-            echo ""
-            log_info "Full downstream console: ${JENKINS_URL}/job/${downstream_job}/${downstream_build}/console"
-        fi
-        return
-    fi
-
-    # Find failed stage (see spec: Section 7.1)
-    local failed_stage
-    failed_stage=$(get_failed_stage "$job_name" "$build_number")
-
-    if [[ -n "$failed_stage" ]]; then
-        log_info "Failed stage: $failed_stage"
-
-        # Try to extract stage-specific logs (see spec: Section 7.3.2)
-        local stage_logs
-        stage_logs=$(extract_stage_logs "$console_output" "$failed_stage")
-
-        if [[ -n "$stage_logs" ]]; then
-            echo ""
-            echo "${COLOR_YELLOW}=== Stage '$failed_stage' Logs ===${COLOR_RESET}"
-            extract_error_lines "$stage_logs" 50
-            echo "${COLOR_YELLOW}=================================${COLOR_RESET}"
-            echo ""
-        else
-            # Fallback to error extraction from full console (see spec: Section 7.3.4)
-            echo ""
-            echo "${COLOR_YELLOW}=== Build Errors ===${COLOR_RESET}"
-            extract_error_lines "$console_output" 50
-            echo "${COLOR_YELLOW}====================${COLOR_RESET}"
-            echo ""
-        fi
-    else
-        # No stage info - might be Jenkinsfile syntax error (see spec: Section 7.3.3)
-        log_warning "Could not identify failed stage (possible Jenkinsfile syntax error)"
-        echo ""
-        echo "${COLOR_YELLOW}=== Console Output ===${COLOR_RESET}"
-        extract_error_lines "$console_output" 100
-        echo "${COLOR_YELLOW}======================${COLOR_RESET}"
-        echo ""
-    fi
-
-    log_info "Full console output: ${JOB_URL}/${build_number}/console"
-}
 
 # =============================================================================
 # Configuration Summary (see spec: User Feedback Requirements)
@@ -833,17 +380,17 @@ main() {
     local job_name="$1"
     local commit_message="$2"
 
-    # Validate environment and dependencies
-    validate_environment
-    validate_dependencies
-    validate_git_repository
+    # Validate environment and dependencies (library functions return 1 on failure)
+    validate_environment || exit 1
+    validate_dependencies || exit 1
+    validate_git_repository || exit 1
 
     # Display configuration
     display_config_summary "$job_name"
 
-    # Verify Jenkins connectivity
-    verify_jenkins_connection
-    verify_job_exists "$job_name"
+    # Verify Jenkins connectivity (library functions return 1 on failure)
+    verify_jenkins_connection || exit 1
+    verify_job_exists "$job_name" || exit 1
 
     # Git operations
     check_for_changes
