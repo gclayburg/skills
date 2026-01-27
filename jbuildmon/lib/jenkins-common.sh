@@ -391,3 +391,213 @@ get_last_build_number() {
         echo "0"
     fi
 }
+
+# =============================================================================
+# Failure Analysis Functions
+# =============================================================================
+
+# Check if a build result indicates failure
+# Usage: check_build_failed "job-name" "build-number"
+# Returns: 0 if build failed (FAILURE, UNSTABLE, ABORTED), 1 otherwise
+check_build_failed() {
+    local job_name="$1"
+    local build_number="$2"
+
+    local build_info
+    build_info=$(get_build_info "$job_name" "$build_number")
+
+    if [[ -n "$build_info" ]]; then
+        local result
+        result=$(echo "$build_info" | jq -r '.result // empty')
+        if [[ "$result" == "FAILURE" || "$result" == "UNSTABLE" || "$result" == "ABORTED" ]]; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+# Detect all downstream builds from console output
+# Usage: detect_all_downstream_builds "$console_output"
+# Returns: Space-separated pairs on each line: "job-name build-number"
+detect_all_downstream_builds() {
+    local console_output="$1"
+
+    # Search for pattern: Starting building: <job-name> #<build-number>
+    echo "$console_output" | grep -oE 'Starting building: [^ ]+ #[0-9]+' 2>/dev/null | \
+        sed -E 's/Starting building: ([^ ]+) #([0-9]+)/\1 \2/' || true
+}
+
+# Find the failed downstream build from console output
+# For parallel stages, checks each downstream build's status
+# Usage: find_failed_downstream_build "$console_output"
+# Returns: "job-name build-number" of the failed downstream build, or empty
+find_failed_downstream_build() {
+    local console_output="$1"
+
+    local all_builds
+    all_builds=$(detect_all_downstream_builds "$console_output")
+
+    if [[ -z "$all_builds" ]]; then
+        return
+    fi
+
+    # Check each downstream build to find the one that failed
+    while IFS=' ' read -r job_name build_number; do
+        if [[ -n "$job_name" && -n "$build_number" ]]; then
+            if check_build_failed "$job_name" "$build_number"; then
+                echo "$job_name $build_number"
+                return
+            fi
+        fi
+    done <<< "$all_builds"
+
+    # If no failed build found, return the last one (fallback)
+    echo "$all_builds" | tail -1
+}
+
+# Extract error lines from console output
+# Usage: extract_error_lines "$console_output" [max_lines]
+# Returns: Lines matching error patterns, or last N lines as fallback
+extract_error_lines() {
+    local console_output="$1"
+    local max_lines="${2:-50}"
+
+    local error_lines
+    error_lines=$(echo "$console_output" | grep -iE '(ERROR|Exception|FAILURE|failed|FATAL)' 2>/dev/null | tail -"$max_lines") || true
+
+    if [[ -n "$error_lines" ]]; then
+        echo "$error_lines"
+    else
+        # Fallback: show last 100 lines
+        echo "$console_output" | tail -100
+    fi
+}
+
+# Extract logs for a specific pipeline stage
+# Usage: extract_stage_logs "$console_output" "stage-name"
+# Returns: Console output lines for the specified stage
+extract_stage_logs() {
+    local console_output="$1"
+    local stage_name="$2"
+
+    # Extract content between [Pipeline] { (StageName) and [Pipeline] }
+    echo "$console_output" | awk -v stage="$stage_name" '
+        BEGIN { in_stage=0 }
+        /\[Pipeline\] \{ \(/ && index($0, "(" stage ")") { in_stage=1; next }
+        /\[Pipeline\] \}/ && in_stage { in_stage=0; next }
+        in_stage { print }
+    '
+}
+
+# Display build metadata from console output (user, agent, pipeline)
+# Usage: display_build_metadata "$console_output"
+# Outputs: Formatted build info section
+display_build_metadata() {
+    local console_output="$1"
+
+    # Extract user who started the build
+    local started_by
+    started_by=$(echo "$console_output" | grep -m1 "^Started by user " | sed 's/^Started by user //') || true
+
+    # Extract Jenkins agent
+    local agent
+    agent=$(echo "$console_output" | grep -m1 "^Running on " | sed 's/^Running on \([^ ]*\).*/\1/') || true
+
+    # Extract pipeline source (pipeline name + git URL)
+    # Format: "Obtained <pipeline-name> from git <url>"
+    local pipeline
+    pipeline=$(echo "$console_output" | grep -m1 "^Obtained .* from git " | sed 's|^Obtained ||') || true
+
+    echo ""
+    echo "${COLOR_CYAN}=== Build Info ===${COLOR_RESET}"
+    [[ -n "$started_by" ]] && echo "  Started by:  $started_by"
+    [[ -n "$agent" ]] && echo "  Agent:       $agent"
+    [[ -n "$pipeline" ]] && echo "  Pipeline:    $pipeline"
+    echo "${COLOR_CYAN}==================${COLOR_RESET}"
+}
+
+# Full failure analysis orchestration
+# Usage: analyze_failure "job-name" "build-number"
+# Outputs: Detailed failure report with error logs and metadata
+analyze_failure() {
+    local job_name="$1"
+    local build_number="$2"
+
+    log_info "Analyzing failure..."
+
+    # Get console output
+    local console_output
+    console_output=$(get_console_output "$job_name" "$build_number")
+
+    if [[ -z "$console_output" ]]; then
+        log_warning "Could not retrieve console output"
+        log_info "View full console: ${JOB_URL}/${build_number}/console"
+        return
+    fi
+
+    # Display build metadata (user, agent, pipeline) for failure context
+    display_build_metadata "$console_output"
+
+    # Check for downstream build failure
+    # For parallel stages, find the specific downstream build that failed
+    local downstream
+    downstream=$(find_failed_downstream_build "$console_output")
+
+    if [[ -n "$downstream" ]]; then
+        local downstream_job downstream_build
+        downstream_job=$(echo "$downstream" | cut -d' ' -f1)
+        downstream_build=$(echo "$downstream" | cut -d' ' -f2)
+
+        log_info "Failure originated from downstream build: ${downstream_job} #${downstream_build}"
+
+        local downstream_console
+        downstream_console=$(get_console_output "$downstream_job" "$downstream_build")
+
+        if [[ -n "$downstream_console" ]]; then
+            echo ""
+            echo "${COLOR_YELLOW}=== Downstream Build Errors ===${COLOR_RESET}"
+            extract_error_lines "$downstream_console" 50
+            echo "${COLOR_YELLOW}===============================${COLOR_RESET}"
+            echo ""
+            log_info "Full downstream console: ${JENKINS_URL}/job/${downstream_job}/${downstream_build}/console"
+        fi
+        return
+    fi
+
+    # Find failed stage
+    local failed_stage
+    failed_stage=$(get_failed_stage "$job_name" "$build_number")
+
+    if [[ -n "$failed_stage" ]]; then
+        log_info "Failed stage: $failed_stage"
+
+        # Try to extract stage-specific logs
+        local stage_logs
+        stage_logs=$(extract_stage_logs "$console_output" "$failed_stage")
+
+        if [[ -n "$stage_logs" ]]; then
+            echo ""
+            echo "${COLOR_YELLOW}=== Stage '$failed_stage' Logs ===${COLOR_RESET}"
+            extract_error_lines "$stage_logs" 50
+            echo "${COLOR_YELLOW}=================================${COLOR_RESET}"
+            echo ""
+        else
+            # Fallback to error extraction from full console
+            echo ""
+            echo "${COLOR_YELLOW}=== Build Errors ===${COLOR_RESET}"
+            extract_error_lines "$console_output" 50
+            echo "${COLOR_YELLOW}====================${COLOR_RESET}"
+            echo ""
+        fi
+    else
+        # No stage info - might be Jenkinsfile syntax error
+        log_warning "Could not identify failed stage (possible Jenkinsfile syntax error)"
+        echo ""
+        echo "${COLOR_YELLOW}=== Console Output ===${COLOR_RESET}"
+        extract_error_lines "$console_output" 100
+        echo "${COLOR_YELLOW}======================${COLOR_RESET}"
+        echo ""
+    fi
+
+    log_info "Full console output: ${JOB_URL}/${build_number}/console"
+}
