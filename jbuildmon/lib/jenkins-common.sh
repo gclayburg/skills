@@ -695,3 +695,137 @@ analyze_failure() {
 
     log_info "Full console output: ${JOB_URL}/${build_number}/console"
 }
+
+# =============================================================================
+# Trigger Detection Functions
+# =============================================================================
+
+# Default trigger user that indicates automated builds (can be overridden)
+: "${CHECKBUILD_TRIGGER_USER:=buildtriggerdude}"
+
+# Detect trigger type from console output
+# Usage: detect_trigger_type "$console_output"
+# Returns: Outputs two lines: type ("automated" or "manual") and username
+#          Returns 1 if trigger cannot be determined
+detect_trigger_type() {
+    local console_output="$1"
+
+    # Extract "Started by user <username>" from console
+    local started_by_line
+    started_by_line=$(echo "$console_output" | grep -m1 "^Started by user " 2>/dev/null) || true
+
+    if [[ -z "$started_by_line" ]]; then
+        # Check for other trigger patterns
+        if echo "$console_output" | grep -q "^Started by an SCM change" 2>/dev/null; then
+            echo "automated"
+            echo "scm-trigger"
+            return 0
+        elif echo "$console_output" | grep -q "^Started by timer" 2>/dev/null; then
+            echo "automated"
+            echo "timer"
+            return 0
+        elif echo "$console_output" | grep -q "^Started by upstream project" 2>/dev/null; then
+            echo "automated"
+            echo "upstream"
+            return 0
+        fi
+        echo "unknown"
+        echo "unknown"
+        return 1
+    fi
+
+    # Extract username
+    local username
+    username=$(echo "$started_by_line" | sed 's/^Started by user //')
+
+    # Compare against trigger user (case-insensitive, portable)
+    local username_lower trigger_lower
+    username_lower=$(echo "$username" | tr '[:upper:]' '[:lower:]')
+    trigger_lower=$(echo "$CHECKBUILD_TRIGGER_USER" | tr '[:upper:]' '[:lower:]')
+
+    if [[ "$username_lower" == "$trigger_lower" ]]; then
+        echo "automated"
+        echo "$username"
+    else
+        echo "manual"
+        echo "$username"
+    fi
+    return 0
+}
+
+# Extract triggering commit SHA and message from build
+# Usage: extract_triggering_commit "job-name" "build-number" ["$console_output"]
+# Returns: Outputs two lines: SHA and commit message (each may be "unknown" if not found)
+extract_triggering_commit() {
+    local job_name="$1"
+    local build_number="$2"
+    local console_output="${3:-}"
+
+    local sha=""
+    local message=""
+
+    # Method 1: Try to get from build API (lastBuiltRevision.SHA1)
+    local build_info
+    build_info=$(get_build_info "$job_name" "$build_number")
+
+    if [[ -n "$build_info" ]]; then
+        # Look for GitSCM action with lastBuiltRevision
+        sha=$(echo "$build_info" | jq -r '
+            .actions[]? |
+            select(._class? | test("hudson.plugins.git"; "i") // false) |
+            .lastBuiltRevision?.SHA1 // .buildsByBranchName?["*/main"]?.revision?.SHA1 // .buildsByBranchName?["*/master"]?.revision?.SHA1 // empty
+        ' 2>/dev/null | head -1) || true
+
+        # Also try alternate location for Git action
+        if [[ -z "$sha" ]]; then
+            sha=$(echo "$build_info" | jq -r '
+                .actions[]? |
+                select(.lastBuiltRevision?) |
+                .lastBuiltRevision.SHA1 // empty
+            ' 2>/dev/null | head -1) || true
+        fi
+    fi
+
+    # Method 2: Parse from console output if not found in API
+    if [[ -z "$sha" && -n "$console_output" ]]; then
+        # Try "Checking out Revision <sha>"
+        sha=$(echo "$console_output" | grep -oE 'Checking out Revision [a-f0-9]{7,40}' 2>/dev/null | head -1 | \
+            sed 's/Checking out Revision //') || true
+    fi
+
+    if [[ -z "$sha" && -n "$console_output" ]]; then
+        # Try "> git checkout -f <sha>"
+        sha=$(echo "$console_output" | grep -oE '> git checkout -f [a-f0-9]{7,40}' 2>/dev/null | head -1 | \
+            sed 's/> git checkout -f //') || true
+    fi
+
+    if [[ -z "$sha" && -n "$console_output" ]]; then
+        # Try "Commit <sha>" pattern
+        sha=$(echo "$console_output" | grep -oE 'Commit [a-f0-9]{7,40}' 2>/dev/null | head -1 | \
+            sed 's/Commit //') || true
+    fi
+
+    # If we still don't have console output and need to parse for message, fetch it
+    if [[ -z "$console_output" ]]; then
+        console_output=$(get_console_output "$job_name" "$build_number")
+    fi
+
+    # Extract commit message from console
+    if [[ -n "$console_output" ]]; then
+        # Try "Commit message: "<message>""
+        message=$(echo "$console_output" | grep -m1 'Commit message:' 2>/dev/null | \
+            sed -E 's/.*Commit message:[[:space:]]*//' | sed -E 's/^["'"'"'](.*)["'"'"']$/\1/') || true
+
+        # Try to get from git show format if available
+        if [[ -z "$message" && -n "$sha" ]]; then
+            # Pattern: <sha> <message> in git log style output
+            message=$(echo "$console_output" | grep -m1 "^${sha:0:7}" 2>/dev/null | \
+                sed -E "s/^[a-f0-9]+[[:space:]]+//") || true
+        fi
+    fi
+
+    # Output results (unknown if not found)
+    echo "${sha:-unknown}"
+    echo "${message:-unknown}"
+    return 0
+}
