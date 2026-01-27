@@ -220,3 +220,102 @@ validate_git_repository() {
 
     return 0
 }
+
+# =============================================================================
+# Jenkins API Functions
+# =============================================================================
+
+# Global variable set by verify_job_exists
+JOB_URL=""
+
+# Make authenticated GET request to Jenkins API
+# Usage: jenkins_api "/job/myjob/api/json"
+# Returns: Response body (or empty string on failure)
+# Note: Uses -f flag so curl returns non-zero on HTTP errors
+jenkins_api() {
+    local endpoint="$1"
+    local url="${JENKINS_URL}${endpoint}"
+
+    curl -s -f -u "${JENKINS_USER_ID}:${JENKINS_API_TOKEN}" "$url"
+}
+
+# Make authenticated GET request and return body with HTTP status code
+# Usage: jenkins_api_with_status "/job/myjob/api/json"
+# Returns: Response body followed by newline and HTTP status code
+# Example output:
+#   {"_class":"hudson.model.FreeStyleProject",...}
+#   200
+jenkins_api_with_status() {
+    local endpoint="$1"
+    local url="${JENKINS_URL}${endpoint}"
+
+    curl -s -w "\n%{http_code}" -u "${JENKINS_USER_ID}:${JENKINS_API_TOKEN}" "$url"
+}
+
+# Verify Jenkins connectivity and authentication
+# Tests connection to Jenkins root API endpoint
+# Returns: 0 on success, 1 on failure (with error logged)
+verify_jenkins_connection() {
+    log_info "Verifying Jenkins connectivity..."
+
+    local response
+    local http_code
+
+    # Test basic connectivity
+    response=$(jenkins_api_with_status "/api/json")
+    http_code=$(echo "$response" | tail -1)
+
+    case "$http_code" in
+        200)
+            log_success "Connected to Jenkins"
+            return 0
+            ;;
+        401)
+            log_error "Jenkins authentication failed (401)"
+            log_info "Check JENKINS_USER_ID and JENKINS_API_TOKEN"
+            return 1
+            ;;
+        403)
+            log_error "Jenkins permission denied (403)"
+            log_info "User may not have required permissions"
+            return 1
+            ;;
+        *)
+            log_error "Failed to connect to Jenkins (HTTP $http_code)"
+            log_info "Check JENKINS_URL: $JENKINS_URL"
+            return 1
+            ;;
+    esac
+}
+
+# Verify that a Jenkins job exists and set JOB_URL global
+# Usage: verify_job_exists "my-job-name"
+# Sets: JOB_URL global variable to the full job URL
+# Returns: 0 on success, 1 on failure (with error logged)
+verify_job_exists() {
+    local job_name="$1"
+    log_info "Verifying job '$job_name' exists..."
+
+    local response
+    local http_code
+
+    response=$(jenkins_api_with_status "/job/${job_name}/api/json")
+    http_code=$(echo "$response" | tail -1)
+
+    case "$http_code" in
+        200)
+            log_success "Job '$job_name' found"
+            JOB_URL="${JENKINS_URL}/job/${job_name}"
+            return 0
+            ;;
+        404)
+            log_error "Jenkins job '$job_name' not found"
+            log_info "Verify the job name is correct"
+            return 1
+            ;;
+        *)
+            log_error "Failed to verify job (HTTP $http_code)"
+            return 1
+            ;;
+    esac
+}
