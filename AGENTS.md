@@ -15,22 +15,50 @@ This repository contains **jbuildmon** (Jenkins Build Monitor), a CLI tool that 
 
 ## Key Commands
 
-### Running the Build Monitor
+### Checking Build Status (`/checkbuild`)
+
+```bash
+./jbuildmon/checkbuild.sh [--json]
+```
+
+Queries Jenkins for the current status of the last build. Reports:
+- Build result (success/failure/in-progress)
+- Trigger type (automated push vs manual)
+- Commit correlation with local git history
+- Detailed failure analysis with error logs
+
+**Exit codes:** 0 (success), 1 (failure), 2 (in progress)
+
+### Running the Build Monitor (`jbuildmon`)
 
 ```bash
 ./jbuildmon/pushmon.sh <job-name> "<commit-message>"
 ```
 
-**Required environment variables:**
+Commits staged code, pushes to origin, and monitors the Jenkins build until completion.
+
+**Exit codes:** 0 (success), 1 (failure), 130 (interrupted)
+
+### Required Environment Variables
+
+Both tools require:
 - `JENKINS_URL` - Jenkins server URL (e.g., `http://jenkins.example.com:8080`)
 - `JENKINS_USER_ID` - Jenkins username
 - `JENKINS_API_TOKEN` - Jenkins API token
 
-**Exit codes:** 0 (success), 1 (failure), 130 (interrupted)
-
 ## Architecture
 
-### Main Script: `jbuildmon/pushmon.sh`
+### Build Status Checker: `jbuildmon/checkbuild.sh`
+
+A CLI tool that queries Jenkins for the current build status:
+
+1. **Job Discovery** - Finds job name from AGENTS.md (`JOB_NAME=...`) or git origin URL
+2. **Build Info** - Fetches last build status from Jenkins API
+3. **Trigger Detection** - Determines if build was automated (push) or manual
+4. **Commit Correlation** - Checks if triggering commit is in local git history
+5. **Failure Analysis** - For failed builds, traces downstream failures and extracts error logs
+
+### Build Monitor: `jbuildmon/pushmon.sh`
 
 A single-file bash script (~850 lines) implementing the full workflow:
 
@@ -61,5 +89,7 @@ A single-file bash script (~850 lines) implementing the full workflow:
 
 ## Specifications
 
-- `jbuildmon/specs/jenkins-build-monitor-spec.md` - Full functional specification
+- `jbuildmon/specs/jenkins-build-monitor-spec.md` - Full functional specification for pushmon
 - `jbuildmon/specs/pushmon_implementation_plan.md` - Implementation checklist with bug fix history
+- `jbuildmon/specs/checkbuild-spec.md` - Full functional specification for checkbuild
+- `jbuildmon/specs/checkbuild-plan.md` - Implementation plan and progress tracking
