@@ -222,6 +222,100 @@ validate_git_repository() {
 }
 
 # =============================================================================
+# Job Name Discovery Functions
+# =============================================================================
+
+# Discover Jenkins job name from AGENTS.md or git origin
+# Priority: 1) AGENTS.md JOB_NAME, 2) git origin fallback
+# Usage: discover_job_name
+# Returns: Job name on stdout, returns 0 on success, 1 on failure
+discover_job_name() {
+    local job_name=""
+
+    # Try AGENTS.md first
+    job_name=$(_discover_job_from_agents_md)
+    if [[ -n "$job_name" ]]; then
+        echo "$job_name"
+        return 0
+    fi
+
+    # Fallback to git origin
+    job_name=$(_discover_job_from_git_origin)
+    if [[ -n "$job_name" ]]; then
+        echo "$job_name"
+        return 0
+    fi
+
+    log_error "Could not determine Jenkins job name"
+    log_info "Either create AGENTS.md with JOB_NAME=<job-name> or configure git origin"
+    return 1
+}
+
+# Parse AGENTS.md for JOB_NAME pattern
+# Flexible matching:
+#   - JOB_NAME=myjob
+#   - JOB_NAME = myjob
+#   - - JOB_NAME=myjob
+#   - Embedded in text: the job is JOB_NAME=myjob
+# Returns: Job name or empty string
+_discover_job_from_agents_md() {
+    local git_root
+    git_root=$(git rev-parse --show-toplevel 2>/dev/null) || return
+
+    local agents_file="${git_root}/AGENTS.md"
+    if [[ ! -f "$agents_file" ]]; then
+        return
+    fi
+
+    # Extract JOB_NAME value with flexible matching
+    # Pattern: JOB_NAME followed by optional whitespace, =, optional whitespace, then the value
+    local job_name
+    job_name=$(grep -oE 'JOB_NAME[[:space:]]*=[[:space:]]*[^[:space:]]+' "$agents_file" 2>/dev/null | head -1 | \
+        sed -E 's/JOB_NAME[[:space:]]*=[[:space:]]*//')
+
+    if [[ -n "$job_name" ]]; then
+        echo "$job_name"
+    fi
+}
+
+# Extract job name from git origin URL
+# Supported formats:
+#   - git@github.com:org/my-project.git → my-project
+#   - https://github.com/org/my-project.git → my-project
+#   - ssh://git@server:2233/home/git/ralph1.git → ralph1
+#   - git@server:path/to/repo.git → repo
+# Returns: Repository name (job name) or empty string
+_discover_job_from_git_origin() {
+    local origin_url
+    origin_url=$(git remote get-url origin 2>/dev/null) || return
+
+    local repo_name=""
+
+    # Handle different URL formats
+    if [[ "$origin_url" =~ ^https?:// ]]; then
+        # HTTPS URL: https://github.com/org/my-project.git
+        repo_name=$(basename "$origin_url")
+    elif [[ "$origin_url" =~ ^ssh:// ]]; then
+        # SSH URL with explicit protocol: ssh://git@server:2233/home/git/ralph1.git
+        repo_name=$(basename "$origin_url")
+    elif [[ "$origin_url" =~ ^git@ ]]; then
+        # Git SSH shorthand: git@github.com:org/my-project.git or git@server:path/to/repo.git
+        # Extract everything after the last / or :
+        repo_name=$(echo "$origin_url" | sed -E 's|.*[:/]([^/]+)$|\1|')
+    else
+        # Unknown format, try basename
+        repo_name=$(basename "$origin_url")
+    fi
+
+    # Strip .git suffix if present
+    repo_name="${repo_name%.git}"
+
+    if [[ -n "$repo_name" ]]; then
+        echo "$repo_name"
+    fi
+}
+
+# =============================================================================
 # Jenkins API Functions
 # =============================================================================
 

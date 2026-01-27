@@ -134,7 +134,7 @@ This plan breaks down the checkbuild-spec.md into independent, implementable chu
 
 ## Chunk 6: Job Name Discovery
 
-- [ ] **Implement job name discovery in checkbuild.sh**
+- [x] **Implement job name discovery in checkbuild.sh**
 
   **Scope:** Logic to discover Jenkins job name from AGENTS.md or git origin.
 
