@@ -829,3 +829,103 @@ extract_triggering_commit() {
     echo "${message:-unknown}"
     return 0
 }
+
+# =============================================================================
+# Git Commit Correlation Functions
+# =============================================================================
+
+# Correlate a commit SHA with the local git history
+# Usage: correlate_commit "sha"
+# Returns: Outputs a single line with the correlation status:
+#   - "your_commit" - SHA matches current HEAD
+#   - "in_history" - SHA is an ancestor of HEAD (in your history)
+#   - "not_in_history" - SHA exists locally but not reachable from HEAD
+#   - "unknown" - SHA not found in local repository
+# Also returns 0 on success, 1 if SHA is invalid/malformed
+correlate_commit() {
+    local sha="$1"
+
+    # Validate input
+    if [[ -z "$sha" || "$sha" == "unknown" ]]; then
+        echo "unknown"
+        return 0
+    fi
+
+    # Validate SHA format (7-40 hex characters)
+    if [[ ! "$sha" =~ ^[a-fA-F0-9]{7,40}$ ]]; then
+        echo "unknown"
+        return 1
+    fi
+
+    # Get current HEAD SHA for comparison
+    local head_sha
+    head_sha=$(git rev-parse HEAD 2>/dev/null) || {
+        echo "unknown"
+        return 1
+    }
+
+    # Normalize the input SHA to full form if it exists
+    local full_sha
+    full_sha=$(git rev-parse "$sha" 2>/dev/null) || true
+
+    # Check 1: Does the commit exist locally?
+    if ! git cat-file -t "$sha" &>/dev/null; then
+        echo "unknown"
+        return 0
+    fi
+
+    # Check 2: Is it exactly HEAD?
+    # Compare the full SHA forms
+    if [[ -n "$full_sha" && "$full_sha" == "$head_sha" ]]; then
+        echo "your_commit"
+        return 0
+    fi
+
+    # Check 3: Is it reachable from HEAD (an ancestor)?
+    if git merge-base --is-ancestor "$sha" HEAD 2>/dev/null; then
+        echo "in_history"
+        return 0
+    fi
+
+    # Commit exists but is not reachable from HEAD
+    echo "not_in_history"
+    return 0
+}
+
+# Get human-readable description of commit correlation status
+# Usage: describe_commit_correlation "status"
+# Returns: Human-readable description string
+describe_commit_correlation() {
+    local status="$1"
+
+    case "$status" in
+        your_commit)
+            echo "Your commit (HEAD)"
+            ;;
+        in_history)
+            echo "In your history (reachable from HEAD)"
+            ;;
+        not_in_history)
+            echo "Not in your history"
+            ;;
+        unknown|*)
+            echo "Unknown commit"
+            ;;
+    esac
+}
+
+# Get symbol for commit correlation status (for display)
+# Usage: get_correlation_symbol "status"
+# Returns: Symbol (checkmark or X)
+get_correlation_symbol() {
+    local status="$1"
+
+    case "$status" in
+        your_commit|in_history)
+            echo "✓"
+            ;;
+        not_in_history|unknown|*)
+            echo "✗"
+            ;;
+    esac
+}

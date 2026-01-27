@@ -194,7 +194,7 @@ This plan breaks down the checkbuild-spec.md into independent, implementable chu
 
 ## Chunk 8: Git Commit Correlation
 
-- [ ] **Implement git commit correlation logic**
+- [x] **Implement git commit correlation logic**
 
   **Scope:** Determine relationship between build's triggering commit and local git history.
 
