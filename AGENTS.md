@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) amd other agents lik
 
 This repository contains **jbuildmon** (Jenkins Build Monitor), a CLI tool that automates the developer workflow of committing code, pushing to a remote repository, and monitoring the resulting Jenkins CI/CD build until completion.
 
+## Detailed Specifications
+- see specs/README.md
 
 ## Building
 
