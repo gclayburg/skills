@@ -14,6 +14,8 @@ This repository contains **jbuildmon** (Jenkins Build Monitor), a CLI tool that 
 - Jenkins build server will build automatically on a git push to origin
 - JOB_NAME=ralph1
 
+## Testing
+- jbuildmon uses bats-core located at jbuildmon/test/bats/bin/bats
 
 ## Key Commands
 
