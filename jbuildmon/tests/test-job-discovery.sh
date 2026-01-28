@@ -146,7 +146,7 @@ EOF
 # Test: Git origin github SSH format
 # =============================================================================
 test_git_origin_github_ssh() {
-    run_test
+    ru n_test
     local repo="${TEST_DIR}/repo5"
     setup_test_repo "$repo"
 
