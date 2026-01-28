@@ -71,7 +71,11 @@ load 'test_helper'
 @test "TEST_TEMP_DIR is unique per test run" {
     # Spec: install-bats-core-spec.md, Section: Test Helper Configuration
     # Verify the temp dir path contains temp directory pattern
-    assert [[ "${TEST_TEMP_DIR}" == /tmp/* ]] || [[ "${TEST_TEMP_DIR}" == /var/folders/* ]]
+    # Use case statement for portable glob matching (works on dash/sh too)
+    case "${TEST_TEMP_DIR}" in
+        /tmp/*|/var/folders/*) true ;;
+        *) fail "TEST_TEMP_DIR '${TEST_TEMP_DIR}' is not in /tmp/* or /var/folders/*" ;;
+    esac
 }
 
 @test "PROJECT_DIR points to jbuildmon directory" {
