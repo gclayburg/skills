@@ -23,7 +23,7 @@ pipeline {
             }
             post {
                 always {
-                    junit 'jbuildmon/test-results.xml'
+                    junit skipPublishingChecks: true, testResults: 'jbuildmon/test-results.xml'
                 }
             }
         }
