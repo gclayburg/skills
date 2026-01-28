@@ -1,13 +1,16 @@
 # 
 
 ## specs for the project
-Individual *-spec.md files are considered the specification for what a feature is and what it needs to do.
+Individual *-spec.md files are considered the specification for what a feature is and what it needs to do.  These specifications represent the canonical view
+of what the corresponding parts of the application should do.  All new specs being created will never invalidate the older specs.  If there is a conflict, the specs must be updated so that no conflicts remain.
 
 - checkbuild-spec.md  checkbuild.sh shell script to check the current build status of git/Jenkins project from working directory
 - jenkins-build-monitor-spec.md  pushmon.sh shell script to push staged git changes to origin and monitor build status until complete.
+- install-bats-core-spec.md  install bats-core as unit testing framework
 
 ## helper prompts
 - taskcreator.md  instructions to create individual tasks from a spec file
+- chunk_template.md template chunk of implementation plan
 
 ## implementaiton plan 
 - Any file named *-plan.md or *_plan.md is an implementation plan that have rules for how they are updated
