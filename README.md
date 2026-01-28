@@ -31,3 +31,15 @@ claude 'study AGENTS.md README.md and specs/taskcreator.md  is there anything in
 ```
 
 repeat this prompt again after making edits.
+
+
+
+For bugs
+1. describe bug in claude prompt with all the detail we know.  ask claude to create a bug report with root cause analysis and save file in specs/bug#-thingthatbroke.md
+
+2. review document
+3. have claude create implementation plan, just like a spec:
+```bash
+claude 'use taskcreator.md to create an implementation plan for specs/build-tools-enhancement-spec.md'
+```
+

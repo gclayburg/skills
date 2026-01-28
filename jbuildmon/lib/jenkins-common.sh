@@ -570,16 +570,44 @@ extract_error_lines() {
 # Extract logs for a specific pipeline stage
 # Usage: extract_stage_logs "$console_output" "stage-name"
 # Returns: Console output lines for the specified stage
+#
+# This function correctly handles nested Pipeline blocks (e.g., dir, withEnv)
+# by tracking nesting depth. It only stops when the nesting depth returns to 0,
+# ensuring that post-stage actions (like junit) are included in the output.
 extract_stage_logs() {
     local console_output="$1"
     local stage_name="$2"
 
-    # Extract content between [Pipeline] { (StageName) and [Pipeline] }
+    # Extract content between [Pipeline] { (StageName) and matching [Pipeline] }
+    # Tracks nesting depth to handle nested Pipeline blocks
     echo "$console_output" | awk -v stage="$stage_name" '
-        BEGIN { in_stage=0 }
-        /\[Pipeline\] \{ \(/ && index($0, "(" stage ")") { in_stage=1; next }
-        /\[Pipeline\] \}/ && in_stage { in_stage=0; next }
-        in_stage { print }
+        BEGIN { nesting_depth=0 }
+        # Match stage start: [Pipeline] { (StageName)
+        /\[Pipeline\] \{ \(/ && index($0, "(" stage ")") {
+            nesting_depth=1
+            next
+        }
+        # Inside stage: track nested blocks and output lines
+        nesting_depth > 0 {
+            # Handle nested block start: [Pipeline] { (but not another stage start)
+            if (/\[Pipeline\] \{/ && !/\[Pipeline\] \{ \(/) {
+                nesting_depth++
+                print
+                next
+            }
+            # Handle block end: [Pipeline] }
+            if (/\[Pipeline\] \}/) {
+                nesting_depth--
+                if (nesting_depth == 0) {
+                    # Stage complete, stop processing
+                    exit
+                }
+                print
+                next
+            }
+            # Regular line inside stage
+            print
+        }
     '
 }
 
@@ -1147,8 +1175,18 @@ _display_nested_downstream() {
     done <<< "$downstream_builds"
 }
 
+# Constants for fallback behavior
+# Spec: bug1-jenkins-log-truncated-spec.md, Section: Fallback Behavior
+STAGE_LOG_MIN_LINES=5        # Minimum lines for extraction to be considered sufficient
+STAGE_LOG_FALLBACK_LINES=50  # Lines to show in fallback mode
+
 # Display error logs section for failure output
 # Usage: _display_error_logs "job_name" "build_number" "console_output"
+#
+# Implements fallback behavior when stage extraction produces insufficient output:
+# - If extracted logs have fewer than STAGE_LOG_MIN_LINES lines, triggers fallback
+# - Fallback shows last STAGE_LOG_FALLBACK_LINES lines with explanatory message
+# Spec: bug1-jenkins-log-truncated-spec.md, Section: Fallback Behavior
 _display_error_logs() {
     local job_name="$1"
     local build_number="$2"
@@ -1183,10 +1221,18 @@ _display_error_logs() {
             local stage_logs
             stage_logs=$(extract_stage_logs "$console_output" "$failed_stage")
 
-            if [[ -n "$stage_logs" ]]; then
+            # Check if extraction produced sufficient output
+            # Spec: bug1-jenkins-log-truncated-spec.md, Section: Fallback Behavior
+            local line_count
+            line_count=$(echo "$stage_logs" | wc -l | tr -d ' ')
+
+            if [[ -n "$stage_logs" ]] && [[ "$line_count" -ge "$STAGE_LOG_MIN_LINES" ]]; then
                 extract_error_lines "$stage_logs" 30
             else
-                extract_error_lines "$console_output" 30
+                # Fallback: extraction empty or insufficient
+                echo "${COLOR_YELLOW}Stage log extraction may be incomplete. Showing last ${STAGE_LOG_FALLBACK_LINES} lines:${COLOR_RESET}"
+                echo ""
+                echo "$console_output" | tail -"$STAGE_LOG_FALLBACK_LINES"
             fi
         else
             extract_error_lines "$console_output" 30

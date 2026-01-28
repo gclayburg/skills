@@ -7,7 +7,17 @@ Use this format for each chunk in an implementation plan.
 ## Template
 
 ```markdown
-- [ ] **Chunk N: <Chunk Title>**
+## Contents
+
+- [ ] **Chunk A: <Chunk A Title>**
+- [ ] **Chunk B: <Chunk B Title>**
+- [ ] **Chunk C: <Chunk C Title>**
+- [ ] **Chunk N: <Chunk N Title>**
+
+
+## Chunk Detail
+
+- [ ] **Chunk N: <Chunk N Title>**
 
 ### Description
 

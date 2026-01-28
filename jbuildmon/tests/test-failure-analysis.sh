@@ -303,7 +303,9 @@ else
     fail "extract_stage_logs function should be defined"
 fi
 
-# Test 16: extract_stage_logs extracts stage-specific logs
+# Test 16: extract_stage_logs extracts stage-specific logs with nested blocks
+# Test updated for bug1-jenkins-log-truncated-spec.md compliance
+# This test now uses nested Pipeline blocks to verify the fix for the truncation bug
 test_extract_stage_logs() {
     local console_output='[Pipeline] Start of Pipeline
 [Pipeline] { (Build)
@@ -311,19 +313,37 @@ Running build step 1
 Running build step 2
 [Pipeline] }
 [Pipeline] { (Test)
+[Pipeline] dir
+Running in /workspace
+[Pipeline] {
+[Pipeline] sh
++ ./run-tests.sh
 Running test step 1
 ERROR: Test failed
+[Pipeline] }
+[Pipeline] // dir
+Post stage cleanup
+[Pipeline] junit
+Recording test results
 [Pipeline] }
 [Pipeline] End of Pipeline'
 
     local result
     result=$(extract_stage_logs "$console_output" "Test")
 
-    if [[ "$result" == *"Running test step 1"* ]] && [[ "$result" == *"ERROR: Test failed"* ]]; then
-        pass "extract_stage_logs extracts logs for specified stage"
-    else
+    # Verify basic content is captured
+    if [[ "$result" != *"Running test step 1"* ]] || [[ "$result" != *"ERROR: Test failed"* ]]; then
         fail "extract_stage_logs should extract stage logs (got: $result)"
+        return
     fi
+
+    # Critical: Verify content AFTER nested block close is also captured (the bug fix)
+    if [[ "$result" != *"Post stage cleanup"* ]] || [[ "$result" != *"Recording test results"* ]]; then
+        fail "extract_stage_logs should include post-stage content after nested blocks (got: $result)"
+        return
+    fi
+
+    pass "extract_stage_logs extracts logs for specified stage including nested blocks"
 }
 test_extract_stage_logs
 
@@ -344,6 +364,53 @@ Building...
 }
 test_extract_stage_logs_not_found
 
+# Test 18: extract_stage_logs handles deeply nested blocks (bug1-jenkins-log-truncated-spec.md)
+# This test replicates the exact structure that caused the original truncation bug
+test_extract_stage_logs_deeply_nested() {
+    local console_output='[Pipeline] { (Unit Tests)
+[Pipeline] dir
+Running in /var/lib/jenkins/workspace/my-job
+[Pipeline] {
+[Pipeline] sh
++ ./test/bats/bin/bats --tap test/smoke.bats
+ok 1 smoke_test_passes
+ok 2 smoke_test_assert_success
+ok 3 smoke_test_assert_failure
++ true
+[Pipeline] }
+[Pipeline] // dir
+Post stage
+[Pipeline] junit
+Recording test results
+[Pipeline] }
+[Pipeline] { (Integration Tests)
+Starting integration tests...'
+
+    local result
+    result=$(extract_stage_logs "$console_output" "Unit Tests")
+
+    # Verify nested content is captured
+    if [[ "$result" != *"ok 1 smoke_test_passes"* ]]; then
+        fail "extract_stage_logs should include nested content (got: $result)"
+        return
+    fi
+
+    # Critical: Verify post-stage content after nested block closes (the bug fix)
+    if [[ "$result" != *"Post stage"* ]] || [[ "$result" != *"Recording test results"* ]]; then
+        fail "extract_stage_logs should include post-stage content (got: $result)"
+        return
+    fi
+
+    # Verify content from next stage is NOT included
+    if [[ "$result" == *"Starting integration tests"* ]]; then
+        fail "extract_stage_logs should NOT include next stage content (got: $result)"
+        return
+    fi
+
+    pass "extract_stage_logs correctly handles deeply nested blocks from bug report"
+}
+test_extract_stage_logs_deeply_nested
+
 echo ""
 
 # =============================================================================
@@ -351,14 +418,14 @@ echo ""
 # =============================================================================
 echo "--- Testing display_build_metadata ---"
 
-# Test 18: display_build_metadata function is defined
+# Test 19: display_build_metadata function is defined
 if declare -f display_build_metadata &>/dev/null; then
     pass "display_build_metadata function is defined"
 else
     fail "display_build_metadata function should be defined"
 fi
 
-# Test 19: display_build_metadata extracts user, agent, and pipeline
+# Test 20: display_build_metadata extracts user, agent, and pipeline
 test_display_build_metadata() {
     local console_output='Started by user jsmith
 Running on build-agent-01 in /var/jenkins/workspace
@@ -383,14 +450,14 @@ echo ""
 # =============================================================================
 echo "--- Testing analyze_failure ---"
 
-# Test 20: analyze_failure function is defined
+# Test 21: analyze_failure function is defined
 if declare -f analyze_failure &>/dev/null; then
     pass "analyze_failure function is defined"
 else
     fail "analyze_failure function should be defined"
 fi
 
-# Test 21: analyze_failure handles missing console output gracefully
+# Test 22: analyze_failure handles missing console output gracefully
 test_analyze_failure_no_console() {
     get_console_output() {
         echo ""

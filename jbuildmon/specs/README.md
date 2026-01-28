@@ -7,6 +7,7 @@ of what the corresponding parts of the application should do.  All new specs bei
 - checkbuild-spec.md  checkbuild.sh shell script to check the current build status of git/Jenkins project from working directory
 - jenkins-build-monitor-spec.md  pushmon.sh shell script to push staged git changes to origin and monitor build status until complete.
 - install-bats-core-spec.md  install bats-core as unit testing framework
+- bug1-jenkins-log-truncated-spec.md  fix for stage log truncation when displaying failure analysis
 
 ## helper prompts
 - taskcreator.md  instructions to create individual tasks from a spec file
