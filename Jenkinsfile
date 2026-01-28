@@ -2,6 +2,12 @@ pipeline {
     agent any
 
     stages {
+        stage('Initialize Submodules') {
+            steps {
+                sh 'git submodule update --init --recursive'
+            }
+        }
+
         stage('Build') {
             steps {
                 echo 'Building...'
@@ -9,10 +15,16 @@ pipeline {
             }
         }
 
-        stage('Test') {
+        stage('Unit Tests') {
             steps {
-                echo 'Testing...'
-                // sh './scripts/test.sh'
+                dir('jbuildmon') {
+                    sh './test/bats/bin/bats --formatter junit test/*.bats > test-results.xml || true'
+                }
+            }
+            post {
+                always {
+                    junit 'jbuildmon/test-results.xml'
+                }
             }
         }
 
