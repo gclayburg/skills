@@ -1,0 +1,12 @@
+[submodule "jbuildmon/test/bats"]
+	path = jbuildmon/test/bats
+	url = https://github.com/bats-core/bats-core.git
+[submodule "jbuildmon/test/test_helper/bats-support"]
+	path = jbuildmon/test/test_helper/bats-support
+	url = https://github.com/bats-core/bats-support.git
+[submodule "jbuildmon/test/test_helper/bats-assert"]
+	path = jbuildmon/test/test_helper/bats-assert
+	url = https://github.com/bats-core/bats-assert.git
+[submodule "jbuildmon/test/test_helper/bats-file"]
+	path = jbuildmon/test/test_helper/bats-file
+	url = https://github.com/bats-core/bats-file.git
