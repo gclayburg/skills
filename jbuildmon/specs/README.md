@@ -1,7 +1,17 @@
 # Specs/ directory: Specifications, Implementation Plans, and Bug fixes workflow
 
 ## Project Specs
-Individual *-spec.md files are considered the specification for what a feature is and what it needs to do.  These specifications represent the canonical view of what the corresponding parts of the application should do.  If there is a conflict between specs, they must be analyzed and updated so that no conflicts remain.
+
+Individual `*-spec.md` files are treated as the specification for each feature—they define what the feature is and what it must do. These specification files are the authoritative ("canonical") source of requirements for their parts of the application.
+
+If there are conflicting specifications, they must be reviewed and updated to resolve any discrepancies.
+
+**Specification template (include at top of each spec):**
+```
+# Title
+Date: YYYY-MM-DD
+```
+
 
 ### Spec and Bug index
 These files represent completed specifications in the specs/ directory.  This list should be updated when the specs are completed.
@@ -9,6 +19,7 @@ These files represent completed specifications in the specs/ directory.  This li
 - jenkins-build-monitor-spec.md  pushmon.sh shell script to push staged git changes to origin and monitor build status until complete.
 - install-bats-core-spec.md  install bats-core as unit testing framework
 - bug2026-01-28-jenkins-log-truncated-spec.md  fix for stage log truncation when displaying failure analysis
+- test-failure-display-spec.md  enhancement to display junit test failures in terminal output
 
 
 ## Helper Prompts
