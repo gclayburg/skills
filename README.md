@@ -11,12 +11,24 @@
 claude 'use taskcreator.md to create an implementation plan for specs/build-tools-enhancement-spec.md'
 ```
 
+OR
+
+```bash
+$ ./createchunks.sh specs/build-tools-enhancement-spec.md
+```
+
 6. Human verifies the plan.
 
 7. implement one task with unit test
 
 ```bash
 claude 'study  specs/build-tools-enhancements-plan.md . use your judgement to pick the highest priority task or chunk and build that.  do not ask questions, just do it.  When finished mark the chunk as completed in  specs/build-tools-enhancements-plan.md '
+```
+
+OR more directly
+
+```bash
+$ ./executeplan.sh specs/build-tools-enhancements-plan.md
 ```
 
 todo: figure out good sandbox to use unattended
@@ -34,12 +46,19 @@ repeat this prompt again after making edits.
 
 
 
-For bugs
+# Bugs
+
 1. describe bug in claude prompt with all the detail we know.  ask claude to create a bug report with root cause analysis and save file in specs/bug#-thingthatbroke.md
 
 2. review document
 3. have claude create implementation plan, just like a spec:
+
 ```bash
 claude 'use taskcreator.md to create an implementation plan for specs/build-tools-enhancement-spec.md'
 ```
 
+4. run this as many times as it takes to build all chunks:
+
+```bash
+claude 'study  specs/bug1-jenkins-log-truncated-plan.md . use your judgement to pick the highest priority task or chunk and build that.  do not ask questions, just do it.  When finished mark the chunk as completed in  specs/bug1-jenkins-log-truncated-plan.md '
+```
