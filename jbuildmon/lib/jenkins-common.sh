@@ -55,6 +55,16 @@ _init_colors() {
 _init_colors
 
 # =============================================================================
+# Test Results Configuration
+# =============================================================================
+# Configuration for test failure display (can be overridden via environment)
+# Spec: test-failure-display-spec.md, Section: Configuration
+
+: "${MAX_FAILED_TESTS_DISPLAY:=10}"  # Maximum failed tests to show in detail
+: "${MAX_ERROR_LINES:=5}"             # Maximum lines per error stack trace
+: "${MAX_ERROR_LENGTH:=500}"          # Maximum characters per error message
+
+# =============================================================================
 # Timestamp Function
 # =============================================================================
 
@@ -484,6 +494,313 @@ get_last_build_number() {
     else
         echo "0"
     fi
+}
+
+# =============================================================================
+# Test Results Functions
+# =============================================================================
+
+# Fetch test results from Jenkins test report API
+# Usage: fetch_test_results "job-name" "build-number"
+# Returns: JSON test report on success, empty string if not available
+# Spec: test-failure-display-spec.md, Section: Test Report Detection (1.1-1.2)
+fetch_test_results() {
+    local job_name="$1"
+    local build_number="$2"
+
+    local response
+    local http_code
+    local body
+
+    # Query the test report API
+    response=$(jenkins_api_with_status "/job/${job_name}/${build_number}/testReport/api/json")
+
+    # Split response into body and status code
+    http_code=$(echo "$response" | tail -1)
+    body=$(echo "$response" | sed '$d')
+
+    case "$http_code" in
+        200)
+            # Test report available - return the JSON
+            echo "$body"
+            ;;
+        404)
+            # No test report available - silently return empty
+            # This is expected for builds without junit results
+            echo ""
+            ;;
+        *)
+            # Other error - log warning and return empty
+            log_warning "Failed to fetch test results (HTTP $http_code)"
+            echo ""
+            ;;
+    esac
+}
+
+# Parse test report JSON and extract summary statistics
+# Usage: parse_test_summary "$test_report_json"
+# Returns: Four lines on stdout: total, passed, failed, skipped
+# Spec: test-failure-display-spec.md, Section: Summary Statistics (2.1)
+parse_test_summary() {
+    local test_json="$1"
+
+    # Handle empty or missing input
+    if [[ -z "$test_json" ]]; then
+        echo "0"
+        echo "0"
+        echo "0"
+        echo "0"
+        return 0
+    fi
+
+    # Extract counts using jq, defaulting to 0 for missing fields
+    local fail_count pass_count skip_count total_count
+    fail_count=$(echo "$test_json" | jq -r '.failCount // 0')
+    pass_count=$(echo "$test_json" | jq -r '.passCount // 0')
+    skip_count=$(echo "$test_json" | jq -r '.skipCount // 0')
+
+    # Handle case where jq returns "null" string
+    [[ "$fail_count" == "null" ]] && fail_count=0
+    [[ "$pass_count" == "null" ]] && pass_count=0
+    [[ "$skip_count" == "null" ]] && skip_count=0
+
+    # Calculate total
+    total_count=$((pass_count + fail_count + skip_count))
+
+    # Output four lines
+    echo "$total_count"
+    echo "$pass_count"
+    echo "$fail_count"
+    echo "$skip_count"
+}
+
+# Parse test report JSON and extract failed test details
+# Usage: parse_failed_tests "$test_report_json"
+# Returns: JSON array of failed test objects on stdout
+# Spec: test-failure-display-spec.md, Section: Failed Test Details (2.2-2.3)
+parse_failed_tests() {
+    local test_json="$1"
+
+    # Handle empty or missing input
+    if [[ -z "$test_json" ]]; then
+        echo "[]"
+        return 0
+    fi
+
+    # Use jq to extract failed tests with all required fields
+    # - Iterates through suites[].cases[]
+    # - Filters for status == "FAILED"
+    # - Extracts className, name, errorDetails, errorStackTrace, duration, age
+    # - Handles missing fields with defaults
+    # - Limits to MAX_FAILED_TESTS_DISPLAY
+    # - Truncates errorDetails to MAX_ERROR_LENGTH
+    local max_display="${MAX_FAILED_TESTS_DISPLAY:-10}"
+    local max_error_len="${MAX_ERROR_LENGTH:-500}"
+
+    echo "$test_json" | jq -r --argjson max_display "$max_display" --argjson max_error_len "$max_error_len" '
+        # Collect all failed tests from all suites
+        [.suites[]?.cases[]? | select(.status == "FAILED")] |
+
+        # Limit to max_display
+        .[:$max_display] |
+
+        # Transform each failed test
+        map({
+            className: (.className // "unknown"),
+            name: (.name // "unknown"),
+            errorDetails: (
+                if (.errorDetails // "") == "" and (.errorStackTrace // "") == "" then
+                    "No error details available"
+                elif (.errorDetails // "") != "" then
+                    (.errorDetails | tostring | .[:$max_error_len])
+                else
+                    null
+                end
+            ),
+            errorStackTrace: (.errorStackTrace // null),
+            duration: (.duration // 0),
+            age: (.age // 0)
+        })
+    '
+}
+
+# Display test results in human-readable format
+# Usage: display_test_results "$test_report_json"
+# Outputs: Formatted test results section to stdout
+# Spec: test-failure-display-spec.md, Section: Human-Readable Output (3.1-3.3)
+display_test_results() {
+    local test_json="$1"
+
+    # Handle empty input
+    if [[ -z "$test_json" ]]; then
+        return 0
+    fi
+
+    # Get summary statistics
+    local summary
+    summary=$(parse_test_summary "$test_json")
+
+    local total passed failed skipped
+    total=$(echo "$summary" | sed -n '1p')
+    passed=$(echo "$summary" | sed -n '2p')
+    failed=$(echo "$summary" | sed -n '3p')
+    skipped=$(echo "$summary" | sed -n '4p')
+
+    # Skip display if no tests at all
+    if [[ "$total" -eq 0 ]]; then
+        return 0
+    fi
+
+    # Get failed test details
+    local failed_tests
+    failed_tests=$(parse_failed_tests "$test_json")
+
+    # Count total failures in the original JSON (may be more than displayed)
+    local total_failures
+    total_failures=$(echo "$test_json" | jq -r '.failCount // 0')
+    [[ "$total_failures" == "null" ]] && total_failures=0
+
+    # Configuration
+    local max_display="${MAX_FAILED_TESTS_DISPLAY:-10}"
+    local max_error_lines="${MAX_ERROR_LINES:-5}"
+
+    # Display header
+    echo ""
+    echo "${COLOR_YELLOW}=== Test Results ===${COLOR_RESET}"
+
+    # Display summary line
+    echo "  Total: ${total} | Passed: ${passed} | Failed: ${failed} | Skipped: ${skipped}"
+
+    # Check if all tests passed but build still failed
+    if [[ "$failed" -eq 0 ]]; then
+        echo "  ${COLOR_CYAN}(All tests passed - failure may be from other causes)${COLOR_RESET}"
+        echo "${COLOR_YELLOW}====================${COLOR_RESET}"
+        return 0
+    fi
+
+    # Display failed tests header
+    echo ""
+    echo "  ${COLOR_RED}FAILED TESTS:${COLOR_RESET}"
+
+    # Process each failed test
+    local test_count
+    test_count=$(echo "$failed_tests" | jq 'length')
+
+    local i=0
+    while [[ $i -lt $test_count ]]; do
+        local class_name test_name error_details error_stack age
+
+        class_name=$(echo "$failed_tests" | jq -r ".[$i].className")
+        test_name=$(echo "$failed_tests" | jq -r ".[$i].name")
+        error_details=$(echo "$failed_tests" | jq -r ".[$i].errorDetails // empty")
+        error_stack=$(echo "$failed_tests" | jq -r ".[$i].errorStackTrace // empty")
+        age=$(echo "$failed_tests" | jq -r ".[$i].age // 0")
+
+        # Build test identifier line
+        local age_suffix=""
+        if [[ "$age" -gt 1 ]]; then
+            age_suffix=" ${COLOR_YELLOW}(failing for ${age} builds)${COLOR_RESET}"
+        fi
+
+        echo "  ${COLOR_RED}✗${COLOR_RESET} ${class_name}::${test_name}${age_suffix}"
+
+        # Display error details
+        if [[ -n "$error_details" && "$error_details" != "null" ]]; then
+            echo "    Error: ${error_details}"
+        fi
+
+        # Display stack trace (truncated to max lines)
+        if [[ -n "$error_stack" && "$error_stack" != "null" ]]; then
+            local line_count
+            line_count=$(echo "$error_stack" | wc -l | tr -d ' ')
+
+            if [[ "$line_count" -le "$max_error_lines" ]]; then
+                # Display all lines with indent
+                echo "$error_stack" | while IFS= read -r line; do
+                    echo "    ${line}"
+                done
+            else
+                # Display first max_error_lines lines with truncation indicator
+                echo "$error_stack" | head -"$max_error_lines" | while IFS= read -r line; do
+                    echo "    ${line}"
+                done
+                echo "    ..."
+            fi
+        fi
+
+        i=$((i + 1))
+    done
+
+    # Show count of additional failures if truncated
+    if [[ "$total_failures" -gt "$max_display" ]]; then
+        local remaining=$((total_failures - max_display))
+        echo "  ${COLOR_YELLOW}... and ${remaining} more failed tests${COLOR_RESET}"
+    fi
+
+    echo "${COLOR_YELLOW}====================${COLOR_RESET}"
+}
+
+# Format test results as JSON for machine-readable output
+# Usage: format_test_results_json "$test_report_json"
+# Returns: JSON object with test summary and failed tests, or empty string if no data
+# Spec: test-failure-display-spec.md, Section: JSON Output Enhancement (4.1-4.3)
+format_test_results_json() {
+    local test_json="$1"
+
+    # Handle empty input - return empty string (caller should omit field)
+    if [[ -z "$test_json" ]]; then
+        echo ""
+        return 0
+    fi
+
+    # Get summary statistics
+    local summary
+    summary=$(parse_test_summary "$test_json")
+
+    local total passed failed skipped
+    total=$(echo "$summary" | sed -n '1p')
+    passed=$(echo "$summary" | sed -n '2p')
+    failed=$(echo "$summary" | sed -n '3p')
+    skipped=$(echo "$summary" | sed -n '4p')
+
+    # Return empty if no tests at all
+    if [[ "$total" -eq 0 ]]; then
+        echo ""
+        return 0
+    fi
+
+    # Get failed test details as JSON array
+    local failed_tests_array
+    failed_tests_array=$(parse_failed_tests "$test_json")
+
+    # Transform the failed tests array to match expected JSON schema
+    # Converting: className -> class_name, name -> test_name, duration -> duration_seconds
+    local transformed_failed_tests
+    transformed_failed_tests=$(echo "$failed_tests_array" | jq '
+        map({
+            class_name: .className,
+            test_name: .name,
+            duration_seconds: .duration,
+            age: .age,
+            error_details: .errorDetails,
+            error_stack_trace: .errorStackTrace
+        })
+    ')
+
+    # Build the final JSON object
+    jq -n \
+        --argjson total "$total" \
+        --argjson passed "$passed" \
+        --argjson failed "$failed" \
+        --argjson skipped "$skipped" \
+        --argjson failed_tests "$transformed_failed_tests" \
+        '{
+            total: $total,
+            passed: $passed,
+            failed: $failed,
+            skipped: $skipped,
+            failed_tests: $failed_tests
+        }'
 }
 
 # =============================================================================
@@ -1075,6 +1392,14 @@ display_failure_output() {
     # Display failed jobs tree
     _display_failed_jobs_tree "$job_name" "$build_number" "$console_output"
 
+    # Display test results (between Failed Jobs and Error Logs per spec section 6)
+    # Spec: test-failure-display-spec.md, Section: Integration Points (5.1)
+    local test_results_json
+    test_results_json=$(fetch_test_results "$job_name" "$build_number")
+    if [[ -n "$test_results_json" ]]; then
+        display_test_results "$test_results_json"
+    fi
+
     # Display error logs
     _display_error_logs "$job_name" "$build_number" "$console_output"
 
@@ -1534,6 +1859,25 @@ output_json() {
             --argjson failure "$failure_json" \
             --argjson build_info "$build_info_json" \
             '. + {failure: $failure, build_info: $build_info}')
+    fi
+
+    # Add test results if available (for failed builds)
+    # Spec: test-failure-display-spec.md, Section: Integration Points (5.1)
+    # The test_results field appears after failure, before build_info in JSON
+    if [[ "$is_failed" == "true" ]]; then
+        local test_report_json
+        test_report_json=$(fetch_test_results "$job_name" "$build_number")
+
+        if [[ -n "$test_report_json" ]]; then
+            local test_results_formatted
+            test_results_formatted=$(format_test_results_json "$test_report_json")
+
+            if [[ -n "$test_results_formatted" ]]; then
+                json_output=$(echo "$json_output" | jq \
+                    --argjson test_results "$test_results_formatted" \
+                    '. + {test_results: $test_results}')
+            fi
+        fi
     fi
 
     echo "$json_output"

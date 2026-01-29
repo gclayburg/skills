@@ -1,0 +1,30 @@
+{
+  "failCount": 1,
+  "passCount": 32,
+  "skipCount": 0,
+  "suites": [
+    {
+      "name": "test_helper.bats",
+      "cases": [
+        {
+          "className": "test_helper.bats",
+          "name": "TEST_TEMP_DIR is unique per test run",
+          "status": "FAILED",
+          "duration": 0.045,
+          "age": 1,
+          "errorDetails": "[[: command not found",
+          "errorStackTrace": "(in test file test/test_helper.bats, line 74)\n`assert [[ \"${TEST_TEMP_DIR}\" == /tmp/* ]]' failed"
+        },
+        {
+          "className": "test_helper.bats",
+          "name": "passing test",
+          "status": "PASSED",
+          "duration": 0.012,
+          "age": 0,
+          "errorDetails": null,
+          "errorStackTrace": null
+        }
+      ]
+    }
+  ]
+}

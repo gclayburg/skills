@@ -1,0 +1,192 @@
+{
+  "failCount": 15,
+  "passCount": 5,
+  "skipCount": 0,
+  "suites": [
+    {
+      "name": "test_suite_1.bats",
+      "cases": [
+        {
+          "className": "test_suite_1.bats",
+          "name": "failing test 1",
+          "status": "FAILED",
+          "duration": 0.1,
+          "age": 1,
+          "errorDetails": "Error in test 1",
+          "errorStackTrace": "Stack trace for test 1"
+        },
+        {
+          "className": "test_suite_1.bats",
+          "name": "failing test 2",
+          "status": "FAILED",
+          "duration": 0.2,
+          "age": 2,
+          "errorDetails": "Error in test 2",
+          "errorStackTrace": "Stack trace for test 2"
+        },
+        {
+          "className": "test_suite_1.bats",
+          "name": "failing test 3",
+          "status": "FAILED",
+          "duration": 0.3,
+          "age": 3,
+          "errorDetails": "Error in test 3",
+          "errorStackTrace": "Stack trace for test 3"
+        },
+        {
+          "className": "test_suite_1.bats",
+          "name": "passing test 1",
+          "status": "PASSED",
+          "duration": 0.05,
+          "age": 0
+        },
+        {
+          "className": "test_suite_1.bats",
+          "name": "failing test 4",
+          "status": "FAILED",
+          "duration": 0.4,
+          "age": 1,
+          "errorDetails": "Error in test 4",
+          "errorStackTrace": "Stack trace for test 4"
+        },
+        {
+          "className": "test_suite_1.bats",
+          "name": "failing test 5",
+          "status": "FAILED",
+          "duration": 0.5,
+          "age": 1,
+          "errorDetails": "Error in test 5",
+          "errorStackTrace": "Stack trace for test 5"
+        }
+      ]
+    },
+    {
+      "name": "test_suite_2.bats",
+      "cases": [
+        {
+          "className": "test_suite_2.bats",
+          "name": "failing test 6",
+          "status": "FAILED",
+          "duration": 0.6,
+          "age": 1,
+          "errorDetails": "Error in test 6",
+          "errorStackTrace": "Stack trace for test 6"
+        },
+        {
+          "className": "test_suite_2.bats",
+          "name": "failing test 7",
+          "status": "FAILED",
+          "duration": 0.7,
+          "age": 1,
+          "errorDetails": "Error in test 7",
+          "errorStackTrace": "Stack trace for test 7"
+        },
+        {
+          "className": "test_suite_2.bats",
+          "name": "passing test 2",
+          "status": "PASSED",
+          "duration": 0.05,
+          "age": 0
+        },
+        {
+          "className": "test_suite_2.bats",
+          "name": "failing test 8",
+          "status": "FAILED",
+          "duration": 0.8,
+          "age": 2,
+          "errorDetails": "Error in test 8",
+          "errorStackTrace": "Stack trace for test 8"
+        },
+        {
+          "className": "test_suite_2.bats",
+          "name": "failing test 9",
+          "status": "FAILED",
+          "duration": 0.9,
+          "age": 1,
+          "errorDetails": "Error in test 9",
+          "errorStackTrace": "Stack trace for test 9"
+        },
+        {
+          "className": "test_suite_2.bats",
+          "name": "failing test 10",
+          "status": "FAILED",
+          "duration": 1.0,
+          "age": 1,
+          "errorDetails": "Error in test 10",
+          "errorStackTrace": "Stack trace for test 10"
+        }
+      ]
+    },
+    {
+      "name": "test_suite_3.bats",
+      "cases": [
+        {
+          "className": "test_suite_3.bats",
+          "name": "failing test 11",
+          "status": "FAILED",
+          "duration": 1.1,
+          "age": 1,
+          "errorDetails": "Error in test 11",
+          "errorStackTrace": "Stack trace for test 11"
+        },
+        {
+          "className": "test_suite_3.bats",
+          "name": "failing test 12",
+          "status": "FAILED",
+          "duration": 1.2,
+          "age": 5,
+          "errorDetails": "Error in test 12",
+          "errorStackTrace": "Stack trace for test 12"
+        },
+        {
+          "className": "test_suite_3.bats",
+          "name": "passing test 3",
+          "status": "PASSED",
+          "duration": 0.05,
+          "age": 0
+        },
+        {
+          "className": "test_suite_3.bats",
+          "name": "passing test 4",
+          "status": "PASSED",
+          "duration": 0.05,
+          "age": 0
+        },
+        {
+          "className": "test_suite_3.bats",
+          "name": "failing test 13",
+          "status": "FAILED",
+          "duration": 1.3,
+          "age": 1,
+          "errorDetails": "Error in test 13",
+          "errorStackTrace": "Stack trace for test 13"
+        },
+        {
+          "className": "test_suite_3.bats",
+          "name": "failing test 14",
+          "status": "FAILED",
+          "duration": 1.4,
+          "age": 1,
+          "errorDetails": "Error in test 14",
+          "errorStackTrace": "Stack trace for test 14"
+        },
+        {
+          "className": "test_suite_3.bats",
+          "name": "failing test 15",
+          "status": "FAILED",
+          "duration": 1.5,
+          "age": 1,
+          "errorDetails": "Error in test 15",
+          "errorStackTrace": "Stack trace for test 15"
+        },
+        {
+          "className": "test_suite_3.bats",
+          "name": "passing test 5",
+          "status": "PASSED",
+          "duration": 0.05,
+          "age": 0
+        }
+      ]
+    }
+  ]
+}

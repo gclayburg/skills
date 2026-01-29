@@ -1,0 +1,19 @@
+{
+  "failCount": 0,
+  "passCount": 33,
+  "skipCount": 0,
+  "suites": [
+    {
+      "name": "test_helper.bats",
+      "cases": [
+        {
+          "className": "test_helper.bats",
+          "name": "test 1",
+          "status": "PASSED",
+          "duration": 0.01,
+          "age": 0
+        }
+      ]
+    }
+  ]
+}
