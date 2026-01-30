@@ -7,7 +7,7 @@ load test_helper
 
 # Spec reference: Verification - basic test passes
 @test "smoke_test_passes" {
-    ru n true
+    run true
     assert_success
 }
 
