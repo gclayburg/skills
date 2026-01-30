@@ -22,6 +22,7 @@ This repository contains **jbuildmon** (Jenkins Build Monitor), a CLI tool that 
 
 ## Testing
 - jbuildmon uses bats-core located at jbuildmon/test/bats/bin/bats
+- IMPORTANT: The the bats command for running tests is located in this repository at path jbuildmon/test/bats/bin/bats.  It is NOT located in your $PATH
 
 ## Key Commands
 

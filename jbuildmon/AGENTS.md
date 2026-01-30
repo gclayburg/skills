@@ -13,5 +13,5 @@ When asked to work on a chunk from an implementation plan (`*-plan.md` file):
 5. **If truly blocked, report why.** If a chunk genuinely cannot be completed (e.g., credentials missing, service unreachable), report the specific error encountered—not a preemptive assumption that it won't work.
 
 ## Testing
-- jbuildmon uses bats-core located at jbuildmon/test/bats/bin/bats
-
+- jbuildmon uses bats-core located at test/bats/bin/bats
+- IMPORTANT: to run the bats command you must use the full path of test/bats/bin/bats
