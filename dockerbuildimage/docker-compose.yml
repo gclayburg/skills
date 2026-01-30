@@ -1,0 +1,9 @@
+services:
+  jenkins-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: registry:5000/shell-jenkins-agent:latest
+    volumes:
+      - .:/workspace
+    working_dir: /workspace

@@ -1,5 +1,9 @@
 pipeline {
-    agent any
+    agent {
+        docker {
+            image 'registry:5000/shell-jenkins-agent:latest'
+        }
+    }
 
     stages {
         stage('Initialize Submodules') {
