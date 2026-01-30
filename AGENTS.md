@@ -9,10 +9,16 @@ This repository contains **jbuildmon** (Jenkins Build Monitor), a CLI tool that 
 ## Detailed Specifications
 - see specs/README.md
 
-## Building
+## Building on Jenkins CI server
 
 - Jenkins build server will build automatically on a git push to origin
+- There is one Jenkins pipeline job for this repo.  It is not a multibranch pipeline job.
 - JOB_NAME=ralph1
+- You have env variables that represent the credentials for Jenkins.
+  - JENKINS_URL
+  - JENKINS_USER_ID
+  - JENKINS_API_TOKEN
+- These credentials give you read only access to this Jenkins job.
 
 ## Testing
 - jbuildmon uses bats-core located at jbuildmon/test/bats/bin/bats
