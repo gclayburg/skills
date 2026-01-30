@@ -984,6 +984,14 @@ analyze_failure() {
     # Display build metadata (user, agent, pipeline) for failure context
     display_build_metadata "$console_output"
 
+    # Display test results if available
+    # Spec: test-failure-display-spec.md, Section: Integration Points (5.1)
+    local test_results_json
+    test_results_json=$(fetch_test_results "$job_name" "$build_number")
+    if [[ -n "$test_results_json" ]]; then
+        display_test_results "$test_results_json"
+    fi
+
     # Check for downstream build failure
     # For parallel stages, find the specific downstream build that failed
     local downstream
