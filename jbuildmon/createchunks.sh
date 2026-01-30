@@ -28,6 +28,6 @@ if [ -f "$PLAN_FILE" ]; then
     fi
 fi
 
-CMD="claude 'use $SPECS_DIR/taskcreator.md to create an implementation plan for $SPEC_FILE  '"
+CMD="sherlock claude 'use $SPECS_DIR/taskcreator.md to create an implementation plan for $SPEC_FILE  '"
 echo "$CMD"
 eval "$CMD"

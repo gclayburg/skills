@@ -21,6 +21,7 @@ These files represent completed specifications in the specs/ directory.  This li
 - bug2026-01-28-jenkins-log-truncated-spec.md  fix for stage log truncation when displaying failure analysis
 - test-failure-display-spec.md  enhancement to display junit test failures in terminal output
 - bug2026-01-28-test-case-failure-not-shown-spec.md  fix for empty FAILED TESTS section when jq query doesn't match Jenkins API structure
+- fixjobflags-spec.md  unify job name handling with auto-detection and --job flag for pushmon.sh and checkbuild.sh
 
 
 ## Helper Prompts

@@ -8,7 +8,8 @@
 # change or by someone else.
 #
 # Usage:
-#   checkbuild [--json]
+#   checkbuild [OPTIONS]
+#   checkbuild --job <job> [--json]
 #
 # Exit Codes:
 #   0 - Last build was successful
@@ -34,10 +35,19 @@ RETRY_DELAY=2
 # =============================================================================
 
 parse_arguments() {
+    JOB_NAME=""
     JSON_OUTPUT_MODE=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            -j|--job)
+                if [[ -z "${2:-}" ]]; then
+                    log_error "Option $1 requires a job name"
+                    exit 1
+                fi
+                JOB_NAME="$2"
+                shift 2
+                ;;
             --json)
                 JSON_OUTPUT_MODE=true
                 shift
@@ -54,18 +64,24 @@ parse_arguments() {
         esac
     done
 
+    export JOB_NAME
     export JSON_OUTPUT_MODE
 }
 
 show_usage() {
     cat <<EOF
-Usage: checkbuild [--json]
+Usage: checkbuild [OPTIONS]
 
 Query Jenkins for the current build status of this repository's job.
 
 Options:
-  --json    Output results in JSON format for machine parsing
-  --help    Show this help message
+  -j, --job <job>   Specify Jenkins job name (overrides auto-detection)
+  --json            Output results in JSON format for machine parsing
+  -h, --help        Show this help message
+
+If --job is not specified, the job name is auto-detected from:
+  1. JOB_NAME=<value> in AGENTS.md
+  2. Git origin URL
 
 Required Environment Variables:
   JENKINS_URL        Base URL of the Jenkins server
@@ -160,13 +176,22 @@ main() {
     # Run startup validation
     startup_validation
 
-    # Discover job name
-    log_info "Discovering Jenkins job name..."
+    # Resolve job name
     local job_name
-    if ! job_name=$(discover_job_name); then
-        exit 1
+    if [[ -n "$JOB_NAME" ]]; then
+        job_name="$JOB_NAME"
+        log_info "Using specified job: $job_name"
+    else
+        log_info "Discovering Jenkins job name..."
+        if ! job_name=$(discover_job_name); then
+            log_error "Could not determine Jenkins job name"
+            log_info "To fix this, either:"
+            log_info "  1. Add JOB_NAME=<job-name> to AGENTS.md in your repository root"
+            log_info "  2. Use the --job <job> or -j <job> flag"
+            exit 1
+        fi
+        log_success "Job name: $job_name"
     fi
-    log_success "Job name: $job_name"
 
     # Verify Jenkins connectivity
     if ! verify_jenkins_connection; then

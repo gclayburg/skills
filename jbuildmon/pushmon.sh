@@ -51,11 +51,16 @@ trap cleanup SIGINT SIGTERM
 # =============================================================================
 usage() {
     cat <<EOF
-Usage: $(basename "$0") <job-name> <commit-message>
+Usage: $(basename "$0") [OPTIONS]
 
-Arguments:
-  job-name        The exact name of the Jenkins job to monitor
-  commit-message  The git commit message for staged changes
+Options:
+  -j, --job <job>     Specify Jenkins job name (overrides auto-detection)
+  -m, --msg <message> Git commit message (required if staged changes exist)
+  -h, --help          Show this help message
+
+If --job is not specified, the job name is auto-detected from:
+  1. JOB_NAME=<value> in AGENTS.md
+  2. Git origin URL
 
 Required Environment Variables:
   JENKINS_URL       Base URL of the Jenkins server
@@ -70,14 +75,41 @@ EOF
 }
 
 # =============================================================================
-# Argument Validation (see spec: Section 1 - Startup Validation)
+# Argument Parsing (see spec: fixjobflags-spec.md Section 3)
 # =============================================================================
-validate_arguments() {
-    if [[ $# -lt 2 ]]; then
-        log_error "Missing required arguments"
-        usage
-        exit 1
-    fi
+parse_arguments() {
+    JOB_NAME=""
+    COMMIT_MESSAGE=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -j|--job)
+                if [[ -z "${2:-}" ]]; then
+                    log_error "Option $1 requires a job name"
+                    exit 1
+                fi
+                JOB_NAME="$2"
+                shift 2
+                ;;
+            -m|--msg)
+                if [[ -z "${2:-}" ]]; then
+                    log_error "Option $1 requires a commit message"
+                    exit 1
+                fi
+                COMMIT_MESSAGE="$2"
+                shift 2
+                ;;
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                usage
+                exit 1
+                ;;
+        esac
+    done
 }
 
 # =============================================================================
@@ -374,16 +406,30 @@ display_config_summary() {
 # Main Execution Flow (see spec: Phase 10)
 # =============================================================================
 main() {
-    # Validate arguments
-    validate_arguments "$@"
-
-    local job_name="$1"
-    local commit_message="$2"
+    # Parse arguments
+    parse_arguments "$@"
 
     # Validate environment and dependencies (library functions return 1 on failure)
     validate_environment || exit 1
     validate_dependencies || exit 1
     validate_git_repository || exit 1
+
+    # Resolve job name
+    local job_name
+    if [[ -n "$JOB_NAME" ]]; then
+        job_name="$JOB_NAME"
+        log_info "Using specified job: $job_name"
+    else
+        log_info "Discovering Jenkins job name..."
+        if ! job_name=$(discover_job_name); then
+            log_error "Could not determine Jenkins job name"
+            log_info "To fix this, either:"
+            log_info "  1. Add JOB_NAME=<job-name> to AGENTS.md in your repository root"
+            log_info "  2. Use the --job <job> or -j <job> flag"
+            exit 1
+        fi
+        log_success "Job name: $job_name"
+    fi
 
     # Display configuration
     display_config_summary "$job_name"
@@ -395,8 +441,15 @@ main() {
     # Git operations
     check_for_changes
 
+    # Validate commit message for staged changes
+    if [[ "$HAS_STAGED_CHANGES" == true && -z "$COMMIT_MESSAGE" ]]; then
+        log_error "Staged changes found but no commit message provided"
+        log_info "Use -m or --msg to specify a commit message"
+        exit 1
+    fi
+
     if [[ "$HAS_STAGED_CHANGES" == true ]]; then
-        commit_changes "$commit_message"
+        commit_changes "$COMMIT_MESSAGE"
     fi
 
     sync_with_remote
