@@ -15,3 +15,4 @@ When asked to work on a chunk from an implementation plan (`*-plan.md` file):
 ## Testing
 - jbuildmon uses bats-core located at test/bats/bin/bats
 - IMPORTANT: to run the bats command you must use the full path of test/bats/bin/bats
+
