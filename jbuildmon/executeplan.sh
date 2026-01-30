@@ -23,7 +23,7 @@ if [[ ! "$PLAN_FILE" =~ -plan\.md$ ]]; then
 fi
 
 
-CMD="claude 'study $PLAN_FILE . use your judgement to pick the highest priority task or chunk and build that.  do not ask questions, just do it.  When finished mark the chunk as completed in $PLAN_FILE and report how many non-completed chunks remain in $PLAN_FILE '"
+CMD="sherlock claude 'study $PLAN_FILE . use your judgement to pick the highest priority task or chunk and build that one chunk.  Only build one chunk.  When finished mark the chunk as completed in $PLAN_FILE and report how many non-completed chunks remain in $PLAN_FILE '"
 
 echo "$CMD"
 eval "$CMD"

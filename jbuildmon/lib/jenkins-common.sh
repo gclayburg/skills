@@ -598,8 +598,15 @@ parse_failed_tests() {
     local max_error_len="${MAX_ERROR_LENGTH:-500}"
 
     echo "$test_json" | jq -r --argjson max_display "$max_display" --argjson max_error_len "$max_error_len" '
-        # Collect all failed tests from all suites
-        [.suites[]?.cases[]? | select(.status == "FAILED")] |
+        # Collect failed tests from BOTH direct suites path AND childReports path
+        # This handles both freestyle jobs (.suites[].cases[]) and pipeline jobs (.childReports[].result.suites[].cases[])
+        (
+            [.suites[]?.cases[]? | select(.status == "FAILED")] +
+            [.childReports[]?.result?.suites[]?.cases[]? | select(.status == "FAILED")]
+        ) |
+
+        # Remove duplicates (in case both paths exist)
+        unique_by(.className + .name) |
 
         # Limit to max_display
         .[:$max_display] |

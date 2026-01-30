@@ -1112,3 +1112,166 @@ Line 8 of stack trace"
     # But other failure fields should exist
     echo "$output" | jq -e 'has("failure")' >/dev/null || fail "failure field should exist"
 }
+
+# =============================================================================
+# Chunk A: childReports Fixture Validation Tests
+# Spec: bug2026-01-28-test-case-failure-not-shown-spec.md
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Test Case: childReports fixture is valid JSON
+# Spec: bug2026-01-28-test-case-failure-not-shown-spec.md, Section: Test Fixture
+# -----------------------------------------------------------------------------
+@test "childreports_fixture_is_valid_json" {
+    # Verify fixture file exists and is valid JSON
+    run jq . "${FIXTURES_DIR}/test_report_childreports.json"
+    assert_success
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: childReports fixture has required fields
+# Spec: bug2026-01-28-test-case-failure-not-shown-spec.md, Section: Test Fixture
+# -----------------------------------------------------------------------------
+@test "childreports_fixture_has_required_fields" {
+    local fixture_json
+    fixture_json=$(cat "${FIXTURES_DIR}/test_report_childreports.json")
+
+    # Verify top-level counts exist
+    echo "$fixture_json" | jq -e 'has("failCount")' >/dev/null
+    echo "$fixture_json" | jq -e 'has("passCount")' >/dev/null
+    echo "$fixture_json" | jq -e 'has("skipCount")' >/dev/null
+
+    # Verify childReports structure exists
+    echo "$fixture_json" | jq -e 'has("childReports")' >/dev/null
+    echo "$fixture_json" | jq -e '.childReports | type == "array"' >/dev/null
+    echo "$fixture_json" | jq -e '.childReports | length > 0' >/dev/null
+
+    # Verify nested result structure
+    echo "$fixture_json" | jq -e '.childReports[0] | has("result")' >/dev/null
+    echo "$fixture_json" | jq -e '.childReports[0].result | has("suites")' >/dev/null
+    echo "$fixture_json" | jq -e '.childReports[0].result.suites[0] | has("cases")' >/dev/null
+
+    # Verify at least one FAILED test exists with error info
+    echo "$fixture_json" | jq -e '.childReports[0].result.suites[0].cases[] | select(.status == "FAILED") | has("errorStackTrace")' >/dev/null
+}
+
+# =============================================================================
+# Chunk B: parse_failed_tests() childReports Structure Tests
+# Spec: bug2026-01-28-test-case-failure-not-shown-spec.md
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Test Case: parse_failed_tests handles childReports structure
+# Spec: bug2026-01-28-test-case-failure-not-shown-spec.md, Section: Unit Tests
+# -----------------------------------------------------------------------------
+@test "parse_failed_tests_handles_childreports_structure" {
+    local fixture_json
+    fixture_json=$(cat "${FIXTURES_DIR}/test_report_childreports.json")
+
+    run parse_failed_tests "$fixture_json"
+    assert_success
+
+    # Verify output is a JSON array with one failed test
+    local count
+    count=$(echo "$output" | jq 'length')
+    [[ "$count" -eq 1 ]] || fail "Expected 1 failed test from childReports, got $count"
+
+    # Verify the failed test was extracted correctly
+    echo "$output" | jq -e '.[0].className == "smoke.bats"' >/dev/null
+    echo "$output" | jq -e '.[0].name == "test_name"' >/dev/null
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: parse_failed_tests extracts stacktrace from childReports
+# Spec: bug2026-01-28-test-case-failure-not-shown-spec.md, Section: Unit Tests
+# -----------------------------------------------------------------------------
+@test "parse_failed_tests_extracts_stacktrace_from_childreports" {
+    local fixture_json
+    fixture_json=$(cat "${FIXTURES_DIR}/test_report_childreports.json")
+
+    run parse_failed_tests "$fixture_json"
+    assert_success
+
+    # Verify errorStackTrace was extracted
+    echo "$output" | jq -e '.[0].errorStackTrace != null' >/dev/null
+    echo "$output" | jq -e '.[0].errorStackTrace | contains("smoke.bats")' >/dev/null
+    echo "$output" | jq -e '.[0].errorStackTrace | contains("line 10")' >/dev/null
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: parse_failed_tests handles mixed structures
+# Spec: bug2026-01-28-test-case-failure-not-shown-spec.md, Section: Unit Tests
+# -----------------------------------------------------------------------------
+@test "parse_failed_tests_handles_mixed_structures" {
+    # Create JSON with both direct suites and childReports
+    local test_json='{
+        "failCount": 2,
+        "passCount": 5,
+        "skipCount": 0,
+        "suites": [{
+            "name": "direct.bats",
+            "cases": [{
+                "className": "direct.bats",
+                "name": "direct test failure",
+                "status": "FAILED",
+                "duration": 0.1,
+                "age": 1,
+                "errorDetails": "Direct error"
+            }]
+        }],
+        "childReports": [{
+            "result": {
+                "suites": [{
+                    "name": "child.bats",
+                    "cases": [{
+                        "className": "child.bats",
+                        "name": "child test failure",
+                        "status": "FAILED",
+                        "duration": 0.2,
+                        "age": 1,
+                        "errorDetails": "Child error"
+                    }]
+                }]
+            }
+        }]
+    }'
+
+    run parse_failed_tests "$test_json"
+    assert_success
+
+    # Should find both failures
+    local count
+    count=$(echo "$output" | jq 'length')
+    [[ "$count" -eq 2 ]] || fail "Expected 2 failed tests from mixed structure, got $count"
+
+    # Verify both tests are present
+    echo "$output" | jq -e 'any(.[]; .className == "direct.bats")' >/dev/null || fail "Missing direct.bats failure"
+    echo "$output" | jq -e 'any(.[]; .className == "child.bats")' >/dev/null || fail "Missing child.bats failure"
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: display_test_results shows childReports failures
+# Spec: bug2026-01-28-test-case-failure-not-shown-spec.md, Section: Integration Test
+# -----------------------------------------------------------------------------
+@test "display_test_results_shows_childreports_failures" {
+    local fixture_json
+    fixture_json=$(cat "${FIXTURES_DIR}/test_report_childreports.json")
+
+    # Disable colors for testing
+    export NO_COLOR=1
+    unset _JENKINS_COMMON_LOADED
+    source "${PROJECT_DIR}/lib/jenkins-common.sh"
+
+    run display_test_results "$fixture_json"
+    assert_success
+
+    # Should show the test summary
+    assert_output --partial "=== Test Results ==="
+    assert_output --partial "Total: 33 | Passed: 32 | Failed: 1"
+
+    # Should show the failed test from childReports
+    assert_output --partial "smoke.bats::test_name"
+
+    # Should show the stack trace content
+    assert_output --partial "smoke.bats"
+}

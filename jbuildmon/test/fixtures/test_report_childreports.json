@@ -1,0 +1,39 @@
+{
+  "failCount": 1,
+  "passCount": 32,
+  "skipCount": 0,
+  "childReports": [
+    {
+      "result": {
+        "failCount": 1,
+        "passCount": 32,
+        "skipCount": 0,
+        "suites": [
+          {
+            "name": "smoke.bats",
+            "cases": [
+              {
+                "className": "smoke.bats",
+                "name": "test_name",
+                "status": "FAILED",
+                "duration": 0.045,
+                "age": 1,
+                "errorDetails": "ru n true' failed with status 127",
+                "errorStackTrace": "(in test file test/smoke.bats, line 10)\n`ru n true' failed with status 127\n/home/jenkins/workspace/ralph1/jbuildmon/test/smoke.bats: line 10: ru: command not found"
+              },
+              {
+                "className": "smoke.bats",
+                "name": "passing test",
+                "status": "PASSED",
+                "duration": 0.012,
+                "age": 0,
+                "errorDetails": null,
+                "errorStackTrace": null
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
