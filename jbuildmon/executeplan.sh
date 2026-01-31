@@ -22,8 +22,13 @@ if [[ ! "$PLAN_FILE" =~ -plan\.md$ ]]; then
     exit 1
 fi
 
+PROMPT="study $PLAN_FILE .
+use your judgement to pick the highest priority task or chunk and build that one chunk.
+Only build one chunk.
+When finished, mark the chunk as completed in $PLAN_FILE and report how many (n) non-completed chunks remain in $PLAN_FILE like this: <REMAINING>n</REMAINING>.
+If there are 0 non-completed chunks, print this on the last line of the output: <REMAINING>0</REMAINING>."
 
-CMD="sherlock claude 'study $PLAN_FILE . use your judgement to pick the highest priority task or chunk and build that one chunk.  Only build one chunk.  When finished mark the chunk as completed in $PLAN_FILE and report how many non-completed chunks remain in $PLAN_FILE '"
+CMD="sherlock claude '$PROMPT'"
 
 echo "$CMD"
 eval "$CMD"
