@@ -28,7 +28,9 @@ Only build one chunk.
 When finished, mark the chunk as completed in $PLAN_FILE and report how many (n) non-completed chunks remain in $PLAN_FILE like this: <REMAINING>n</REMAINING>.
 If there are 0 non-completed chunks, print this on the last line of the output: <REMAINING>0</REMAINING>."
 
-CMD="sherlock claude '$PROMPT'"
+#CMD="sherlock claude --dangerously-skip-permissions '$PROMPT'"
+CMD="claude --dangerously-skip-permissions '$PROMPT'"
+#CMD="sherlock claude '$PROMPT'"
 
 echo "$CMD"
 eval "$CMD"

@@ -1066,7 +1066,7 @@ analyze_failure() {
 # Detect trigger type from console output
 # Usage: detect_trigger_type "$console_output"
 # Returns: Outputs two lines: type ("automated" or "manual") and username
-#          Returns 1 if trigger cannot be determined
+#          Returns 0 always; outputs 'unknown' if trigger cannot be determined
 detect_trigger_type() {
     local console_output="$1"
 
@@ -1091,7 +1091,7 @@ detect_trigger_type() {
         fi
         echo "unknown"
         echo "unknown"
-        return 1
+        return 0
     fi
 
     # Extract username
@@ -1669,7 +1669,7 @@ display_building_output() {
 #   - "in_history" - SHA is an ancestor of HEAD (in your history)
 #   - "not_in_history" - SHA exists locally but not reachable from HEAD
 #   - "unknown" - SHA not found in local repository
-# Also returns 0 on success, 1 if SHA is invalid/malformed
+# Always returns 0; outputs 'unknown' for invalid/malformed SHA or git failures
 correlate_commit() {
     local sha="$1"
 
@@ -1682,14 +1682,14 @@ correlate_commit() {
     # Validate SHA format (7-40 hex characters)
     if [[ ! "$sha" =~ ^[a-fA-F0-9]{7,40}$ ]]; then
         echo "unknown"
-        return 1
+        return 0
     fi
 
     # Get current HEAD SHA for comparison
     local head_sha
     head_sha=$(git rev-parse HEAD 2>/dev/null) || {
         echo "unknown"
-        return 1
+        return 0
     }
 
     # Normalize the input SHA to full form if it exists
