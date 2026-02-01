@@ -25,7 +25,7 @@ fi
 PROMPT="study $PLAN_FILE .
 use your judgement to pick the highest priority task or chunk and build that one chunk.
 Only build one chunk.
-When finished, mark the chunk as completed in $PLAN_FILE and report how many (n) non-completed chunks remain in $PLAN_FILE.  The final line of your output should only this text: <REMAINING>n</REMAINING>."
+When finished, mark the chunk as completed in $PLAN_FILE and report how many (n) non-completed chunks remain in $PLAN_FILE.  The final line of your output should only this text: \"<REMAINING>n<REMAINING>\"."
 
 #CMD="sherlock claude --dangerously-skip-permissions '$PROMPT'"
 CMD="claude --dangerously-skip-permissions '$PROMPT'"

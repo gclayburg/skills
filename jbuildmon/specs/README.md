@@ -22,6 +22,7 @@ These files represent completed specifications in the specs/ directory.  This li
 - test-failure-display-spec.md  enhancement to display junit test failures in terminal output
 - bug2026-01-28-test-case-failure-not-shown-spec.md  fix for empty FAILED TESTS section when jq query doesn't match Jenkins API structure
 - fixjobflags-spec.md  unify job name handling with auto-detection and --job flag for pushmon.sh and checkbuild.sh
+- buildgit-spec.md  combined git and Jenkins build tool (status, push, build commands)
 
 
 ## Helper Prompts
