@@ -12,9 +12,9 @@
 - [x] **Chunk 3: Command routing and git passthrough**
 - [x] **Chunk 4: Status command - basic functionality**
 - [x] **Chunk 5: Status command - follow mode**
-- [ ] **Chunk 6: Push command**
-- [ ] **Chunk 7: Build command (trigger and monitor)**
-- [ ] **Chunk 8: Error handling and edge cases**
+- [x] **Chunk 6: Push command**
+- [x] **Chunk 7: Build command (trigger and monitor)**
+- [x] **Chunk 8: Error handling and edge cases**
 
 ---
 
@@ -351,7 +351,7 @@ See spec [`buildgit status` Options](./buildgit-spec.md#buildgit-status) - the `
 
 ---
 
-- [ ] **Chunk 6: Push command**
+- [x] **Chunk 6: Push command**
 
 ### Description
 
@@ -420,7 +420,7 @@ See spec [`buildgit push`](./buildgit-spec.md#buildgit-push).
 
 ---
 
-- [ ] **Chunk 7: Build command (trigger and monitor)**
+- [x] **Chunk 7: Build command (trigger and monitor)**
 
 ### Description
 
@@ -496,7 +496,7 @@ See spec [`buildgit build`](./buildgit-spec.md#buildgit-build).
 
 ---
 
-- [ ] **Chunk 8: Error handling and edge cases**
+- [x] **Chunk 8: Error handling and edge cases**
 
 ### Description
 

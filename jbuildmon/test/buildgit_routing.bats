@@ -78,11 +78,13 @@ teardown() {
 @test "route_push_command" {
     cd "${TEST_REPO}"
 
-    run "${PROJECT_DIR}/buildgit" push
+    # Use --no-follow to skip Jenkins monitoring (which would fail without Jenkins)
+    run "${PROJECT_DIR}/buildgit" push --no-follow
 
-    # Push handler is a stub that outputs "not yet implemented"
+    # Push handler runs git push, which fails without a remote
+    # This verifies the command routes correctly to cmd_push
     assert_failure
-    assert_output --partial "not yet implemented"
+    assert_output --partial "No configured push destination"
 }
 
 # -----------------------------------------------------------------------------
@@ -94,9 +96,11 @@ teardown() {
 
     run "${PROJECT_DIR}/buildgit" build
 
-    # Build handler is a stub that outputs "not yet implemented"
+    # Build handler is now implemented and requires a job name
+    # It fails because no AGENTS.md or --job flag is provided
     assert_failure
-    assert_output --partial "not yet implemented"
+    # Should show error about job name requirement
+    assert_output --partial "Job name required"
 }
 
 # =============================================================================

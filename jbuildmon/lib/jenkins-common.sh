@@ -425,6 +425,126 @@ verify_job_exists() {
 }
 
 # =============================================================================
+# Build Trigger Functions
+# =============================================================================
+
+# Trigger a new build for a Jenkins job
+# Usage: trigger_build "job-name"
+# Returns: 0 on success (build queued), 1 on failure
+# Outputs: Queue item URL on stdout if successful
+#
+# Jenkins returns 201 Created with Location header containing queue item URL
+# e.g., Location: http://jenkins/queue/item/123/
+trigger_build() {
+    local job_name="$1"
+
+    local response http_code location_header
+
+    # POST to the build endpoint
+    # Use -D to capture headers to a temp file
+    local header_file
+    header_file=$(mktemp)
+
+    http_code=$(curl -s -o /dev/null -w "%{http_code}" \
+        -X POST \
+        -u "${JENKINS_USER_ID}:${JENKINS_API_TOKEN}" \
+        -D "$header_file" \
+        "${JENKINS_URL}/job/${job_name}/build")
+
+    case "$http_code" in
+        201)
+            # Build queued successfully - extract Location header
+            location_header=$(grep -i "^Location:" "$header_file" | sed 's/^Location:[[:space:]]*//' | tr -d '\r')
+            rm -f "$header_file"
+
+            if [[ -n "$location_header" ]]; then
+                echo "$location_header"
+            fi
+            return 0
+            ;;
+        403)
+            rm -f "$header_file"
+            log_error "Permission denied to trigger build (403)"
+            log_info "User may not have 'Build' permission for job '$job_name'"
+            return 1
+            ;;
+        404)
+            rm -f "$header_file"
+            log_error "Job not found (404): $job_name"
+            return 1
+            ;;
+        405)
+            rm -f "$header_file"
+            log_error "Build cannot be triggered (405)"
+            log_info "Job may be disabled or not support builds"
+            return 1
+            ;;
+        *)
+            rm -f "$header_file"
+            log_error "Failed to trigger build (HTTP $http_code)"
+            return 1
+            ;;
+    esac
+}
+
+# Wait for a queued build to start executing
+# Usage: wait_for_queue_item "queue-item-url" [timeout_seconds]
+# Returns: Build number on stdout when build starts, or exits on timeout
+# Polls the queue item API until the build starts
+wait_for_queue_item() {
+    local queue_url="$1"
+    local timeout="${2:-120}"
+    local elapsed=0
+    local poll_interval=2
+
+    # Extract queue item ID from URL and construct API endpoint
+    local queue_api_url
+    if [[ "$queue_url" =~ /queue/item/([0-9]+) ]]; then
+        queue_api_url="${JENKINS_URL}/queue/item/${BASH_REMATCH[1]}/api/json"
+    else
+        # Assume it's already a full URL, append /api/json
+        queue_api_url="${queue_url%/}/api/json"
+    fi
+
+    while [[ $elapsed -lt $timeout ]]; do
+        local response
+        response=$(curl -s -f -u "${JENKINS_USER_ID}:${JENKINS_API_TOKEN}" "$queue_api_url" 2>/dev/null) || true
+
+        if [[ -n "$response" ]]; then
+            # Check if build has started (has executable.number)
+            local build_number
+            build_number=$(echo "$response" | jq -r '.executable.number // empty' 2>/dev/null)
+
+            if [[ -n "$build_number" && "$build_number" != "null" ]]; then
+                echo "$build_number"
+                return 0
+            fi
+
+            # Check if still waiting (show why if verbose)
+            local why
+            why=$(echo "$response" | jq -r '.why // empty' 2>/dev/null)
+            if [[ -n "$why" && "$why" != "null" ]]; then
+                log_info "Waiting in queue: $why"
+            fi
+
+            # Check if cancelled
+            local cancelled
+            cancelled=$(echo "$response" | jq -r '.cancelled // false' 2>/dev/null)
+            if [[ "$cancelled" == "true" ]]; then
+                log_error "Build was cancelled while in queue"
+                return 1
+            fi
+        fi
+
+        sleep "$poll_interval"
+        elapsed=$((elapsed + poll_interval))
+    done
+
+    log_error "Timeout: Build did not start within ${timeout} seconds"
+    return 1
+}
+
+# =============================================================================
 # Build Information Functions
 # =============================================================================
 
