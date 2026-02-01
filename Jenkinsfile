@@ -16,7 +16,7 @@ pipeline {
         stage('Build') {
             steps {
                 echo 'Building...'
-                sh 'sleep15'
+                sh 'sleep 15'
                 echo 'done building'
                 // sh './scripts/build.sh'
             }
