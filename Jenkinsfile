@@ -9,13 +9,15 @@ pipeline {
     stages {
         stage('Initialize Submodules') {
             steps {
-                sh 'git submodule update --init --recursive'
+                sh 'sleep 10 ; git submodule update --init --recursive'
             }
         }
 
         stage('Build') {
             steps {
                 echo 'Building...'
+                sh 'sleep15'
+                echo 'done building'
                 // sh './scripts/build.sh'
             }
         }
