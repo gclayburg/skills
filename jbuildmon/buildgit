@@ -70,17 +70,19 @@ _FOLLOW_JOB_NAME=""
 
 # INFO level - Only output if VERBOSE_MODE=true
 # Use for: "Verifying Jenkins connectivity...", "Found job name", etc.
+# Note: Output to stderr to avoid corrupting command substitution return values
 bg_log_info() {
     if [[ "$VERBOSE_MODE" == "true" ]]; then
-        log_info "$@"
+        log_info "$@" >&2
     fi
 }
 
 # SUCCESS level - Only output if VERBOSE_MODE=true
 # Use for: "Connected to Jenkins", "Job found", etc.
+# Note: Output to stderr to avoid corrupting command substitution return values
 bg_log_success() {
     if [[ "$VERBOSE_MODE" == "true" ]]; then
-        log_success "$@"
+        log_success "$@" >&2
     fi
 }
 
@@ -98,6 +100,22 @@ bg_log_error() {
 # Use for: git command output, build results, test failures, final status
 bg_log_essential() {
     echo "$@"
+}
+
+# PROGRESS level - Always output for real-time monitoring feedback
+# Use for: stage completions, elapsed time updates during monitoring
+# Note: Uses stderr to avoid corrupting any command substitution
+# Spec reference: bug2026-02-01-buildgit-monitoring-spec.md, Issue 3
+bg_log_progress() {
+    log_info "$@" >&2
+}
+
+# PROGRESS_SUCCESS level - Always output for stage completion messages
+# Use for: stage completion messages with checkmark formatting
+# Note: Uses stderr to avoid corrupting any command substitution
+# Spec reference: bug2026-02-01-buildgit-monitoring-spec.md, Issue 3
+bg_log_progress_success() {
+    log_success "$@" >&2
 }
 
 # =============================================================================
@@ -376,17 +394,23 @@ _follow_monitor_build() {
             return 0
         fi
 
-        # Show current stage (verbose only)
+        # Show current stage and track stage completions
+        # Spec: bug2026-02-01-buildgit-monitoring-spec.md, Issue 3
         local current_stage
         current_stage=$(get_current_stage "$job_name" "$build_number" 2>/dev/null) || true
         if [[ -n "$current_stage" && "$current_stage" != "$last_stage" ]]; then
-            bg_log_info "Stage: $current_stage"
+            # If we had a previous stage, it has completed
+            if [[ -n "$last_stage" ]]; then
+                bg_log_progress_success "Stage completed: $last_stage"
+            fi
+            bg_log_info "Stage: $current_stage" >&2
             last_stage="$current_stage"
         fi
 
-        # Periodic elapsed time update
+        # Periodic elapsed time update (always shown for real-time feedback)
+        # Spec: bug2026-02-01-buildgit-monitoring-spec.md, Issue 3
         if [[ $((elapsed - last_time_report)) -ge 30 ]]; then
-            bg_log_info "Build in progress... (${elapsed}s elapsed)"
+            bg_log_progress "Build in progress... (${elapsed}s elapsed)"
             last_time_report=$elapsed
         fi
 
@@ -396,6 +420,60 @@ _follow_monitor_build() {
 
     bg_log_error "Build timeout: exceeded ${MAX_BUILD_TIME} seconds"
     return 1
+}
+
+# Display build in progress banner for follow mode
+# Used when joining an already in-progress build
+# Arguments: job_name, build_number
+# Spec reference: bug2026-02-01-buildgit-monitoring-spec.md, Issue 1
+_display_build_in_progress_banner() {
+    local job_name="$1"
+    local build_number="$2"
+
+    # Get build info
+    local build_json
+    build_json=$(get_build_info "$job_name" "$build_number")
+
+    if [[ -z "$build_json" ]]; then
+        bg_log_warning "Could not fetch build info for banner display"
+        return 0
+    fi
+
+    # Get console output for trigger detection and commit extraction
+    local console_output
+    console_output=$(get_console_output "$job_name" "$build_number" 2>/dev/null) || true
+
+    # Detect trigger type
+    local trigger_type trigger_user
+    if [[ -n "$console_output" ]]; then
+        local trigger_info
+        trigger_info=$(detect_trigger_type "$console_output")
+        trigger_type=$(echo "$trigger_info" | head -1)
+        trigger_user=$(echo "$trigger_info" | tail -1)
+    else
+        trigger_type="unknown"
+        trigger_user="unknown"
+    fi
+
+    # Extract triggering commit
+    local commit_info commit_sha commit_msg
+    commit_info=$(extract_triggering_commit "$job_name" "$build_number" "$console_output")
+    commit_sha=$(echo "$commit_info" | head -1)
+    commit_msg=$(echo "$commit_info" | tail -1)
+
+    # Correlate commit with local history
+    local correlation_status
+    correlation_status=$(correlate_commit "$commit_sha")
+
+    # Get current stage
+    local current_stage
+    current_stage=$(get_current_stage "$job_name" "$build_number" 2>/dev/null) || true
+
+    # Display the banner using existing display function
+    display_building_output "$job_name" "$build_number" "$build_json" \
+        "$trigger_type" "$trigger_user" \
+        "$commit_sha" "$commit_msg" \
+        "$correlation_status" "$current_stage"
 }
 
 # Wait for a new build to start (for follow mode)
@@ -456,9 +534,12 @@ _cmd_status_follow() {
         local building
         building=$(echo "$build_json" | jq -r '.building // false')
 
-        # If build is in progress, monitor until completion
+        # If build is in progress, display banner and monitor until completion
         if [[ "$building" == "true" ]]; then
             bg_log_info "Build #${build_number} is in progress, monitoring..."
+            # Display build info banner before entering monitoring loop
+            # Spec: bug2026-02-01-buildgit-monitoring-spec.md, Issue 1
+            _display_build_in_progress_banner "$job_name" "$build_number"
             _follow_monitor_build "$job_name" "$build_number"
         fi
 
@@ -728,17 +809,23 @@ _push_monitor_build() {
             return 0
         fi
 
-        # Show current stage (verbose only)
+        # Show current stage and track stage completions
+        # Spec: bug2026-02-01-buildgit-monitoring-spec.md, Issue 3
         local current_stage
         current_stage=$(get_current_stage "$job_name" "$build_number" 2>/dev/null) || true
         if [[ -n "$current_stage" && "$current_stage" != "$last_stage" ]]; then
-            bg_log_info "Stage: $current_stage"
+            # If we had a previous stage, it has completed
+            if [[ -n "$last_stage" ]]; then
+                bg_log_progress_success "Stage completed: $last_stage"
+            fi
+            bg_log_info "Stage: $current_stage" >&2
             last_stage="$current_stage"
         fi
 
-        # Periodic elapsed time update
+        # Periodic elapsed time update (always shown for real-time feedback)
+        # Spec: bug2026-02-01-buildgit-monitoring-spec.md, Issue 3
         if [[ $((elapsed - last_time_report)) -ge 30 ]]; then
-            bg_log_info "Build in progress... (${elapsed}s elapsed)"
+            bg_log_progress "Build in progress... (${elapsed}s elapsed)"
             last_time_report=$elapsed
         fi
 
@@ -747,7 +834,7 @@ _push_monitor_build() {
     done
 
     bg_log_error "Build timeout: exceeded ${MAX_BUILD_TIME} seconds"
-    bg_log_info "Build may still be running - check Jenkins console"
+    bg_log_info "Build may still be running - check Jenkins console" >&2
     return 1
 }
 
@@ -999,17 +1086,23 @@ _build_monitor() {
             return 0
         fi
 
-        # Show current stage (verbose only)
+        # Show current stage and track stage completions
+        # Spec: bug2026-02-01-buildgit-monitoring-spec.md, Issue 3
         local current_stage
         current_stage=$(get_current_stage "$job_name" "$build_number" 2>/dev/null) || true
         if [[ -n "$current_stage" && "$current_stage" != "$last_stage" ]]; then
-            bg_log_info "Stage: $current_stage"
+            # If we had a previous stage, it has completed
+            if [[ -n "$last_stage" ]]; then
+                bg_log_progress_success "Stage completed: $last_stage"
+            fi
+            bg_log_info "Stage: $current_stage" >&2
             last_stage="$current_stage"
         fi
 
-        # Periodic elapsed time update
+        # Periodic elapsed time update (always shown for real-time feedback)
+        # Spec: bug2026-02-01-buildgit-monitoring-spec.md, Issue 3
         if [[ $((elapsed - last_time_report)) -ge 30 ]]; then
-            bg_log_info "Build in progress... (${elapsed}s elapsed)"
+            bg_log_progress "Build in progress... (${elapsed}s elapsed)"
             last_time_report=$elapsed
         fi
 
@@ -1018,7 +1111,7 @@ _build_monitor() {
     done
 
     bg_log_error "Build timeout: exceeded ${MAX_BUILD_TIME} seconds"
-    bg_log_info "Build may still be running - check Jenkins console"
+    bg_log_info "Build may still be running - check Jenkins console" >&2
     return 1
 }
 
