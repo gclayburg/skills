@@ -25,6 +25,8 @@ These files represent completed specifications in the specs/ directory.  This li
 - buildgit-spec.md  combined git and Jenkins build tool (status, push, build commands)
 
 
+
+
 ## Helper Prompts
 Helper prompts are used by AI to automatically generate other documents
 - taskcreator.md  instructions to create individual chunks (implementation tasks) from a spec file
