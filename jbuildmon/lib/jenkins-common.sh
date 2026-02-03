@@ -40,6 +40,7 @@ _init_colors() {
         COLOR_RED=$(tput setaf 1)
         COLOR_CYAN=$(tput setaf 6)
         COLOR_BOLD=$(tput bold)
+        COLOR_DIM=$(tput dim 2>/dev/null || echo "")
     else
         COLOR_RESET=""
         COLOR_BLUE=""
@@ -48,6 +49,7 @@ _init_colors() {
         COLOR_RED=""
         COLOR_CYAN=""
         COLOR_BOLD=""
+        COLOR_DIM=""
     fi
 }
 
@@ -583,6 +585,45 @@ get_current_stage() {
         # Find the currently executing stage (status IN_PROGRESS)
         echo "$response" | jq -r '.stages[] | select(.status == "IN_PROGRESS") | .name' 2>/dev/null | head -1
     fi
+}
+
+# Fetch all stages with statuses and timing from wfapi/describe
+# Usage: get_all_stages "job-name" "build-number"
+# Returns: JSON array of stage objects on stdout
+#          Each object has: name, status, startTimeMillis, durationMillis
+#          Returns empty array [] on error or if no stages exist
+# Spec: full-stage-print-spec.md, Section: API Data Source
+get_all_stages() {
+    local job_name="$1"
+    local build_number="$2"
+
+    local response
+    response=$(jenkins_api "/job/${job_name}/${build_number}/wfapi/describe" 2>/dev/null) || true
+
+    if [[ -z "$response" ]]; then
+        echo "[]"
+        return 0
+    fi
+
+    # Extract stages array with required fields
+    # Handle missing fields gracefully with defaults
+    local stages_json
+    stages_json=$(echo "$response" | jq -r '
+        .stages // [] |
+        map({
+            name: (.name // "unknown"),
+            status: (.status // "NOT_EXECUTED"),
+            startTimeMillis: (.startTimeMillis // 0),
+            durationMillis: (.durationMillis // 0)
+        })
+    ' 2>/dev/null) || true
+
+    if [[ -z "$stages_json" || "$stages_json" == "null" ]]; then
+        echo "[]"
+        return 0
+    fi
+
+    echo "$stages_json"
 }
 
 # Get first failed stage name from workflow API
@@ -1340,6 +1381,215 @@ format_duration() {
     fi
 }
 
+# Format stage duration from milliseconds to human-readable format
+# Extends format_duration with sub-second handling for pipeline stages
+# Usage: format_stage_duration 154000
+# Returns: "2m 34s", "45s", "<1s", "1h 5m 30s", or "unknown"
+# Spec: full-stage-print-spec.md, Section: Duration format
+format_stage_duration() {
+    local ms="$1"
+
+    # Handle empty or invalid input
+    if [[ -z "$ms" || "$ms" == "null" || ! "$ms" =~ ^[0-9]+$ ]]; then
+        echo "unknown"
+        return
+    fi
+
+    # For sub-second durations (< 1000ms), return "<1s"
+    if [[ "$ms" -lt 1000 ]]; then
+        echo "<1s"
+        return
+    fi
+
+    # For durations >= 1 second, use standard format_duration logic
+    local total_seconds=$((ms / 1000))
+    local hours=$((total_seconds / 3600))
+    local minutes=$(((total_seconds % 3600) / 60))
+    local seconds=$((total_seconds % 60))
+
+    if [[ $hours -gt 0 ]]; then
+        echo "${hours}h ${minutes}m ${seconds}s"
+    elif [[ $minutes -gt 0 ]]; then
+        echo "${minutes}m ${seconds}s"
+    else
+        echo "${seconds}s"
+    fi
+}
+
+# Print a single stage line with appropriate color and format
+# Usage: print_stage_line "stage-name" "status" [duration_ms]
+# status: SUCCESS, FAILED, UNSTABLE, IN_PROGRESS, NOT_EXECUTED, ABORTED
+# Output format: [HH:MM:SS] ℹ   Stage: <name> (<duration>)
+# Spec: full-stage-print-spec.md, Section: Stage Display Format
+print_stage_line() {
+    local stage_name="$1"
+    local status="$2"
+    local duration_ms="${3:-}"
+
+    local timestamp
+    timestamp=$(_timestamp)
+
+    local color=""
+    local suffix=""
+    local marker=""
+
+    case "$status" in
+        SUCCESS)
+            color="${COLOR_GREEN}"
+            suffix="$(format_stage_duration "$duration_ms")"
+            ;;
+        FAILED)
+            color="${COLOR_RED}"
+            suffix="$(format_stage_duration "$duration_ms")"
+            marker="    ${COLOR_RED}← FAILED${COLOR_RESET}"
+            ;;
+        UNSTABLE)
+            color="${COLOR_YELLOW}"
+            suffix="$(format_stage_duration "$duration_ms")"
+            ;;
+        IN_PROGRESS)
+            color="${COLOR_CYAN}"
+            suffix="running"
+            ;;
+        NOT_EXECUTED)
+            color="${COLOR_DIM}"
+            suffix="not executed"
+            ;;
+        ABORTED)
+            color="${COLOR_RED}"
+            suffix="aborted"
+            ;;
+        *)
+            # Unknown status - use default
+            color=""
+            suffix="$(format_stage_duration "$duration_ms")"
+            ;;
+    esac
+
+    # Build and output the stage line
+    # Format: [HH:MM:SS] ℹ   Stage: <name> (<suffix>)
+    echo "${color}[${timestamp}] ℹ   Stage: ${stage_name} (${suffix})${COLOR_RESET}${marker}"
+}
+
+# Display all stages with their statuses and durations
+# Usage: _display_all_stages "job-name" "build-number"
+# Outputs: Stage lines to stdout in execution order
+# Spec: full-stage-print-spec.md, Section: Display Functions
+_display_all_stages() {
+    local job_name="$1"
+    local build_number="$2"
+
+    local stages_json
+    stages_json=$(get_all_stages "$job_name" "$build_number")
+
+    # Handle empty or invalid stages
+    if [[ -z "$stages_json" || "$stages_json" == "[]" || "$stages_json" == "null" ]]; then
+        return 0
+    fi
+
+    # Get number of stages
+    local stage_count
+    stage_count=$(echo "$stages_json" | jq 'length')
+
+    # Iterate through each stage and print it
+    local i=0
+    while [[ $i -lt $stage_count ]]; do
+        local stage_name status duration_ms
+        stage_name=$(echo "$stages_json" | jq -r ".[$i].name")
+        status=$(echo "$stages_json" | jq -r ".[$i].status")
+        duration_ms=$(echo "$stages_json" | jq -r ".[$i].durationMillis")
+
+        print_stage_line "$stage_name" "$status" "$duration_ms"
+
+        i=$((i + 1))
+    done
+}
+
+# Track stage state changes and print completed stages
+# Usage: new_state=$(track_stage_changes "job-name" "build-number" "$previous_state" "$verbose")
+# Returns: Current stages JSON on stdout (capture for next iteration)
+# Side effect: Prints completed/running stage lines to stderr
+# Spec: full-stage-print-spec.md, Section: Stage Tracking
+track_stage_changes() {
+    local job_name="$1"
+    local build_number="$2"
+    local previous_stages_json="${3:-[]}"
+    local verbose="${4:-false}"
+
+    # Fetch current stages
+    local current_stages_json
+    current_stages_json=$(get_all_stages "$job_name" "$build_number")
+
+    # Handle empty or invalid previous state
+    if [[ -z "$previous_stages_json" || "$previous_stages_json" == "null" ]]; then
+        previous_stages_json="[]"
+    fi
+
+    # Handle empty current stages - just return previous state unchanged
+    if [[ "$current_stages_json" == "[]" ]]; then
+        echo "$previous_stages_json"
+        return 0
+    fi
+
+    # Process each stage and detect transitions
+    local stage_count
+    stage_count=$(echo "$current_stages_json" | jq 'length')
+
+    local i=0
+    local running_stage_name=""
+    local running_stage_printed=false
+
+    while [[ $i -lt $stage_count ]]; do
+        local stage_name current_status duration_ms
+        stage_name=$(echo "$current_stages_json" | jq -r ".[$i].name")
+        current_status=$(echo "$current_stages_json" | jq -r ".[$i].status")
+        duration_ms=$(echo "$current_stages_json" | jq -r ".[$i].durationMillis")
+
+        # Get previous status for this stage (by name)
+        local previous_status
+        previous_status=$(echo "$previous_stages_json" | jq -r --arg name "$stage_name" \
+            '.[] | select(.name == $name) | .status // "NOT_EXECUTED"')
+
+        # Default to NOT_EXECUTED if stage wasn't in previous state
+        if [[ -z "$previous_status" ]]; then
+            previous_status="NOT_EXECUTED"
+        fi
+
+        # Detect transitions and print completed stages
+        case "$current_status" in
+            SUCCESS|FAILED|UNSTABLE|ABORTED)
+                # Check if this stage just transitioned from IN_PROGRESS
+                if [[ "$previous_status" == "IN_PROGRESS" ]]; then
+                    # Stage completed - print it
+                    print_stage_line "$stage_name" "$current_status" "$duration_ms" >&2
+                fi
+                ;;
+            IN_PROGRESS)
+                # Track currently running stage (will print at end)
+                running_stage_name="$stage_name"
+                ;;
+        esac
+
+        i=$((i + 1))
+    done
+
+    # Print currently running stage (if any and verbose mode enabled)
+    # Note: Running stage is shown on first poll too if there's one IN_PROGRESS
+    if [[ -n "$running_stage_name" ]]; then
+        # Only print running stage if it wasn't already shown (i.e., this is not the first call)
+        # We detect "first call" by checking if previous_stages_json is empty
+        local prev_count
+        prev_count=$(echo "$previous_stages_json" | jq 'length')
+
+        if [[ "$prev_count" -gt 0 || "$verbose" == "true" ]]; then
+            print_stage_line "$running_stage_name" "IN_PROGRESS" >&2
+        fi
+    fi
+
+    # Return current state for next iteration
+    echo "$current_stages_json"
+}
+
 # Format epoch timestamp (milliseconds) to human-readable date
 # Usage: format_timestamp 1705329125000
 # Returns: "2024-01-15 14:32:05"
@@ -1439,6 +1689,11 @@ display_success_output() {
     # Display banner
     log_banner "success"
 
+    # Display all stages
+    # Spec: full-stage-print-spec.md, Section: Display Functions
+    _display_all_stages "$job_name" "$build_number"
+    echo ""
+
     # Display build details
     echo "Job:        ${job_name}"
     echo "Build:      #${build_number}"
@@ -1508,6 +1763,11 @@ display_failure_output() {
 
     # Display banner
     log_banner "failure"
+
+    # Display all stages (includes not-executed stages for failed builds)
+    # Spec: full-stage-print-spec.md, Section: Display Functions
+    _display_all_stages "$job_name" "$build_number"
+    echo ""
 
     # Display build details
     echo "Job:        ${job_name}"
@@ -1762,13 +2022,15 @@ display_building_output() {
     # Display banner
     log_banner "building"
 
+    # Display all stages (completed stages with durations, running stage with "(running)")
+    # Spec: full-stage-print-spec.md, Section: Display Functions
+    _display_all_stages "$job_name" "$build_number"
+    echo ""
+
     # Display build details
     echo "Job:        ${job_name}"
     echo "Build:      #${build_number}"
     echo "Status:     ${COLOR_YELLOW}BUILDING${COLOR_RESET}"
-    if [[ -n "$current_stage" ]]; then
-        echo "Stage:      ${current_stage}"
-    fi
     echo "Trigger:    ${trigger_display}"
     echo "Commit:     ${commit_display}"
     echo "            ${correlation_color}${correlation_symbol} ${correlation_desc}${COLOR_RESET}"

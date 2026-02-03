@@ -1,0 +1,9 @@
+{
+  "name": "#5",
+  "status": "SUCCESS",
+  "stages": [
+    {"name": "Build"},
+    {"status": "SUCCESS", "durationMillis": 5000},
+    {"name": "Deploy", "status": "NOT_EXECUTED"}
+  ]
+}

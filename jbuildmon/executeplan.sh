@@ -27,8 +27,8 @@ use your judgement to pick the highest priority task or chunk and build that one
 Only build one chunk.
 When finished, mark the chunk as completed in $PLAN_FILE and report how many (n) non-completed chunks remain in $PLAN_FILE as well as a brief one-line summary of each. The final line of your output should only this text: \"REMAINING_CHUNKS=n\"."
 
-#CMD="sherlock claude --dangerously-skip-permissions '$PROMPT'"
-CMD="claude --dangerously-skip-permissions '$PROMPT'"
+CMD="sherlock claude -- --dangerously-skip-permissions '$PROMPT'"
+#CMD="claude --dangerously-skip-permissions '$PROMPT'"
 #CMD="sherlock claude '$PROMPT'"
 
 echo "$CMD"

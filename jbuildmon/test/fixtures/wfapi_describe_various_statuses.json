@@ -1,0 +1,12 @@
+{
+  "name": "#10",
+  "status": "FAILED",
+  "stages": [
+    {"name": "Checkout", "status": "SUCCESS", "startTimeMillis": 1706889863000, "durationMillis": 5000},
+    {"name": "Build", "status": "SUCCESS", "startTimeMillis": 1706889868000, "durationMillis": 30000},
+    {"name": "Test", "status": "FAILED", "startTimeMillis": 1706889898000, "durationMillis": 120000},
+    {"name": "Deploy", "status": "NOT_EXECUTED", "startTimeMillis": 0, "durationMillis": 0},
+    {"name": "Cleanup", "status": "ABORTED", "startTimeMillis": 1706890018000, "durationMillis": 100},
+    {"name": "Notify", "status": "UNSTABLE", "startTimeMillis": 1706890018100, "durationMillis": 200}
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "name": "#42",
+  "status": "IN_PROGRESS",
+  "stages": [
+    {"name": "Initialize Submodules", "status": "SUCCESS", "startTimeMillis": 1706889863000, "durationMillis": 10000},
+    {"name": "Build", "status": "SUCCESS", "startTimeMillis": 1706889879000, "durationMillis": 15000},
+    {"name": "Unit Tests", "status": "IN_PROGRESS", "startTimeMillis": 1706889899000, "durationMillis": 0},
+    {"name": "Deploy", "status": "NOT_EXECUTED", "startTimeMillis": 0, "durationMillis": 0}
+  ]
+}

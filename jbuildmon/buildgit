@@ -361,9 +361,9 @@ _follow_monitor_build() {
     local job_name="$1"
     local build_number="$2"
     local elapsed=0
-    local last_stage=""
     local consecutive_failures=0
     local last_time_report=0
+    local stage_state="[]"
 
     bg_log_info "Monitoring build #${build_number}..."
 
@@ -394,22 +394,13 @@ _follow_monitor_build() {
             return 0
         fi
 
-        # Show current stage and track stage completions
-        # Spec: bug2026-02-01-buildgit-monitoring-spec.md, Issue 3
-        local current_stage
-        current_stage=$(get_current_stage "$job_name" "$build_number" 2>/dev/null) || true
-        if [[ -n "$current_stage" && "$current_stage" != "$last_stage" ]]; then
-            # If we had a previous stage, it has completed
-            if [[ -n "$last_stage" ]]; then
-                bg_log_progress_success "Stage completed: $last_stage"
-            fi
-            bg_log_info "Stage: $current_stage" >&2
-            last_stage="$current_stage"
-        fi
+        # Track stage changes (replaces get_current_stage logic)
+        # Spec: full-stage-print-spec.md, Stage Tracking
+        stage_state=$(track_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE")
 
-        # Periodic elapsed time update (always shown for real-time feedback)
-        # Spec: bug2026-02-01-buildgit-monitoring-spec.md, Issue 3
-        if [[ $((elapsed - last_time_report)) -ge 30 ]]; then
+        # Verbose-only elapsed time messages
+        # Spec: full-stage-print-spec.md, Verbose mode
+        if [[ "$VERBOSE_MODE" == "true" && $((elapsed - last_time_report)) -ge 30 ]]; then
             bg_log_progress "Build in progress... (${elapsed}s elapsed)"
             last_time_report=$elapsed
         fi
@@ -776,9 +767,9 @@ _push_monitor_build() {
     local job_name="$1"
     local build_number="$2"
     local elapsed=0
-    local last_stage=""
     local consecutive_failures=0
     local last_time_report=0
+    local stage_state="[]"
 
     bg_log_info "Monitoring build #${build_number}..."
 
@@ -809,22 +800,13 @@ _push_monitor_build() {
             return 0
         fi
 
-        # Show current stage and track stage completions
-        # Spec: bug2026-02-01-buildgit-monitoring-spec.md, Issue 3
-        local current_stage
-        current_stage=$(get_current_stage "$job_name" "$build_number" 2>/dev/null) || true
-        if [[ -n "$current_stage" && "$current_stage" != "$last_stage" ]]; then
-            # If we had a previous stage, it has completed
-            if [[ -n "$last_stage" ]]; then
-                bg_log_progress_success "Stage completed: $last_stage"
-            fi
-            bg_log_info "Stage: $current_stage" >&2
-            last_stage="$current_stage"
-        fi
+        # Track stage changes (replaces get_current_stage logic)
+        # Spec: full-stage-print-spec.md, Stage Tracking
+        stage_state=$(track_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE")
 
-        # Periodic elapsed time update (always shown for real-time feedback)
-        # Spec: bug2026-02-01-buildgit-monitoring-spec.md, Issue 3
-        if [[ $((elapsed - last_time_report)) -ge 30 ]]; then
+        # Verbose-only elapsed time messages
+        # Spec: full-stage-print-spec.md, Verbose mode
+        if [[ "$VERBOSE_MODE" == "true" && $((elapsed - last_time_report)) -ge 30 ]]; then
             bg_log_progress "Build in progress... (${elapsed}s elapsed)"
             last_time_report=$elapsed
         fi
@@ -1053,9 +1035,9 @@ _build_monitor() {
     local job_name="$1"
     local build_number="$2"
     local elapsed=0
-    local last_stage=""
     local consecutive_failures=0
     local last_time_report=0
+    local stage_state="[]"
 
     bg_log_info "Monitoring build #${build_number}..."
 
@@ -1086,22 +1068,13 @@ _build_monitor() {
             return 0
         fi
 
-        # Show current stage and track stage completions
-        # Spec: bug2026-02-01-buildgit-monitoring-spec.md, Issue 3
-        local current_stage
-        current_stage=$(get_current_stage "$job_name" "$build_number" 2>/dev/null) || true
-        if [[ -n "$current_stage" && "$current_stage" != "$last_stage" ]]; then
-            # If we had a previous stage, it has completed
-            if [[ -n "$last_stage" ]]; then
-                bg_log_progress_success "Stage completed: $last_stage"
-            fi
-            bg_log_info "Stage: $current_stage" >&2
-            last_stage="$current_stage"
-        fi
+        # Track stage changes (replaces get_current_stage logic)
+        # Spec: full-stage-print-spec.md, Stage Tracking
+        stage_state=$(track_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE")
 
-        # Periodic elapsed time update (always shown for real-time feedback)
-        # Spec: bug2026-02-01-buildgit-monitoring-spec.md, Issue 3
-        if [[ $((elapsed - last_time_report)) -ge 30 ]]; then
+        # Verbose-only elapsed time messages
+        # Spec: full-stage-print-spec.md, Verbose mode
+        if [[ "$VERBOSE_MODE" == "true" && $((elapsed - last_time_report)) -ge 30 ]]; then
             bg_log_progress "Build in progress... (${elapsed}s elapsed)"
             last_time_report=$elapsed
         fi
@@ -1267,4 +1240,7 @@ main() {
 # Entry Point
 # =============================================================================
 
-main "$@"
+# Guard for testing - allows sourcing without executing main
+if [[ -z "${_BUILDGIT_TESTING:-}" ]]; then
+    main "$@"
+fi
