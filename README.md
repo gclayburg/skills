@@ -56,3 +56,14 @@ claude 'use taskcreator.md to create an implementation plan for specs/build-tool
 ```bash
 claude 'study  specs/bug1-jenkins-log-truncated-plan.md . use your judgement to pick the highest priority task or chunk and build that.  do not ask questions, just do it.  When finished mark the chunk as completed in  specs/bug1-jenkins-log-truncated-plan.md '
 ```
+
+# security
+Use this to clone fully and run in docker sandbox:
+This project uses git submodules for the bats-core unit tests
+The policy allows internet traffic outbound, but blocks all internal traffic, except for the jenkins build server and git remote server
+
+```bash
+$ git clone --recurse-submodules <your-repo-url>
+$ cd ralph1
+$ docker sandbox network  proxy claude-ralph1 --policy allow --allow-host palmer.garyclayburg.com --allow-host jenkins.garyclayburg.com --allow-host scranton2.garyclayburg.com --allow-host scranton2 --block-cidr 192.168.0.0/16
+```
