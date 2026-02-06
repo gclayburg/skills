@@ -137,8 +137,9 @@ teardown() {
 }
 
 # -----------------------------------------------------------------------------
-# Test Case: Shows currently running stage with previous state
-# Spec: full-stage-print-spec.md, Section: In-Progress Stages
+# Test Case: Shows currently running stage in verbose mode
+# Spec: bug2026-02-04-running-stage-spam-spec.md
+# Running stages are only shown in verbose mode
 # -----------------------------------------------------------------------------
 @test "track_stage_changes_shows_running" {
     # Previous state: Build completed, Tests is new
@@ -154,10 +155,13 @@ teardown() {
         ]'
     }
 
+    # Non-verbose mode: running stage should NOT be shown
     local stderr_output
     stderr_output=$(track_stage_changes "test-job" "42" "$previous_state" "false" 2>&1 >/dev/null)
+    [[ -z "$stderr_output" ]]
 
-    # Verify running stage is shown
+    # Verbose mode: running stage SHOULD be shown
+    stderr_output=$(track_stage_changes "test-job" "42" "$previous_state" "true" 2>&1 >/dev/null)
     [[ "$stderr_output" == *"Stage: Tests (running)"* ]]
 }
 
@@ -187,8 +191,8 @@ teardown() {
     # Verify both completed stages were printed
     [[ "$stderr_output" == *"Stage: Build (15s)"* ]]
     [[ "$stderr_output" == *"Stage: Lint (5s)"* ]]
-    # And the running stage
-    [[ "$stderr_output" == *"Stage: Tests (running)"* ]]
+    # Running stage should NOT be shown in non-verbose mode
+    [[ "$stderr_output" != *"Stage: Tests (running)"* ]]
 }
 
 # -----------------------------------------------------------------------------
@@ -295,9 +299,12 @@ teardown() {
     local stderr_output
     stderr_output=$(track_stage_changes "test-job" "42" "$previous_state" "false" 2>&1 >/dev/null)
 
-    # Verify Build is NOT reprinted (only Tests running is shown)
+    # Verify Build is NOT reprinted (it was already completed in previous state)
     [[ "$stderr_output" != *"Stage: Build (15s)"* ]]
-    [[ "$stderr_output" == *"Stage: Tests (running)"* ]]
+    # Running stage should NOT be shown in non-verbose mode
+    [[ "$stderr_output" != *"Stage: Tests (running)"* ]]
+    # In fact, no output should be produced since no stage completed
+    [[ -z "$stderr_output" ]]
 }
 
 # -----------------------------------------------------------------------------

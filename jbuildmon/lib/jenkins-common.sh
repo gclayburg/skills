@@ -1535,9 +1535,11 @@ track_stage_changes() {
     local stage_count
     stage_count=$(echo "$current_stages_json" | jq 'length')
 
+    # Check if this is the first poll (previous state was empty)
+    local prev_count
+    prev_count=$(echo "$previous_stages_json" | jq 'length')
+
     local i=0
-    local running_stage_name=""
-    local running_stage_printed=false
 
     while [[ $i -lt $stage_count ]]; do
         local stage_name current_status duration_ms
@@ -1565,26 +1567,16 @@ track_stage_changes() {
                 fi
                 ;;
             IN_PROGRESS)
-                # Track currently running stage (will print at end)
-                running_stage_name="$stage_name"
+                # Only print running stage in verbose mode, and only once when it first starts
+                # Non-verbose mode: no "(running)" output - only print when stages complete
+                if [[ "$verbose" == "true" && "$previous_status" == "NOT_EXECUTED" ]]; then
+                    print_stage_line "$stage_name" "IN_PROGRESS" >&2
+                fi
                 ;;
         esac
 
         i=$((i + 1))
     done
-
-    # Print currently running stage (if any and verbose mode enabled)
-    # Note: Running stage is shown on first poll too if there's one IN_PROGRESS
-    if [[ -n "$running_stage_name" ]]; then
-        # Only print running stage if it wasn't already shown (i.e., this is not the first call)
-        # We detect "first call" by checking if previous_stages_json is empty
-        local prev_count
-        prev_count=$(echo "$previous_stages_json" | jq 'length')
-
-        if [[ "$prev_count" -gt 0 || "$verbose" == "true" ]]; then
-            print_stage_line "$running_stage_name" "IN_PROGRESS" >&2
-        fi
-    fi
 
     # Return current state for next iteration
     echo "$current_stages_json"
