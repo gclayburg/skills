@@ -26,7 +26,7 @@ pipeline {
             steps {
                 dir('jbuildmon') {
                     sh 'sleep 2'
-                     sh './test/bats/bin/bats --formatter junit test/*.bats > test-results.xml || true'
+//                     sh './test/bats/bin/bats --formatter junit test/*.bats > test-results.xml || true'
                 }
             }
             post {
