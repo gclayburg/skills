@@ -289,7 +289,7 @@ WRAPPER_END
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
     # Run in background
-    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
+    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
     FOLLOW_PID=$!
 
     # Wait for output to be generated
@@ -319,7 +319,7 @@ WRAPPER_END
     create_follow_test_wrapper "false" "SUCCESS" "1"
 
     # Run in background
-    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
+    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
     FOLLOW_PID=$!
 
     # Wait for waiting message to appear
@@ -347,7 +347,7 @@ WRAPPER_END
     create_new_build_detection_wrapper
 
     # Run in background
-    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
+    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
     FOLLOW_PID=$!
 
     # Wait for new build detection
@@ -413,7 +413,7 @@ WRAPPER_END
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
     # Run with timeout (simulates forced termination)
-    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
+    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
     local bg_pid=$!
     sleep 4
     _kill_process_tree "$bg_pid"
@@ -441,7 +441,7 @@ WRAPPER_END
     create_follow_test_wrapper "false" "SUCCESS" "1"
 
     # Run in background with short timeout
-    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
+    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
     FOLLOW_PID=$!
 
     # Wait for output to appear (poll instead of fixed sleep to avoid race conditions)
@@ -479,7 +479,7 @@ WRAPPER_END
     create_follow_test_wrapper "false" "SUCCESS" "1"
 
     # Run with -f option
-    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
+    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
     FOLLOW_PID=$!
 
     sleep 4
@@ -538,7 +538,7 @@ WRAPPER
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
-    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
+    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
     FOLLOW_PID=$!
 
     sleep 4
@@ -565,7 +565,7 @@ WRAPPER
     export TEST_TEMP_DIR
     create_follow_test_wrapper "false" "SUCCESS" "1"
 
-    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
+    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
     FOLLOW_PID=$!
 
     sleep 4
