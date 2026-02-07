@@ -7,11 +7,14 @@
 load test_helper
 
 # Kill a process and all its children (portable across macOS and Linux)
+# Uses SIGKILL (-9) because SIGTERM is deferred during command substitution
+# on Linux, which causes hangs when the process is blocked in $(...) subshells.
 _kill_process_tree() {
     local pid="$1"
-    # Kill children first, then parent
-    pkill -P "$pid" 2>/dev/null || true
-    kill "$pid" 2>/dev/null || true
+    # Kill children first (grandchildren become orphans but exit on their own)
+    pkill -9 -P "$pid" 2>/dev/null || true
+    # Kill the parent process
+    kill -9 "$pid" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
 }
 
@@ -94,7 +97,7 @@ create_follow_test_wrapper() {
 set -euo pipefail
 
 # Safety: self-destruct after 8 seconds to prevent hanging in CI
-( sleep 8 && kill $$ 2>/dev/null ) &
+( sleep 8 && kill -9 $$ 2>/dev/null ) &
 
 # Source buildgit without executing main
 _BUILDGIT_TESTING=1
@@ -170,7 +173,7 @@ create_new_build_detection_wrapper() {
 set -euo pipefail
 
 # Safety: self-destruct after 8 seconds to prevent hanging in CI
-( sleep 8 && kill $$ 2>/dev/null ) &
+( sleep 8 && kill -9 $$ 2>/dev/null ) &
 
 export PROJECT_DIR="__PROJECT_DIR__"
 export TEST_TEMP_DIR="__TEST_TEMP_DIR__"
@@ -259,7 +262,7 @@ WRAPPER
 set -euo pipefail
 
 # Safety: self-destruct after 8 seconds to prevent hanging in CI
-( sleep 8 && kill $$ 2>/dev/null ) &
+( sleep 8 && kill -9 $$ 2>/dev/null ) &
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
@@ -383,7 +386,7 @@ WRAPPER_END
 set -euo pipefail
 
 # Safety: self-destruct after 8 seconds to prevent hanging in CI
-( sleep 8 && kill $$ 2>/dev/null ) &
+( sleep 8 && kill -9 $$ 2>/dev/null ) &
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
@@ -509,7 +512,7 @@ WRAPPER_END
 set -euo pipefail
 
 # Safety: self-destruct after 8 seconds to prevent hanging in CI
-( sleep 8 && kill $$ 2>/dev/null ) &
+( sleep 8 && kill -9 $$ 2>/dev/null ) &
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
