@@ -1,8 +1,10 @@
 pipeline {
     agent {
-        docker {
-            image 'registry:5000/shell-jenkins-agent:latest'
-            alwaysPull true
+        node('fastnode') {
+            docker {
+                image 'registry:5000/shell-jenkins-agent:latest'
+                alwaysPull true
+            }
         }
     }
     options {
