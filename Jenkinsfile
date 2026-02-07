@@ -29,12 +29,12 @@ pipeline {
             steps {
                 dir('jbuildmon') {
                     sh 'sleep 2'
-                     sh './test/bats/bin/bats --formatter junit test/*.bats > test-results.xml || true'
+                    sh './test/bats/bin/bats --formatter tap --report-formatter junit --output . test/*.bats || true'
                 }
             }
             post {
                 always {
-                    junit skipPublishingChecks: true, testResults: 'jbuildmon/test-results.xml'
+                    junit skipPublishingChecks: true, testResults: 'jbuildmon/report.xml'
                 }
             }
         }

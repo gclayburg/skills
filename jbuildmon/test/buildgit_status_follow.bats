@@ -93,6 +93,9 @@ create_follow_test_wrapper() {
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Safety: self-destruct after 8 seconds to prevent hanging in CI
+( sleep 8 && kill $$ 2>/dev/null ) &
+
 # Source buildgit without executing main
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
@@ -165,6 +168,9 @@ create_new_build_detection_wrapper() {
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << 'WRAPPER'
 #!/usr/bin/env bash
 set -euo pipefail
+
+# Safety: self-destruct after 8 seconds to prevent hanging in CI
+( sleep 8 && kill $$ 2>/dev/null ) &
 
 export PROJECT_DIR="__PROJECT_DIR__"
 export TEST_TEMP_DIR="__TEST_TEMP_DIR__"
@@ -251,6 +257,9 @@ WRAPPER
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << 'WRAPPER_END'
 #!/usr/bin/env bash
 set -euo pipefail
+
+# Safety: self-destruct after 8 seconds to prevent hanging in CI
+( sleep 8 && kill $$ 2>/dev/null ) &
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
@@ -373,6 +382,9 @@ WRAPPER_END
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Safety: self-destruct after 8 seconds to prevent hanging in CI
+( sleep 8 && kill $$ 2>/dev/null ) &
+
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
 
@@ -429,8 +441,17 @@ WRAPPER_END
     bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
     FOLLOW_PID=$!
 
-    # Wait for result to be displayed
-    sleep 5
+    # Wait for output to appear (poll instead of fixed sleep to avoid race conditions)
+    local waited=0
+    while [[ $waited -lt 8 ]]; do
+        if [[ -s "${TEST_TEMP_DIR}/output.txt" ]]; then
+            # Give a moment for more output to accumulate
+            sleep 1
+            break
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
 
     # Kill the process
     _kill_process_tree "$FOLLOW_PID"
@@ -486,6 +507,9 @@ WRAPPER_END
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << 'WRAPPER'
 #!/usr/bin/env bash
 set -euo pipefail
+
+# Safety: self-destruct after 8 seconds to prevent hanging in CI
+( sleep 8 && kill $$ 2>/dev/null ) &
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
