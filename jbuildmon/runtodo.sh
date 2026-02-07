@@ -33,7 +33,7 @@ case "$TODO_PATH" in
         ;;
 esac
 
-CMD="docker sandbox run claude $ROOT_DIR -- 'Implement the todo item described in jbuildmon/$TODO_FILE. When complete, move the file from jbuildmon/specs/todo/ to jbuildmon/specs/ and add it to the Spec and Bug index in jbuildmon/specs/README.md.'"
+CMD="docker sandbox run claude $ROOT_DIR -- 'Implement all the todo items described in jbuildmon/$TODO_FILE. Follow the rules in jbuildmon/specs/todo/README.md.'"
 
 echo "$CMD"
 eval "$CMD"

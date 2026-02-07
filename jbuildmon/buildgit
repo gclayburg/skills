@@ -778,13 +778,20 @@ _handle_build_completion() {
     local result
     result=$(echo "$build_json" | jq -r '.result // "UNKNOWN"')
 
-    # Display test failure details if applicable (UNSTABLE or FAILURE)
-    # Spec: unify-follow-log-spec.md, Section 4 (Build Completion) - test failure details
+    # Display failure details if applicable (UNSTABLE or FAILURE)
     if [[ "$result" == "UNSTABLE" || "$result" == "FAILURE" ]]; then
-        local test_results_json
-        test_results_json=$(fetch_test_results "$job_name" "$build_number")
-        if [[ -n "$test_results_json" ]]; then
-            display_test_results "$test_results_json"
+        # Check for early failure (no stages ran) - show full console
+        # Spec: buildgit-early-build-failure-spec.md
+        local console_output
+        console_output=$(get_console_output "$job_name" "$build_number" 2>/dev/null) || true
+        if ! _display_early_failure_console "$job_name" "$build_number" "$console_output"; then
+            # Stages exist - use existing test results logic
+            # Spec: unify-follow-log-spec.md, Section 4 (Build Completion) - test failure details
+            local test_results_json
+            test_results_json=$(fetch_test_results "$job_name" "$build_number")
+            if [[ -n "$test_results_json" ]]; then
+                display_test_results "$test_results_json"
+            fi
         fi
     fi
 

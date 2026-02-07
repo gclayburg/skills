@@ -1929,6 +1929,36 @@ _display_nested_downstream() {
     done <<< "$downstream_builds"
 }
 
+# Display full console output for early build failures (no stages ran)
+# Usage: _display_early_failure_console "job_name" "build_number" "console_output"
+# Returns: 0 if early failure detected and console displayed, 1 if stages exist (caller should use existing logic)
+# Spec: buildgit-early-build-failure-spec.md
+_display_early_failure_console() {
+    local job_name="$1"
+    local build_number="$2"
+    local console_output="$3"
+
+    local stages
+    stages=$(get_all_stages "$job_name" "$build_number")
+
+    # Check if stages array is empty (no pipeline stages executed)
+    local stage_count
+    stage_count=$(echo "$stages" | jq 'length' 2>/dev/null) || stage_count=0
+
+    if [[ "$stage_count" -gt 0 ]]; then
+        return 1  # Stages exist, caller should use existing logic
+    fi
+
+    # Early failure - display full console output
+    echo ""
+    echo "${COLOR_YELLOW}=== Console Output ===${COLOR_RESET}"
+    if [[ -n "$console_output" ]]; then
+        echo "$console_output"
+    fi
+    echo "${COLOR_YELLOW}======================${COLOR_RESET}"
+    return 0
+}
+
 # Constants for fallback behavior
 # Spec: bug1-jenkins-log-truncated-spec.md, Section: Fallback Behavior
 STAGE_LOG_MIN_LINES=5        # Minimum lines for extraction to be considered sufficient
@@ -1945,6 +1975,12 @@ _display_error_logs() {
     local job_name="$1"
     local build_number="$2"
     local console_output="$3"
+
+    # Check for early failure (no stages ran) - show full console instead of error extraction
+    # Spec: buildgit-early-build-failure-spec.md
+    if _display_early_failure_console "$job_name" "$build_number" "$console_output"; then
+        return 0
+    fi
 
     echo ""
     echo "${COLOR_YELLOW}=== Error Logs ===${COLOR_RESET}"

@@ -79,6 +79,10 @@ teardown() {
     get_build_info() {
         echo '{"building":false,"result":"UNSTABLE"}'
     }
+    get_console_output() { echo "some console output"; }
+    get_all_stages() {
+        echo '[{"name":"Build","status":"FAILED","startTimeMillis":0,"durationMillis":5000}]'
+    }
     fetch_test_results() {
         echo '{"failCount":1,"passCount":32,"skipCount":0,"totalCount":33}'
     }

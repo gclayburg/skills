@@ -5,11 +5,13 @@
 Individual `*-spec.md` files are treated as the specification for each feature—they define what the feature is and what it must do. These specification files are the authoritative ("canonical") source of requirements for their parts of the application.
 
 If there are conflicting specifications, they must be reviewed and updated to resolve any discrepancies.
+All spec files that are created from other raw report documents should reference those documents in the title header of the spec
 
 **Specification template (include at top of each spec):**
 ```
 # Title
 Date: YYYY-MM-DD
+References: list of <other-raw-report-path.md> or <none>
 ```
 
 ### Todo directory
@@ -33,6 +35,7 @@ These files represent completed specifications in the specs/ directory.  This li
 - bug2026-02-04-running-stage-spam-spec.md  fix running stage printed on every poll cycle during monitoring
 - unify-follow-log-spec.md  unified build monitoring output format for push, build, and status -f commands
 - refactoring-simple-spec.md  deduplication pass across buildgit and jenkins-common.sh (extract helpers, remove dead wrappers, merge functions)
+- buildgit-early-build-failure-spec.md  show full console log when a build fails before any pipeline stage runs (e.g. Jenkinsfile syntax error)
 
 
 
