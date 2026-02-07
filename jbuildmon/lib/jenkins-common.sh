@@ -2336,7 +2336,8 @@ output_json() {
 
 # Build failure JSON object
 # Usage: _build_failure_json "job_name" "build_number" "console_output"
-# Returns: JSON object with failed_jobs, root_cause_job, failed_stage, error_summary
+# Returns: JSON object with failed_jobs, root_cause_job, failed_stage, error_summary, console_output
+# Spec: bug-status-json-spec.md
 _build_failure_json() {
     local job_name="$1"
     local build_number="$2"
@@ -2346,62 +2347,93 @@ _build_failure_json() {
     local root_cause_job="$job_name"
     local failed_stage=""
     local error_summary=""
+    local json_console_output=""
 
     # Start with root job
     failed_jobs+=("$job_name")
 
-    # Get failed stage for root job
-    failed_stage=$(get_failed_stage "$job_name" "$build_number" 2>/dev/null) || true
+    # Detect early failure: no pipeline stages ran
+    # Spec: bug-status-json-spec.md, Detection Criteria
+    local stages
+    stages=$(get_all_stages "$job_name" "$build_number")
+    local stage_count
+    stage_count=$(echo "$stages" | jq 'length' 2>/dev/null) || stage_count=0
 
-    # Find downstream builds and their failure status
-    local downstream_builds
-    downstream_builds=$(detect_all_downstream_builds "$console_output")
+    if [[ "$stage_count" -eq 0 ]]; then
+        # Early failure — include full console output, no error_summary
+        json_console_output="$console_output"
+    else
+        # Stages exist — get failed stage and error details
 
-    if [[ -n "$downstream_builds" ]]; then
-        # Track the deepest failed job
-        local current_console="$console_output"
-        local current_job="$job_name"
-        local current_build="$build_number"
+        # Get failed stage for root job
+        failed_stage=$(get_failed_stage "$job_name" "$build_number" 2>/dev/null) || true
 
-        while true; do
-            local failed_downstream
-            failed_downstream=$(find_failed_downstream_build "$current_console")
+        # Find downstream builds and their failure status
+        local downstream_builds
+        downstream_builds=$(detect_all_downstream_builds "$console_output")
 
-            if [[ -z "$failed_downstream" ]]; then
-                break
+        if [[ -n "$downstream_builds" ]]; then
+            # Track the deepest failed job
+            local current_console="$console_output"
+            local current_job="$job_name"
+            local current_build="$build_number"
+
+            while true; do
+                local failed_downstream
+                failed_downstream=$(find_failed_downstream_build "$current_console")
+
+                if [[ -z "$failed_downstream" ]]; then
+                    break
+                fi
+
+                local ds_job ds_build
+                ds_job=$(echo "$failed_downstream" | cut -d' ' -f1)
+                ds_build=$(echo "$failed_downstream" | cut -d' ' -f2)
+
+                if [[ -n "$ds_job" && "$ds_job" != "$current_job" ]]; then
+                    failed_jobs+=("$ds_job")
+                    root_cause_job="$ds_job"
+                    current_job="$ds_job"
+                    current_build="$ds_build"
+
+                    # Get console for this downstream build
+                    current_console=$(get_console_output "$ds_job" "$ds_build" 2>/dev/null) || break
+
+                    # Update failed stage from root cause job
+                    local ds_stage
+                    ds_stage=$(get_failed_stage "$ds_job" "$ds_build" 2>/dev/null) || true
+                    if [[ -n "$ds_stage" ]]; then
+                        failed_stage="$ds_stage"
+                    fi
+                else
+                    break
+                fi
+            done
+
+            # Get multi-line error summary from root cause (mirrors _display_error_logs)
+            # Spec: bug-status-json-spec.md, Technical Requirement 2
+            if [[ -n "$current_console" ]]; then
+                error_summary=$(extract_error_lines "$current_console" 30)
             fi
+        else
+            # No downstream — use stage-aware error extraction (mirrors _display_error_logs)
+            if [[ -n "$failed_stage" ]]; then
+                local stage_logs
+                stage_logs=$(extract_stage_logs "$console_output" "$failed_stage")
 
-            local ds_job ds_build
-            ds_job=$(echo "$failed_downstream" | cut -d' ' -f1)
-            ds_build=$(echo "$failed_downstream" | cut -d' ' -f2)
+                local line_count
+                line_count=$(echo "$stage_logs" | wc -l | tr -d ' ')
 
-            if [[ -n "$ds_job" && "$ds_job" != "$current_job" ]]; then
-                failed_jobs+=("$ds_job")
-                root_cause_job="$ds_job"
-                current_job="$ds_job"
-                current_build="$ds_build"
-
-                # Get console for this downstream build
-                current_console=$(get_console_output "$ds_job" "$ds_build" 2>/dev/null) || break
-
-                # Update failed stage from root cause job
-                local ds_stage
-                ds_stage=$(get_failed_stage "$ds_job" "$ds_build" 2>/dev/null) || true
-                if [[ -n "$ds_stage" ]]; then
-                    failed_stage="$ds_stage"
+                if [[ -n "$stage_logs" ]] && [[ "$line_count" -ge "$STAGE_LOG_MIN_LINES" ]]; then
+                    error_summary=$(extract_error_lines "$stage_logs" 30)
+                else
+                    # Fallback: stage extraction insufficient
+                    error_summary=$(echo "$console_output" | tail -"$STAGE_LOG_FALLBACK_LINES")
                 fi
             else
-                break
+                error_summary=$(extract_error_lines "$console_output" 30)
             fi
-        done
-
-        # Get error summary from root cause
-        if [[ -n "$current_console" ]]; then
-            error_summary=$(_extract_error_summary "$current_console")
         fi
-    else
-        # No downstream - get error summary from main console
-        error_summary=$(_extract_error_summary "$console_output")
     fi
 
     # Build JSON array for failed_jobs
@@ -2413,11 +2445,13 @@ _build_failure_json() {
         --arg root_cause_job "$root_cause_job" \
         --arg failed_stage "$failed_stage" \
         --arg error_summary "$error_summary" \
+        --arg console_output "$json_console_output" \
         '{
             failed_jobs: $failed_jobs,
             root_cause_job: $root_cause_job,
             failed_stage: (if $failed_stage == "" then null else $failed_stage end),
-            error_summary: (if $error_summary == "" then null else $error_summary end)
+            error_summary: (if $error_summary == "" then null else $error_summary end),
+            console_output: (if $console_output == "" then null else $console_output end)
         }'
 }
 

@@ -4,8 +4,10 @@
 
 Individual `*-spec.md` files are treated as the specification for each feature—they define what the feature is and what it must do. These specification files are the authoritative ("canonical") source of requirements for their parts of the application.
 
-If there are conflicting specifications, they must be reviewed and updated to resolve any discrepancies.
-All spec files that are created from other raw report documents should reference those documents in the title header of the spec
+- If there are conflicting specifications, newer ones are always more important than older ones
+- All spec files that are created from other raw report documents should reference those documents in the title header of the spec
+
+## Creating a new spec
 
 **Specification template (include at top of each spec):**
 ```
@@ -13,6 +15,9 @@ All spec files that are created from other raw report documents should reference
 Date: YYYY-MM-DD
 References: list of <other-raw-report-path.md> or <none>
 ```
+
+## Spec rules
+- any changes to the 'buildgit status' command must ensure that 'buildgit status', 'buildgit status -f', and 'buildgit status --json' are always consistent with each other.  If you change one of these, they all should be changed to match.
 
 ### Todo directory
 The specs/todo directory contains specs or plans for new features and/or bug fixes.  
@@ -37,6 +42,7 @@ These files represent completed specifications in the specs/ directory.  This li
 - refactoring-simple-spec.md  deduplication pass across buildgit and jenkins-common.sh (extract helpers, remove dead wrappers, merge functions)
 - buildgit-early-build-failure-spec.md  show full console log when a build fails before any pipeline stage runs (e.g. Jenkinsfile syntax error)
 - bug-status-f-missing-header-spec.md  fix for missing build header when `buildgit status -f` detects a build that already completed
+- bug-status-json-spec.md  fix `buildgit status --json` to include console output for early failures and multi-line error extraction for stage failures
 
 
 
