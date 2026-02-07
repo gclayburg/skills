@@ -36,6 +36,7 @@ These files represent completed specifications in the specs/ directory.  This li
 - unify-follow-log-spec.md  unified build monitoring output format for push, build, and status -f commands
 - refactoring-simple-spec.md  deduplication pass across buildgit and jenkins-common.sh (extract helpers, remove dead wrappers, merge functions)
 - buildgit-early-build-failure-spec.md  show full console log when a build fails before any pipeline stage runs (e.g. Jenkinsfile syntax error)
+- bug-status-f-missing-header-spec.md  fix for missing build header when `buildgit status -f` detects a build that already completed
 
 
 

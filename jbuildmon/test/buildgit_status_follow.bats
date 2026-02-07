@@ -577,3 +577,126 @@ WRAPPER
     # Should show git status with the untracked file
     [[ "$output" == *"newfile.txt"* ]] || [[ "$output" == *"Untracked"* ]]
 }
+
+# =============================================================================
+# Test Cases: Completed Build Header Display (bug-status-f-missing-header-spec)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Test Case: Follow mode shows full header for completed SUCCESS build
+# Spec: bug-status-f-missing-header-spec.md - completed builds show header
+# -----------------------------------------------------------------------------
+@test "follow_completed_success_shows_header" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    # Build already completed (building=false), result=SUCCESS, poll_cycles=0
+    # poll_cycles=0 ensures first get_build_info call returns the final result
+    create_follow_test_wrapper "false" "SUCCESS" "0"
+
+    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
+    FOLLOW_PID=$!
+
+    sleep 5
+    _kill_process_tree "$FOLLOW_PID"
+
+    local output
+    output=$(cat "${TEST_TEMP_DIR}/output.txt")
+
+    # Should show BUILD SUCCESSFUL banner
+    [[ "$output" == *"BUILD SUCCESSFUL"* ]]
+
+    # Should show build metadata
+    [[ "$output" == *"Job:"* ]]
+    [[ "$output" == *"Build:"*"#42"* ]]
+    [[ "$output" == *"Status:"* ]]
+    [[ "$output" == *"Trigger:"* ]]
+
+    # Should show Finished line
+    [[ "$output" == *"Finished: SUCCESS"* ]]
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: Follow mode shows full header for completed FAILURE build
+# Spec: bug-status-f-missing-header-spec.md - completed builds show header
+# -----------------------------------------------------------------------------
+@test "follow_completed_failure_shows_header" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    # Build already completed (building=false), result=FAILURE, poll_cycles=0
+    create_follow_test_wrapper "false" "FAILURE" "0"
+
+    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
+    FOLLOW_PID=$!
+
+    sleep 5
+    _kill_process_tree "$FOLLOW_PID"
+
+    local output
+    output=$(cat "${TEST_TEMP_DIR}/output.txt")
+
+    # Should show BUILD FAILED banner
+    [[ "$output" == *"BUILD FAILED"* ]]
+
+    # Should show build metadata
+    [[ "$output" == *"Job:"* ]]
+    [[ "$output" == *"Build:"*"#42"* ]]
+    [[ "$output" == *"Status:"* ]]
+    [[ "$output" == *"Trigger:"* ]]
+
+    # Should show Finished line
+    [[ "$output" == *"Finished: FAILURE"* ]]
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: Follow mode does not duplicate Finished line for completed builds
+# Spec: bug-status-f-missing-header-spec.md - no duplicate output
+# -----------------------------------------------------------------------------
+@test "follow_completed_build_no_duplicate_finished" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_test_wrapper "false" "SUCCESS" "0"
+
+    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
+    FOLLOW_PID=$!
+
+    sleep 5
+    _kill_process_tree "$FOLLOW_PID"
+
+    local output
+    output=$(cat "${TEST_TEMP_DIR}/output.txt")
+
+    # Count occurrences of "Finished: SUCCESS" - should appear exactly once
+    local count
+    count=$(echo "$output" | grep -c "Finished: SUCCESS" || true)
+    [[ "$count" -eq 1 ]]
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: Follow mode shows console URL for completed builds
+# Spec: bug-status-f-missing-header-spec.md - header includes console URL
+# -----------------------------------------------------------------------------
+@test "follow_completed_build_shows_console_url" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_test_wrapper "false" "SUCCESS" "0"
+
+    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
+    FOLLOW_PID=$!
+
+    sleep 5
+    _kill_process_tree "$FOLLOW_PID"
+
+    local output
+    output=$(cat "${TEST_TEMP_DIR}/output.txt")
+
+    # Should show console URL
+    [[ "$output" == *"Console:"*"console"* ]]
+}

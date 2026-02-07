@@ -500,6 +500,52 @@ _follow_wait_for_new_build() {
     done
 }
 
+# Display completed build with full header (for follow mode)
+# Used when the follow loop detects a build that already completed
+# Reuses the same display functions as snapshot `buildgit status`
+# Arguments: job_name, build_number, build_json
+# Returns: 0 for SUCCESS, 1 for FAILURE/UNSTABLE/other
+# Spec: bug-status-f-missing-header-spec.md
+_display_completed_build() {
+    local job_name="$1"
+    local build_number="$2"
+    local build_json="$3"
+
+    local result
+    result=$(echo "$build_json" | jq -r '.result // "UNKNOWN"')
+
+    # Get console output for trigger detection, commit extraction, and Build Info
+    local console_output
+    console_output=$(get_console_output "$job_name" "$build_number" 2>/dev/null) || true
+
+    # Extract trigger, commit, and correlation context
+    _extract_build_context "$job_name" "$build_number" "$console_output"
+
+    # Display using the same output path as snapshot mode
+    if [[ "$result" == "SUCCESS" ]]; then
+        display_success_output "$job_name" "$build_number" "$build_json" \
+            "$_BC_TRIGGER_TYPE" "$_BC_TRIGGER_USER" \
+            "$_BC_COMMIT_SHA" "$_BC_COMMIT_MSG" \
+            "$_BC_CORRELATION_STATUS"
+    else
+        display_failure_output "$job_name" "$build_number" "$build_json" \
+            "$_BC_TRIGGER_TYPE" "$_BC_TRIGGER_USER" \
+            "$_BC_COMMIT_SHA" "$_BC_COMMIT_MSG" \
+            "$_BC_CORRELATION_STATUS" "$console_output"
+    fi
+
+    # Print final status line (not included in display_*_output functions)
+    echo ""
+    print_finished_line "$result"
+
+    # Return appropriate exit code
+    if [[ "$result" == "SUCCESS" ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 # Follow mode implementation for status command
 # Spec reference: buildgit-spec.md, buildgit status -f/--follow
 # "Monitor current build if in progress, then wait indefinitely for subsequent builds"
@@ -545,11 +591,14 @@ _cmd_status_follow() {
             # Spec: unify-follow-log-spec.md, Section 5 (buildgit status -f)
             _display_build_in_progress_banner "$job_name" "$build_number" "(so far)"
             _monitor_build "$job_name" "$build_number"
+            # Display build completion (test results if applicable + Finished line)
+            # Spec: unify-follow-log-spec.md, Section 4 (Build Completion)
+            _handle_build_completion "$job_name" "$build_number" || true
+        else
+            # Build already completed - display full header matching snapshot mode
+            # Spec: bug-status-f-missing-header-spec.md
+            _display_completed_build "$job_name" "$build_number" "$build_json" || true
         fi
-
-        # Display build completion (test results if applicable + Finished line)
-        # Spec: unify-follow-log-spec.md, Section 4 (Build Completion)
-        _handle_build_completion "$job_name" "$build_number" || true
 
         # Show waiting message (always shown - essential output)
         echo ""
