@@ -368,7 +368,12 @@ _monitor_build() {
     local elapsed=0
     local consecutive_failures=0
     local last_time_report=0
-    local stage_state="[]"
+
+    # Initialize stage_state from banner's snapshot (avoids timing gaps)
+    # _BANNER_STAGES_JSON is set by _display_completed_stages() in the banner
+    # Spec: bug-show-all-stages.md - use banner state to avoid missing stages
+    local stage_state="${_BANNER_STAGES_JSON:-[]}"
+    _BANNER_STAGES_JSON=""  # Reset after reading
 
     bg_log_info "Monitoring build #${build_number}..."
 
@@ -390,18 +395,19 @@ _monitor_build() {
 
         consecutive_failures=0
 
+        # Track stage changes BEFORE checking completion
+        # This ensures the final iteration still catches stage transitions
+        # Spec: bug-show-all-stages.md - all stages must be shown
+        stage_state=$(track_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE")
+
         local building result
         building=$(echo "$build_info" | jq -r '.building')
         result=$(echo "$build_info" | jq -r '.result // empty')
 
-        # Check completion
+        # Check completion (after stage tracking so final transitions are caught)
         if [[ "$building" == "false" && -n "$result" ]]; then
             return 0
         fi
-
-        # Track stage changes (replaces get_current_stage logic)
-        # Spec: full-stage-print-spec.md, Stage Tracking
-        stage_state=$(track_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE")
 
         # Verbose-only elapsed time messages
         # Spec: full-stage-print-spec.md, Verbose mode
@@ -475,10 +481,11 @@ _display_build_in_progress_banner() {
         "$correlation_status" "$current_stage" \
         "$console_output" "$elapsed_suffix"
 
-    # Display already-completed stages after the header
-    # Spec: unify-follow-log-spec.md, Section 3 (Initial Display)
+    # Display only completed stages after the header (skip IN_PROGRESS)
+    # Also saves full stage state to _BANNER_STAGES_JSON for _monitor_build
+    # Spec: bug-show-all-stages.md - never show "(running)" in initial display
     echo ""
-    _display_all_stages "$job_name" "$build_number"
+    _display_completed_stages "$job_name" "$build_number"
 }
 
 # Wait for a new build to start (for follow mode)

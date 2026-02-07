@@ -549,7 +549,7 @@ wait_for_queue_item() {
             local why
             why=$(echo "$response" | jq -r '.why // empty' 2>/dev/null)
             if [[ -n "$why" && "$why" != "null" ]]; then
-                log_info "Waiting in queue: $why"
+                log_info "Waiting in queue: $why" >&2
             fi
 
             # Check if cancelled
@@ -1528,6 +1528,49 @@ _display_all_stages() {
     done
 }
 
+# Display only completed stages (skip IN_PROGRESS and NOT_EXECUTED)
+# Also saves full stages JSON to _BANNER_STAGES_JSON global for monitor initialization
+# Usage: _display_completed_stages "job-name" "build-number"
+# Outputs: Completed stage lines to stdout in execution order
+# Spec: bug-show-all-stages.md - never show "(running)" in initial display
+_display_completed_stages() {
+    local job_name="$1"
+    local build_number="$2"
+
+    local stages_json
+    stages_json=$(get_all_stages "$job_name" "$build_number")
+
+    # Save full stages JSON for monitor initialization (includes IN_PROGRESS)
+    _BANNER_STAGES_JSON="${stages_json:-[]}"
+
+    # Handle empty or invalid stages
+    if [[ -z "$stages_json" || "$stages_json" == "[]" || "$stages_json" == "null" ]]; then
+        return 0
+    fi
+
+    # Get number of stages
+    local stage_count
+    stage_count=$(echo "$stages_json" | jq 'length')
+
+    # Iterate through each stage, only print completed ones
+    local i=0
+    while [[ $i -lt $stage_count ]]; do
+        local stage_name status duration_ms
+        stage_name=$(echo "$stages_json" | jq -r ".[$i].name")
+        status=$(echo "$stages_json" | jq -r ".[$i].status")
+        duration_ms=$(echo "$stages_json" | jq -r ".[$i].durationMillis")
+
+        # Only show stages with a final status (not running or pending)
+        case "$status" in
+            SUCCESS|FAILED|UNSTABLE|ABORTED)
+                print_stage_line "$stage_name" "$status" "$duration_ms"
+                ;;
+        esac
+
+        i=$((i + 1))
+    done
+}
+
 # Track stage state changes and print completed stages
 # Usage: new_state=$(track_stage_changes "job-name" "build-number" "$previous_state" "$verbose")
 # Returns: Current stages JSON on stdout (capture for next iteration)
@@ -1583,9 +1626,10 @@ track_stage_changes() {
         # Detect transitions and print completed stages
         case "$current_status" in
             SUCCESS|FAILED|UNSTABLE|ABORTED)
-                # Check if this stage just transitioned from IN_PROGRESS
-                if [[ "$previous_status" == "IN_PROGRESS" ]]; then
-                    # Stage completed - print it
+                # Print if stage transitioned from IN_PROGRESS or appeared already completed
+                # The NOT_EXECUTED case catches fast stages that complete between polls
+                # Spec: bug-show-all-stages.md - all stages must be shown
+                if [[ "$previous_status" == "IN_PROGRESS" || "$previous_status" == "NOT_EXECUTED" ]]; then
                     print_stage_line "$stage_name" "$current_status" "$duration_ms" >&2
                 fi
                 ;;

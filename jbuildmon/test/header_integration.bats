@@ -138,7 +138,9 @@ teardown() {
     # Initial completed stages should be displayed after the header
     assert_output --partial "Stage: Checkout SCM"
     assert_output --partial "Stage: Build (15s)"
-    assert_output --partial "Stage: Unit Tests (running)"
+    # IN_PROGRESS stages should NOT be shown (bug fix: no "(running)" in initial display)
+    refute_output --partial "Unit Tests"
+    refute_output --partial "running"
 }
 
 # =============================================================================
