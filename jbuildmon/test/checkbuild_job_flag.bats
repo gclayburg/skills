@@ -109,7 +109,7 @@ output_json() { echo '{"status":"SUCCESS"}'; }
 EOF
 
     # Append the argument parsing and main logic from checkbuild.sh
-    sed -n '/^parse_arguments()/,/^# =*$/p' "${PROJECT_DIR}/checkbuild.sh" | head -n -1 >> "${TEST_TEMP_DIR}/checkbuild_wrapper.sh"
+    sed -n '/^parse_arguments()/,/^# =*$/p' "${PROJECT_DIR}/checkbuild.sh" | sed '$d' >> "${TEST_TEMP_DIR}/checkbuild_wrapper.sh"
     sed -n '/^show_usage()/,/^}/p' "${PROJECT_DIR}/checkbuild.sh" >> "${TEST_TEMP_DIR}/checkbuild_wrapper.sh"
 
     cat >> "${TEST_TEMP_DIR}/checkbuild_wrapper.sh" << 'EOF'

@@ -77,15 +77,16 @@ create_follow_test_wrapper() {
         -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
         "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
 
+    # Initialize file-based counter (persists across subshells)
+    echo "0" > "${TEST_TEMP_DIR}/build_info_calls"
+
     # Write the wrapper script with proper variable substitution
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << 'WRAPPER_END'
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Track number of get_build_info calls
-BUILD_INFO_CALL_COUNT=0
-
 # Source buildgit without executing main
+_BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
 
 # Override poll interval for faster tests
@@ -108,9 +109,13 @@ get_last_build_number() {
 }
 
 get_build_info() {
-    BUILD_INFO_CALL_COUNT=$((BUILD_INFO_CALL_COUNT + 1))
+    # Use file-based counter for persistence across command substitution subshells
+    local count
+    count=$(cat "${TEST_TEMP_DIR}/build_info_calls")
+    count=$((count + 1))
+    echo "$count" > "${TEST_TEMP_DIR}/build_info_calls"
 
-    if [[ $BUILD_INFO_CALL_COUNT -le __POLL_CYCLES__ ]]; then
+    if [[ $count -le __POLL_CYCLES__ ]]; then
         # Build still in progress
         echo '{"number":42,"result":"null","building":__INITIAL_BUILDING__,"timestamp":1706700000000,"duration":0,"url":"http://jenkins.example.com/job/test-repo/42/"}'
     else
@@ -136,9 +141,9 @@ cmd_status -f "$@"
 WRAPPER_END
 
     # Replace placeholders with actual values
-    sed -i "s|__POLL_CYCLES__|${poll_cycles}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
-    sed -i "s|__INITIAL_BUILDING__|${initial_building}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
-    sed -i "s|__FINAL_RESULT__|${final_result}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+    sed -i '' "s|__POLL_CYCLES__|${poll_cycles}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+    sed -i '' "s|__INITIAL_BUILDING__|${initial_building}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+    sed -i '' "s|__FINAL_RESULT__|${final_result}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 }
@@ -160,6 +165,7 @@ export TEST_TEMP_DIR="__TEST_TEMP_DIR__"
 BUILD_NUMBER_CALLS=0
 BUILD_INFO_CALLS=0
 
+_BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
 
 POLL_INTERVAL=1
@@ -208,8 +214,8 @@ cmd_status -f "$@"
 WRAPPER
 
     # Substitute paths
-    sed -i "s|__PROJECT_DIR__|${PROJECT_DIR}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
-    sed -i "s|__TEST_TEMP_DIR__|${TEST_TEMP_DIR}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+    sed -i '' "s|__PROJECT_DIR__|${PROJECT_DIR}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+    sed -i '' "s|__TEST_TEMP_DIR__|${TEST_TEMP_DIR}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 }
@@ -237,6 +243,7 @@ WRAPPER
 #!/usr/bin/env bash
 set -euo pipefail
 
+_BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
 
 POLL_INTERVAL=1
@@ -260,8 +267,8 @@ WRAPPER_END
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
-    # Run in background with timeout
-    timeout 8s bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
+    # Run in background
+    bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
     FOLLOW_PID=$!
 
     # Wait for output to be generated
@@ -291,8 +298,8 @@ WRAPPER_END
     # Build already complete (not building)
     create_follow_test_wrapper "false" "SUCCESS" "1"
 
-    # Run in background with timeout
-    timeout 8s bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
+    # Run in background
+    bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
     FOLLOW_PID=$!
 
     # Wait for waiting message to appear
@@ -320,8 +327,8 @@ WRAPPER_END
     export TEST_TEMP_DIR
     create_new_build_detection_wrapper
 
-    # Run in background with timeout
-    timeout 10s bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
+    # Run in background
+    bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
     FOLLOW_PID=$!
 
     # Wait for new build detection
@@ -360,6 +367,7 @@ WRAPPER_END
 #!/usr/bin/env bash
 set -euo pipefail
 
+_BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
 
 POLL_INTERVAL=1
@@ -384,7 +392,11 @@ WRAPPER_END
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
     # Run with timeout (simulates forced termination)
-    timeout 4s bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" > "${TEST_TEMP_DIR}/output.txt" 2>&1 || true
+    bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
+    local bg_pid=$!
+    sleep 4
+    kill "$bg_pid" 2>/dev/null || true
+    wait "$bg_pid" 2>/dev/null || true
 
     local output
     output=$(cat "${TEST_TEMP_DIR}/output.txt")
@@ -409,7 +421,7 @@ WRAPPER_END
     create_follow_test_wrapper "false" "SUCCESS" "1"
 
     # Run in background with short timeout
-    timeout 8s bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
+    bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
     FOLLOW_PID=$!
 
     # Wait for result to be displayed
@@ -439,7 +451,7 @@ WRAPPER_END
     create_follow_test_wrapper "false" "SUCCESS" "1"
 
     # Run with -f option
-    timeout 6s bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
+    bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
     FOLLOW_PID=$!
 
     sleep 4
@@ -472,6 +484,7 @@ WRAPPER_END
 #!/usr/bin/env bash
 set -euo pipefail
 
+_BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
 
 POLL_INTERVAL=1
@@ -495,7 +508,7 @@ WRAPPER
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
-    timeout 6s bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
+    bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
     FOLLOW_PID=$!
 
     sleep 4
@@ -523,7 +536,7 @@ WRAPPER
     export TEST_TEMP_DIR
     create_follow_test_wrapper "false" "SUCCESS" "1"
 
-    timeout 6s bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
+    bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
     FOLLOW_PID=$!
 
     sleep 4

@@ -75,6 +75,7 @@ export PROJECT_DIR="${PROJECT_DIR}"
 export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
 
 # Source buildgit without executing main
+_BUILDGIT_TESTING=1
 source "\${TEST_TEMP_DIR}/buildgit_no_main.sh"
 
 # Override Jenkins API functions with mocks
@@ -131,6 +132,7 @@ export PROJECT_DIR="${PROJECT_DIR}"
 export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
 
 # Source buildgit without executing main
+_BUILDGIT_TESTING=1
 source "\${TEST_TEMP_DIR}/buildgit_no_main.sh"
 
 # Override Jenkins API functions to simulate unavailability
@@ -286,6 +288,7 @@ export PROJECT_DIR="${PROJECT_DIR}"
 export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
 
 # Source buildgit without executing main
+_BUILDGIT_TESTING=1
 source "\${TEST_TEMP_DIR}/buildgit_no_main.sh"
 
 verify_jenkins_connection() { return 0; }

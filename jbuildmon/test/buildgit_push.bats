@@ -90,6 +90,7 @@ create_push_test_wrapper() {
 #!/usr/bin/env bash
 set -euo pipefail
 
+_BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
 
 # Override poll interval for faster tests
@@ -162,9 +163,9 @@ JOB_NAME="test-repo"
 cmd_push "$@"
 WRAPPER_END
 
-    # Replace placeholders with actual values
-    sed -i "s|__POLL_CYCLES__|${poll_cycles}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
-    sed -i "s|__BUILD_RESULT__|${build_result}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+    # Replace placeholders with actual values (use -i '' for macOS BSD sed compatibility)
+    sed -i '' "s|__POLL_CYCLES__|${poll_cycles}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+    sed -i '' "s|__BUILD_RESULT__|${build_result}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 }
@@ -179,6 +180,7 @@ create_push_git_failure_wrapper() {
 #!/usr/bin/env bash
 set -euo pipefail
 
+_BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
 
 JOB_NAME="test-repo"
@@ -238,7 +240,7 @@ WRAPPER
     create_push_test_wrapper "SUCCESS" "2"
 
     # Run push (without --no-follow, so it monitors)
-    timeout 15s bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" > "${TEST_TEMP_DIR}/output.txt" 2>&1 || true
+    bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" > "${TEST_TEMP_DIR}/output.txt" 2>&1 || true
 
     local output
     output=$(cat "${TEST_TEMP_DIR}/output.txt")
@@ -336,8 +338,8 @@ WRAPPER
     export TEST_TEMP_DIR
     create_push_test_wrapper "FAILURE" "1"
 
-    # Use run with timeout - the || true prevents bats from failing on non-zero exit
-    run timeout 15s bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" 2>&1
+    # Use run - the || true prevents bats from failing on non-zero exit
+    run bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" 2>&1
 
     # Should return non-zero for failed build (1 for build failure)
     [ "$status" -ne 0 ]

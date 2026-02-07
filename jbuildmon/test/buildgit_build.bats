@@ -76,6 +76,7 @@ create_build_test_wrapper() {
 #!/usr/bin/env bash
 set -euo pipefail
 
+_BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
 
 # Override poll interval for faster tests
@@ -148,10 +149,10 @@ JOB_NAME="test-repo"
 cmd_build "$@"
 WRAPPER_END
 
-    # Replace placeholders with actual values
-    sed -i "s|__POLL_CYCLES__|${poll_cycles}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
-    sed -i "s|__BUILD_RESULT__|${build_result}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
-    sed -i "s|__TRIGGER_SUCCESS__|${trigger_success}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+    # Replace placeholders with actual values (use -i '' for macOS BSD sed compatibility)
+    sed -i '' "s|__POLL_CYCLES__|${poll_cycles}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+    sed -i '' "s|__BUILD_RESULT__|${build_result}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+    sed -i '' "s|__TRIGGER_SUCCESS__|${trigger_success}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 }
@@ -166,6 +167,7 @@ create_build_no_job_wrapper() {
 #!/usr/bin/env bash
 set -euo pipefail
 
+_BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
 
 verify_jenkins_connection() {
@@ -223,7 +225,7 @@ WRAPPER
     create_build_test_wrapper "SUCCESS" "2" "true"
 
     # Run build (without --no-follow, so it monitors)
-    run timeout 15s bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" 2>&1
+    run bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" 2>&1
 
     # Should complete successfully with build result
     [ "$status" -eq 0 ]
@@ -268,7 +270,7 @@ WRAPPER
     export TEST_TEMP_DIR
     create_build_test_wrapper "SUCCESS" "1" "true"
 
-    run timeout 15s bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" 2>&1
+    run bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" 2>&1
 
     [ "$status" -eq 0 ]
 }
@@ -284,7 +286,7 @@ WRAPPER
     export TEST_TEMP_DIR
     create_build_test_wrapper "FAILURE" "1" "true"
 
-    run timeout 15s bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" 2>&1
+    run bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" 2>&1
 
     # Should return non-zero for failed build
     [ "$status" -ne 0 ]
@@ -354,7 +356,7 @@ WRAPPER
     export TEST_TEMP_DIR
     create_build_test_wrapper "SUCCESS" "1" "true"
 
-    run timeout 15s bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" 2>&1
+    run bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" 2>&1
 
     [ "$status" -eq 0 ]
     # Should show build number somewhere in output
