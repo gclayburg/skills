@@ -1119,30 +1119,36 @@ extract_stage_logs() {
     '
 }
 
+# Parse build metadata from console output
+# Usage: _parse_build_metadata "$console_output"
+# Sets: _META_STARTED_BY, _META_AGENT, _META_PIPELINE
+_parse_build_metadata() {
+    local console_output="$1"
+
+    # Extract user who started the build
+    _META_STARTED_BY=$(echo "$console_output" | grep -m1 "^Started by user " | sed 's/^Started by user //') || true
+
+    # Extract Jenkins agent
+    _META_AGENT=$(echo "$console_output" | grep -m1 "^Running on " | sed 's/^Running on \([^ ]*\).*/\1/') || true
+
+    # Extract pipeline source (pipeline name + git URL)
+    # Format: "Obtained <pipeline-name> from git <url>"
+    _META_PIPELINE=$(echo "$console_output" | grep -m1 "^Obtained .* from git " | sed 's|^Obtained ||') || true
+}
+
 # Display build metadata from console output (user, agent, pipeline)
 # Usage: display_build_metadata "$console_output"
 # Outputs: Formatted build info section
 display_build_metadata() {
     local console_output="$1"
 
-    # Extract user who started the build
-    local started_by
-    started_by=$(echo "$console_output" | grep -m1 "^Started by user " | sed 's/^Started by user //') || true
-
-    # Extract Jenkins agent
-    local agent
-    agent=$(echo "$console_output" | grep -m1 "^Running on " | sed 's/^Running on \([^ ]*\).*/\1/') || true
-
-    # Extract pipeline source (pipeline name + git URL)
-    # Format: "Obtained <pipeline-name> from git <url>"
-    local pipeline
-    pipeline=$(echo "$console_output" | grep -m1 "^Obtained .* from git " | sed 's|^Obtained ||') || true
+    _parse_build_metadata "$console_output"
 
     echo ""
     echo "${COLOR_CYAN}=== Build Info ===${COLOR_RESET}"
-    [[ -n "$started_by" ]] && echo "  Started by:  $started_by"
-    [[ -n "$agent" ]] && echo "  Agent:       $agent"
-    [[ -n "$pipeline" ]] && echo "  Pipeline:    $pipeline"
+    [[ -n "$_META_STARTED_BY" ]] && echo "  Started by:  $_META_STARTED_BY"
+    [[ -n "$_META_AGENT" ]] && echo "  Agent:       $_META_AGENT"
+    [[ -n "$_META_PIPELINE" ]] && echo "  Pipeline:    $_META_PIPELINE"
     echo "${COLOR_CYAN}==================${COLOR_RESET}"
 }
 
@@ -1424,19 +1430,8 @@ format_stage_duration() {
         return
     fi
 
-    # For durations >= 1 second, use standard format_duration logic
-    local total_seconds=$((ms / 1000))
-    local hours=$((total_seconds / 3600))
-    local minutes=$(((total_seconds % 3600) / 60))
-    local seconds=$((total_seconds % 60))
-
-    if [[ $hours -gt 0 ]]; then
-        echo "${hours}h ${minutes}m ${seconds}s"
-    elif [[ $minutes -gt 0 ]]; then
-        echo "${minutes}m ${seconds}s"
-    else
-        echo "${seconds}s"
-    fi
+    # For durations >= 1 second, delegate to format_duration
+    format_duration "$ms"
 }
 
 # Print a single stage line with appropriate color and format
@@ -1494,16 +1489,27 @@ print_stage_line() {
     echo "${color}[${timestamp}] ℹ   Stage: ${stage_name} (${suffix})${COLOR_RESET}${marker}"
 }
 
-# Display all stages with their statuses and durations
-# Usage: _display_all_stages "job-name" "build-number"
+# Display stages from a build
+# Usage: _display_stages "job-name" "build-number" [--completed-only]
+# When --completed-only: skips IN_PROGRESS/NOT_EXECUTED, saves state to _BANNER_STAGES_JSON
 # Outputs: Stage lines to stdout in execution order
 # Spec: full-stage-print-spec.md, Section: Display Functions
-_display_all_stages() {
+# Spec: bug-show-all-stages.md - never show "(running)" in initial display
+_display_stages() {
     local job_name="$1"
     local build_number="$2"
+    local completed_only=false
+    if [[ "${3:-}" == "--completed-only" ]]; then
+        completed_only=true
+    fi
 
     local stages_json
     stages_json=$(get_all_stages "$job_name" "$build_number")
+
+    # Save full stages JSON for monitor initialization when in completed-only mode
+    if [[ "$completed_only" == "true" ]]; then
+        _BANNER_STAGES_JSON="${stages_json:-[]}"
+    fi
 
     # Handle empty or invalid stages
     if [[ -z "$stages_json" || "$stages_json" == "[]" || "$stages_json" == "null" ]]; then
@@ -1522,53 +1528,28 @@ _display_all_stages() {
         status=$(echo "$stages_json" | jq -r ".[$i].status")
         duration_ms=$(echo "$stages_json" | jq -r ".[$i].durationMillis")
 
-        print_stage_line "$stage_name" "$status" "$duration_ms"
+        if [[ "$completed_only" == "true" ]]; then
+            # Only show stages with a final status (not running or pending)
+            case "$status" in
+                SUCCESS|FAILED|UNSTABLE|ABORTED)
+                    print_stage_line "$stage_name" "$status" "$duration_ms"
+                    ;;
+            esac
+        else
+            print_stage_line "$stage_name" "$status" "$duration_ms"
+        fi
 
         i=$((i + 1))
     done
 }
 
-# Display only completed stages (skip IN_PROGRESS and NOT_EXECUTED)
-# Also saves full stages JSON to _BANNER_STAGES_JSON global for monitor initialization
-# Usage: _display_completed_stages "job-name" "build-number"
-# Outputs: Completed stage lines to stdout in execution order
-# Spec: bug-show-all-stages.md - never show "(running)" in initial display
+# Convenience aliases for backward compatibility in callers
+_display_all_stages() {
+    _display_stages "$1" "$2"
+}
+
 _display_completed_stages() {
-    local job_name="$1"
-    local build_number="$2"
-
-    local stages_json
-    stages_json=$(get_all_stages "$job_name" "$build_number")
-
-    # Save full stages JSON for monitor initialization (includes IN_PROGRESS)
-    _BANNER_STAGES_JSON="${stages_json:-[]}"
-
-    # Handle empty or invalid stages
-    if [[ -z "$stages_json" || "$stages_json" == "[]" || "$stages_json" == "null" ]]; then
-        return 0
-    fi
-
-    # Get number of stages
-    local stage_count
-    stage_count=$(echo "$stages_json" | jq 'length')
-
-    # Iterate through each stage, only print completed ones
-    local i=0
-    while [[ $i -lt $stage_count ]]; do
-        local stage_name status duration_ms
-        stage_name=$(echo "$stages_json" | jq -r ".[$i].name")
-        status=$(echo "$stages_json" | jq -r ".[$i].status")
-        duration_ms=$(echo "$stages_json" | jq -r ".[$i].durationMillis")
-
-        # Only show stages with a final status (not running or pending)
-        case "$status" in
-            SUCCESS|FAILED|UNSTABLE|ABORTED)
-                print_stage_line "$stage_name" "$status" "$duration_ms"
-                ;;
-        esac
-
-        i=$((i + 1))
-    done
+    _display_stages "$1" "$2" --completed-only
 }
 
 # Track stage state changes and print completed stages
@@ -1693,6 +1674,56 @@ format_timestamp_iso() {
     fi
 }
 
+# Format trigger type into display string
+# Usage: _format_trigger_display "automated" "username"
+# Returns: "Automated (git push)" or "Manual (started by username)" or "Unknown"
+_format_trigger_display() {
+    local trigger_type="$1"
+    local trigger_user="$2"
+
+    if [[ "$trigger_type" == "automated" ]]; then
+        echo "Automated (git push)"
+    elif [[ "$trigger_type" == "manual" ]]; then
+        echo "Manual (started by ${trigger_user})"
+    else
+        echo "Unknown"
+    fi
+}
+
+# Format commit SHA and message into display string
+# Usage: _format_commit_display "abc1234..." "commit message"
+# Returns: "abc1234 - \"commit message\"" or "abc1234" or "unknown"
+_format_commit_display() {
+    local commit_sha="$1"
+    local commit_msg="$2"
+
+    if [[ -n "$commit_sha" && "$commit_sha" != "unknown" ]]; then
+        local short_sha="${commit_sha:0:7}"
+        if [[ -n "$commit_msg" && "$commit_msg" != "unknown" ]]; then
+            echo "${short_sha} - \"${commit_msg}\""
+        else
+            echo "${short_sha}"
+        fi
+    else
+        echo "unknown"
+    fi
+}
+
+# Format correlation status into colored display components
+# Usage: _format_correlation_display "correlation_status"
+# Sets: _CORRELATION_SYMBOL, _CORRELATION_DESC, _CORRELATION_COLOR
+_format_correlation_display() {
+    local correlation_status="$1"
+
+    _CORRELATION_SYMBOL=$(get_correlation_symbol "$correlation_status")
+    _CORRELATION_DESC=$(describe_commit_correlation "$correlation_status")
+    if [[ "$correlation_status" == "your_commit" || "$correlation_status" == "in_history" ]]; then
+        _CORRELATION_COLOR="${COLOR_GREEN}"
+    else
+        _CORRELATION_COLOR="${COLOR_RED}"
+    fi
+}
+
 # Display successful build output
 # Usage: display_success_output "job_name" "build_number" "build_json" "trigger_type" "trigger_user" "commit_sha" "commit_msg" "correlation_status"
 display_success_output() {
@@ -1711,46 +1742,18 @@ display_success_output() {
     timestamp=$(echo "$build_json" | jq -r '.timestamp // 0')
     url=$(echo "$build_json" | jq -r '.url // empty')
 
-    # Format trigger display
-    local trigger_display
-    if [[ "$trigger_type" == "automated" ]]; then
-        trigger_display="Automated (git push)"
-    elif [[ "$trigger_type" == "manual" ]]; then
-        trigger_display="Manual (started by ${trigger_user})"
-    else
-        trigger_display="Unknown"
-    fi
-
-    # Format commit display
-    local commit_display
-    if [[ -n "$commit_sha" && "$commit_sha" != "unknown" ]]; then
-        local short_sha="${commit_sha:0:7}"
-        if [[ -n "$commit_msg" && "$commit_msg" != "unknown" ]]; then
-            commit_display="${short_sha} - \"${commit_msg}\""
-        else
-            commit_display="${short_sha}"
-        fi
-    else
-        commit_display="unknown"
-    fi
-
-    # Format correlation display
-    local correlation_symbol correlation_desc
-    correlation_symbol=$(get_correlation_symbol "$correlation_status")
-    correlation_desc=$(describe_commit_correlation "$correlation_status")
-    local correlation_color
-    if [[ "$correlation_status" == "your_commit" || "$correlation_status" == "in_history" ]]; then
-        correlation_color="${COLOR_GREEN}"
-    else
-        correlation_color="${COLOR_RED}"
-    fi
+    # Format display components
+    local trigger_display commit_display
+    trigger_display=$(_format_trigger_display "$trigger_type" "$trigger_user")
+    commit_display=$(_format_commit_display "$commit_sha" "$commit_msg")
+    _format_correlation_display "$correlation_status"
 
     # Display banner
     log_banner "success"
 
     # Display all stages
     # Spec: full-stage-print-spec.md, Section: Display Functions
-    _display_all_stages "$job_name" "$build_number"
+    _display_stages "$job_name" "$build_number"
     echo ""
 
     # Display build details
@@ -1759,7 +1762,7 @@ display_success_output() {
     echo "Status:     ${COLOR_GREEN}SUCCESS${COLOR_RESET}"
     echo "Trigger:    ${trigger_display}"
     echo "Commit:     ${commit_display}"
-    echo "            ${correlation_color}${correlation_symbol} ${correlation_desc}${COLOR_RESET}"
+    echo "            ${_CORRELATION_COLOR}${_CORRELATION_SYMBOL} ${_CORRELATION_DESC}${COLOR_RESET}"
     echo "Duration:   $(format_duration "$duration")"
     echo "Completed:  $(format_timestamp "$timestamp")"
     echo ""
@@ -1786,46 +1789,18 @@ display_failure_output() {
     timestamp=$(echo "$build_json" | jq -r '.timestamp // 0')
     url=$(echo "$build_json" | jq -r '.url // empty')
 
-    # Format trigger display
-    local trigger_display
-    if [[ "$trigger_type" == "automated" ]]; then
-        trigger_display="Automated (git push)"
-    elif [[ "$trigger_type" == "manual" ]]; then
-        trigger_display="Manual (started by ${trigger_user})"
-    else
-        trigger_display="Unknown"
-    fi
-
-    # Format commit display
-    local commit_display
-    if [[ -n "$commit_sha" && "$commit_sha" != "unknown" ]]; then
-        local short_sha="${commit_sha:0:7}"
-        if [[ -n "$commit_msg" && "$commit_msg" != "unknown" ]]; then
-            commit_display="${short_sha} - \"${commit_msg}\""
-        else
-            commit_display="${short_sha}"
-        fi
-    else
-        commit_display="unknown"
-    fi
-
-    # Format correlation display
-    local correlation_symbol correlation_desc
-    correlation_symbol=$(get_correlation_symbol "$correlation_status")
-    correlation_desc=$(describe_commit_correlation "$correlation_status")
-    local correlation_color
-    if [[ "$correlation_status" == "your_commit" || "$correlation_status" == "in_history" ]]; then
-        correlation_color="${COLOR_GREEN}"
-    else
-        correlation_color="${COLOR_RED}"
-    fi
+    # Format display components
+    local trigger_display commit_display
+    trigger_display=$(_format_trigger_display "$trigger_type" "$trigger_user")
+    commit_display=$(_format_commit_display "$commit_sha" "$commit_msg")
+    _format_correlation_display "$correlation_status"
 
     # Display banner
     log_banner "failure"
 
     # Display all stages (includes not-executed stages for failed builds)
     # Spec: full-stage-print-spec.md, Section: Display Functions
-    _display_all_stages "$job_name" "$build_number"
+    _display_stages "$job_name" "$build_number"
     echo ""
 
     # Display build details
@@ -1834,7 +1809,7 @@ display_failure_output() {
     echo "Status:     ${COLOR_RED}${result}${COLOR_RESET}"
     echo "Trigger:    ${trigger_display}"
     echo "Commit:     ${commit_display}"
-    echo "            ${correlation_color}${correlation_symbol} ${correlation_desc}${COLOR_RESET}"
+    echo "            ${_CORRELATION_COLOR}${_CORRELATION_SYMBOL} ${_CORRELATION_DESC}${COLOR_RESET}"
     echo "Duration:   $(format_duration "$duration")"
     echo "Completed:  $(format_timestamp "$timestamp")"
 
@@ -2047,39 +2022,11 @@ display_building_output() {
     now_ms=$(($(date +%s) * 1000))
     elapsed_ms=$((now_ms - timestamp))
 
-    # Format trigger display
-    local trigger_display
-    if [[ "$trigger_type" == "automated" ]]; then
-        trigger_display="Automated (git push)"
-    elif [[ "$trigger_type" == "manual" ]]; then
-        trigger_display="Manual (started by ${trigger_user})"
-    else
-        trigger_display="Unknown"
-    fi
-
-    # Format commit display
-    local commit_display
-    if [[ -n "$commit_sha" && "$commit_sha" != "unknown" ]]; then
-        local short_sha="${commit_sha:0:7}"
-        if [[ -n "$commit_msg" && "$commit_msg" != "unknown" ]]; then
-            commit_display="${short_sha} - \"${commit_msg}\""
-        else
-            commit_display="${short_sha}"
-        fi
-    else
-        commit_display="unknown"
-    fi
-
-    # Format correlation display
-    local correlation_symbol correlation_desc
-    correlation_symbol=$(get_correlation_symbol "$correlation_status")
-    correlation_desc=$(describe_commit_correlation "$correlation_status")
-    local correlation_color
-    if [[ "$correlation_status" == "your_commit" || "$correlation_status" == "in_history" ]]; then
-        correlation_color="${COLOR_GREEN}"
-    else
-        correlation_color="${COLOR_RED}"
-    fi
+    # Format display components
+    local trigger_display commit_display
+    trigger_display=$(_format_trigger_display "$trigger_type" "$trigger_user")
+    commit_display=$(_format_commit_display "$commit_sha" "$commit_msg")
+    _format_correlation_display "$correlation_status"
 
     # Format elapsed display with optional suffix
     local elapsed_display
@@ -2098,7 +2045,7 @@ display_building_output() {
     echo "Status:     ${COLOR_YELLOW}BUILDING${COLOR_RESET}"
     echo "Trigger:    ${trigger_display}"
     echo "Commit:     ${commit_display}"
-    echo "            ${correlation_color}${correlation_symbol} ${correlation_desc}${COLOR_RESET}"
+    echo "            ${_CORRELATION_COLOR}${_CORRELATION_SYMBOL} ${_CORRELATION_DESC}${COLOR_RESET}"
     echo "Started:    $(format_timestamp "$timestamp")"
     echo "Elapsed:    ${elapsed_display}"
 
@@ -2470,22 +2417,12 @@ _extract_error_summary() {
 _build_info_json() {
     local console_output="$1"
 
-    # Extract user who started the build
-    local started_by
-    started_by=$(echo "$console_output" | grep -m1 "^Started by user " | sed 's/^Started by user //') || true
-
-    # Extract Jenkins agent
-    local agent
-    agent=$(echo "$console_output" | grep -m1 "^Running on " | sed 's/^Running on \([^ ]*\).*/\1/') || true
-
-    # Extract pipeline source
-    local pipeline
-    pipeline=$(echo "$console_output" | grep -m1 "^Obtained .* from git " | sed 's|^Obtained ||') || true
+    _parse_build_metadata "$console_output"
 
     jq -n \
-        --arg started_by "$started_by" \
-        --arg agent "$agent" \
-        --arg pipeline "$pipeline" \
+        --arg started_by "$_META_STARTED_BY" \
+        --arg agent "$_META_AGENT" \
+        --arg pipeline "$_META_PIPELINE" \
         '{
             started_by: (if $started_by == "" then null else $started_by end),
             agent: (if $agent == "" then null else $agent end),

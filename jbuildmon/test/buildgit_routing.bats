@@ -100,7 +100,7 @@ teardown() {
     # It fails because no AGENTS.md or --job flag is provided
     assert_failure
     # Should show error about job name requirement
-    assert_output --partial "Job name required"
+    assert_output --partial "could not determine job name"
 }
 
 # =============================================================================

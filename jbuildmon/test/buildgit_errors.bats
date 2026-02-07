@@ -208,7 +208,7 @@ clear_jenkins_env() {
     # Should fail
     assert_failure
     # Should show clear error about job name requirement
-    assert_output --partial "Job name required"
+    assert_output --partial "could not determine job name"
     # Should include suggestion
     assert_output --partial "-j/--job"
 }

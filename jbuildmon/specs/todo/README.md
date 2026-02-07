@@ -4,6 +4,5 @@ Items in this directory represent features, enhancements, or bug fixes that have
 
 ## Index
 
-- **refactoring-simple-spec.md** — Deduplication pass across `buildgit` and `lib/jenkins-common.sh`. Eight independent refactoring items (R1-R8) targeting ~240 lines of duplicated code. No behavior changes.
 - **needed_tools.md** — New `buildgit` subcommands (`console`, `tests`, `status <build#>`) identified during debugging of build failures. Prioritized by usefulness during incident triage.
 - **features-to-ralph.md** — Future feature ideas: `buildgit log` with per-commit build status, and a `--debug`/`-vv` verbose level for connection diagnostics.

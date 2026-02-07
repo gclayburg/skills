@@ -237,6 +237,36 @@ _parse_status_options() {
     done
 }
 
+# Extract trigger, commit, and correlation info from a build
+# Usage: _extract_build_context "job-name" "build-number" "console_output"
+# Sets globals: _BC_TRIGGER_TYPE, _BC_TRIGGER_USER,
+#               _BC_COMMIT_SHA, _BC_COMMIT_MSG, _BC_CORRELATION_STATUS
+_extract_build_context() {
+    local job_name="$1"
+    local build_number="$2"
+    local console_output="$3"
+
+    # Detect trigger type
+    if [[ -n "$console_output" ]]; then
+        local trigger_info
+        trigger_info=$(detect_trigger_type "$console_output")
+        _BC_TRIGGER_TYPE=$(echo "$trigger_info" | head -1)
+        _BC_TRIGGER_USER=$(echo "$trigger_info" | tail -1)
+    else
+        _BC_TRIGGER_TYPE="unknown"
+        _BC_TRIGGER_USER="unknown"
+    fi
+
+    # Extract triggering commit
+    local commit_info
+    commit_info=$(extract_triggering_commit "$job_name" "$build_number" "$console_output")
+    _BC_COMMIT_SHA=$(echo "$commit_info" | head -1)
+    _BC_COMMIT_MSG=$(echo "$commit_info" | tail -1)
+
+    # Correlate commit with local history
+    _BC_CORRELATION_STATUS=$(correlate_commit "$_BC_COMMIT_SHA")
+}
+
 # Perform Jenkins status check and display
 # Reuses logic from checkbuild.sh
 # Arguments: job_name, json_mode
@@ -276,27 +306,8 @@ _jenkins_status_check() {
     local console_output
     console_output=$(get_console_output "$job_name" "$build_number" 2>/dev/null) || true
 
-    # Detect trigger type
-    local trigger_type trigger_user
-    if [[ -n "$console_output" ]]; then
-        local trigger_info
-        trigger_info=$(detect_trigger_type "$console_output")
-        trigger_type=$(echo "$trigger_info" | head -1)
-        trigger_user=$(echo "$trigger_info" | tail -1)
-    else
-        trigger_type="unknown"
-        trigger_user="unknown"
-    fi
-
-    # Extract triggering commit
-    local commit_info commit_sha commit_msg
-    commit_info=$(extract_triggering_commit "$job_name" "$build_number" "$console_output")
-    commit_sha=$(echo "$commit_info" | head -1)
-    commit_msg=$(echo "$commit_info" | tail -1)
-
-    # Correlate commit with local history
-    local correlation_status
-    correlation_status=$(correlate_commit "$commit_sha")
+    # Extract trigger, commit, and correlation context
+    _extract_build_context "$job_name" "$build_number" "$console_output"
 
     # Determine output based on build status
     local exit_code
@@ -308,14 +319,14 @@ _jenkins_status_check() {
 
         if [[ "$json_mode" == "true" ]]; then
             output_json "$job_name" "$build_number" "$build_json" \
-                "$trigger_type" "$trigger_user" \
-                "$commit_sha" "$commit_msg" \
-                "$correlation_status" "$console_output"
+                "$_BC_TRIGGER_TYPE" "$_BC_TRIGGER_USER" \
+                "$_BC_COMMIT_SHA" "$_BC_COMMIT_MSG" \
+                "$_BC_CORRELATION_STATUS" "$console_output"
         else
             display_building_output "$job_name" "$build_number" "$build_json" \
-                "$trigger_type" "$trigger_user" \
-                "$commit_sha" "$commit_msg" \
-                "$correlation_status" "$current_stage"
+                "$_BC_TRIGGER_TYPE" "$_BC_TRIGGER_USER" \
+                "$_BC_COMMIT_SHA" "$_BC_COMMIT_MSG" \
+                "$_BC_CORRELATION_STATUS" "$current_stage"
         fi
         exit_code=2
 
@@ -323,14 +334,14 @@ _jenkins_status_check() {
         # Build succeeded
         if [[ "$json_mode" == "true" ]]; then
             output_json "$job_name" "$build_number" "$build_json" \
-                "$trigger_type" "$trigger_user" \
-                "$commit_sha" "$commit_msg" \
-                "$correlation_status" "$console_output"
+                "$_BC_TRIGGER_TYPE" "$_BC_TRIGGER_USER" \
+                "$_BC_COMMIT_SHA" "$_BC_COMMIT_MSG" \
+                "$_BC_CORRELATION_STATUS" "$console_output"
         else
             display_success_output "$job_name" "$build_number" "$build_json" \
-                "$trigger_type" "$trigger_user" \
-                "$commit_sha" "$commit_msg" \
-                "$correlation_status"
+                "$_BC_TRIGGER_TYPE" "$_BC_TRIGGER_USER" \
+                "$_BC_COMMIT_SHA" "$_BC_COMMIT_MSG" \
+                "$_BC_CORRELATION_STATUS"
         fi
         exit_code=0
 
@@ -338,14 +349,14 @@ _jenkins_status_check() {
         # Build failed (FAILURE, UNSTABLE, ABORTED, or other)
         if [[ "$json_mode" == "true" ]]; then
             output_json "$job_name" "$build_number" "$build_json" \
-                "$trigger_type" "$trigger_user" \
-                "$commit_sha" "$commit_msg" \
-                "$correlation_status" "$console_output"
+                "$_BC_TRIGGER_TYPE" "$_BC_TRIGGER_USER" \
+                "$_BC_COMMIT_SHA" "$_BC_COMMIT_MSG" \
+                "$_BC_CORRELATION_STATUS" "$console_output"
         else
             display_failure_output "$job_name" "$build_number" "$build_json" \
-                "$trigger_type" "$trigger_user" \
-                "$commit_sha" "$commit_msg" \
-                "$correlation_status" "$console_output"
+                "$_BC_TRIGGER_TYPE" "$_BC_TRIGGER_USER" \
+                "$_BC_COMMIT_SHA" "$_BC_COMMIT_MSG" \
+                "$_BC_CORRELATION_STATUS" "$console_output"
         fi
         exit_code=1
     fi
@@ -370,7 +381,7 @@ _monitor_build() {
     local last_time_report=0
 
     # Initialize stage_state from banner's snapshot (avoids timing gaps)
-    # _BANNER_STAGES_JSON is set by _display_completed_stages() in the banner
+    # _BANNER_STAGES_JSON is set by _display_stages() --completed-only in the banner
     # Spec: bug-show-all-stages.md - use banner state to avoid missing stages
     local stage_state="${_BANNER_STAGES_JSON:-[]}"
     _BANNER_STAGES_JSON=""  # Reset after reading
@@ -447,27 +458,8 @@ _display_build_in_progress_banner() {
     local console_output
     console_output=$(get_console_output "$job_name" "$build_number" 2>/dev/null) || true
 
-    # Detect trigger type
-    local trigger_type trigger_user
-    if [[ -n "$console_output" ]]; then
-        local trigger_info
-        trigger_info=$(detect_trigger_type "$console_output")
-        trigger_type=$(echo "$trigger_info" | head -1)
-        trigger_user=$(echo "$trigger_info" | tail -1)
-    else
-        trigger_type="unknown"
-        trigger_user="unknown"
-    fi
-
-    # Extract triggering commit
-    local commit_info commit_sha commit_msg
-    commit_info=$(extract_triggering_commit "$job_name" "$build_number" "$console_output")
-    commit_sha=$(echo "$commit_info" | head -1)
-    commit_msg=$(echo "$commit_info" | tail -1)
-
-    # Correlate commit with local history
-    local correlation_status
-    correlation_status=$(correlate_commit "$commit_sha")
+    # Extract trigger, commit, and correlation context
+    _extract_build_context "$job_name" "$build_number" "$console_output"
 
     # Get current stage
     local current_stage
@@ -476,16 +468,16 @@ _display_build_in_progress_banner() {
     # Display the unified header (banner + metadata + Build Info + Console URL)
     # Spec: unify-follow-log-spec.md, Section 2
     display_building_output "$job_name" "$build_number" "$build_json" \
-        "$trigger_type" "$trigger_user" \
-        "$commit_sha" "$commit_msg" \
-        "$correlation_status" "$current_stage" \
+        "$_BC_TRIGGER_TYPE" "$_BC_TRIGGER_USER" \
+        "$_BC_COMMIT_SHA" "$_BC_COMMIT_MSG" \
+        "$_BC_CORRELATION_STATUS" "$current_stage" \
         "$console_output" "$elapsed_suffix"
 
     # Display only completed stages after the header (skip IN_PROGRESS)
     # Also saves full stage state to _BANNER_STAGES_JSON for _monitor_build
     # Spec: bug-show-all-stages.md - never show "(running)" in initial display
     echo ""
-    _display_completed_stages "$job_name" "$build_number"
+    _display_stages "$job_name" "$build_number" --completed-only
 }
 
 # Wait for a new build to start (for follow mode)
@@ -571,6 +563,54 @@ _cmd_status_follow() {
     done
 }
 
+# Validate Jenkins environment, resolve job name, verify connectivity
+# Usage: _validate_jenkins_setup "context-for-errors"
+# Sets: _VALIDATED_JOB_NAME
+# Returns: 0 on success, 1 on failure (with appropriate error messages)
+_validate_jenkins_setup() {
+    local context="$1"  # e.g., "monitor Jenkins builds", "trigger Jenkins build"
+
+    if ! validate_dependencies; then
+        bg_log_error "Cannot ${context} - missing dependencies (jq, curl)"
+        bg_log_essential "Suggestion: Install jq and curl, then retry"
+        return 1
+    fi
+
+    if ! validate_environment; then
+        bg_log_error "Cannot ${context} - environment not configured"
+        bg_log_essential "Suggestion: Set JENKINS_URL, JENKINS_USER_ID, and JENKINS_API_TOKEN"
+        return 1
+    fi
+
+    if [[ -n "$JOB_NAME" ]]; then
+        _VALIDATED_JOB_NAME="$JOB_NAME"
+        bg_log_info "Using specified job: $_VALIDATED_JOB_NAME"
+    else
+        bg_log_info "Discovering Jenkins job name..."
+        if ! _VALIDATED_JOB_NAME=$(discover_job_name); then
+            bg_log_error "Cannot ${context} - could not determine job name"
+            bg_log_essential "Suggestion: Use -j/--job to specify job name"
+            return 1
+        fi
+        bg_log_success "Job name: $_VALIDATED_JOB_NAME"
+    fi
+
+    bg_log_info "Verifying Jenkins connectivity..."
+    if ! verify_jenkins_connection; then
+        bg_log_error "Cannot ${context} - cannot connect to Jenkins"
+        bg_log_essential "Suggestion: Check JENKINS_URL and credentials"
+        return 1
+    fi
+
+    if ! verify_job_exists "$_VALIDATED_JOB_NAME"; then
+        bg_log_error "Cannot ${context} - job not found: $_VALIDATED_JOB_NAME"
+        bg_log_essential "Suggestion: Verify job name with -j/--job option"
+        return 1
+    fi
+
+    return 0
+}
+
 # Status command handler
 # Displays combined git status and Jenkins build status
 # Spec reference: buildgit-spec.md, buildgit status
@@ -586,44 +626,12 @@ cmd_status() {
         git status "${STATUS_GIT_ARGS[@]+"${STATUS_GIT_ARGS[@]}"}" || true
 
         # Validate and setup Jenkins connection
-        if ! validate_dependencies; then
-            bg_log_error "Cannot monitor Jenkins builds - missing dependencies"
-            bg_log_essential "Suggestion: Install jq and curl, then retry"
-            return 1
-        fi
-        if ! validate_environment; then
-            bg_log_error "Cannot monitor Jenkins builds - environment not configured"
-            bg_log_essential "Suggestion: Set JENKINS_URL, JENKINS_USER_ID, and JENKINS_API_TOKEN"
-            return 1
-        fi
-
-        local job_name
-        if [[ -n "$JOB_NAME" ]]; then
-            job_name="$JOB_NAME"
-            bg_log_info "Using specified job: $job_name"
-        else
-            bg_log_info "Discovering Jenkins job name..."
-            if ! job_name=$(discover_job_name); then
-                bg_log_error "Could not determine Jenkins job name"
-                bg_log_essential "Suggestion: Use -j/--job to specify job name"
-                return 1
-            fi
-            bg_log_success "Job name: $job_name"
-        fi
-
-        bg_log_info "Verifying Jenkins connectivity..."
-        if ! verify_jenkins_connection; then
-            bg_log_essential "Suggestion: Check JENKINS_URL and credentials"
-            return 1
-        fi
-
-        if ! verify_job_exists "$job_name"; then
-            bg_log_essential "Suggestion: Verify job name with -j/--job option"
+        if ! _validate_jenkins_setup "monitor Jenkins builds"; then
             return 1
         fi
 
         # Enter follow mode loop (never returns normally)
-        _cmd_status_follow "$job_name" "$STATUS_JSON_MODE"
+        _cmd_status_follow "$_VALIDATED_JOB_NAME" "$STATUS_JSON_MODE"
         # Should not reach here
         return 0
     fi
@@ -644,63 +652,14 @@ cmd_status() {
     # Part 2: Display Jenkins build status
     # -------------------------------------------------------------------------
     # Spec: Error Handling - graceful degradation for Jenkins portion
-    # Track Jenkins errors separately from git exit code
     local jenkins_exit_code=0
 
-    # Validate dependencies
-    if ! validate_dependencies; then
-        bg_log_error "Jenkins status unavailable - missing dependencies (jq, curl)"
-        bg_log_essential "Suggestion: Install missing dependencies with your package manager"
-        jenkins_exit_code=1
-        # Return git exit code if git also failed, otherwise Jenkins error
-        return $((git_exit_code > 0 ? git_exit_code : jenkins_exit_code))
-    fi
-
-    # Validate environment
-    if ! validate_environment; then
-        bg_log_error "Jenkins status unavailable - environment not configured"
-        bg_log_essential "Suggestion: Set JENKINS_URL, JENKINS_USER_ID, and JENKINS_API_TOKEN environment variables"
-        jenkins_exit_code=1
-        return $((git_exit_code > 0 ? git_exit_code : jenkins_exit_code))
-    fi
-
-    # Resolve job name
-    # Spec: Job Detection Failure - show git status (done above), display error for Jenkins portion
-    local job_name
-    if [[ -n "$JOB_NAME" ]]; then
-        job_name="$JOB_NAME"
-        bg_log_info "Using specified job: $job_name"
-    else
-        bg_log_info "Discovering Jenkins job name..."
-        if ! job_name=$(discover_job_name); then
-            bg_log_error "Could not determine Jenkins job name"
-            bg_log_essential "Suggestion: Use -j/--job to specify job name, or create AGENTS.md with JOB_NAME=<name>"
-            jenkins_exit_code=1
-            return $((git_exit_code > 0 ? git_exit_code : jenkins_exit_code))
-        fi
-        bg_log_success "Job name: $job_name"
-    fi
-
-    # Verify Jenkins connectivity
-    # Spec: Jenkins Unavailable - show git status (done above), display Jenkins error
-    bg_log_info "Verifying Jenkins connectivity..."
-    if ! verify_jenkins_connection; then
-        bg_log_error "Jenkins status unavailable - cannot connect to Jenkins"
-        bg_log_essential "Suggestion: Check JENKINS_URL ($JENKINS_URL) and network connectivity"
-        jenkins_exit_code=1
-        return $((git_exit_code > 0 ? git_exit_code : jenkins_exit_code))
-    fi
-
-    # Verify job exists
-    if ! verify_job_exists "$job_name"; then
-        bg_log_error "Jenkins job not found: $job_name"
-        bg_log_essential "Suggestion: Verify job name exists in Jenkins, or use -j/--job with correct name"
-        jenkins_exit_code=1
-        return $((git_exit_code > 0 ? git_exit_code : jenkins_exit_code))
+    if ! _validate_jenkins_setup "check Jenkins status"; then
+        return $((git_exit_code > 0 ? git_exit_code : 1))
     fi
 
     # Perform Jenkins status check and display
-    _jenkins_status_check "$job_name" "$STATUS_JSON_MODE"
+    _jenkins_status_check "$_VALIDATED_JOB_NAME" "$STATUS_JSON_MODE"
     jenkins_exit_code=$?
 
     # Return the more severe exit code (git failure takes precedence if non-zero)
@@ -733,17 +692,33 @@ _parse_push_options() {
     done
 }
 
-# Wait for new build to start after push
-# Arguments: job_name, baseline_build_number
-# Returns: new build number on stdout, or exits on timeout
-_push_wait_for_build_start() {
+# Wait for a new build to start
+# Usage: _wait_for_build_start "job-name" "baseline-build-number" ["queue-url"]
+# When queue_url is provided, tries the queue API first (for triggered builds).
+# Otherwise, or on queue API failure, falls back to polling by build number.
+# Returns: new build number on stdout, 1 on timeout
+_wait_for_build_start() {
     local job_name="$1"
     local baseline="$2"
-    local elapsed=0
+    local queue_url="${3:-}"
     local build_start_timeout="${BUILD_START_TIMEOUT:-120}"
-    local queued_notified=false
 
     bg_log_info "Waiting for Jenkins build to start..."
+
+    # If queue_url provided, try queue API first
+    if [[ -n "$queue_url" ]]; then
+        local build_number
+        build_number=$(wait_for_queue_item "$queue_url" "$build_start_timeout")
+        if [[ -n "$build_number" ]]; then
+            bg_log_success "Build #${build_number} started"
+            echo "$build_number"
+            return 0
+        fi
+    fi
+
+    # Poll for new build number
+    local elapsed=0
+    local queued_notified=false
 
     while [[ $elapsed -lt $build_start_timeout ]]; do
         local current
@@ -775,9 +750,6 @@ _push_wait_for_build_start() {
     done
 
     bg_log_error "Timeout: No build started within ${build_start_timeout} seconds"
-    bg_log_info "Possible causes:"
-    bg_log_info "  - Webhook or SCM polling not configured"
-    bg_log_info "  - SCM settings may not match the pushed branch"
     return 1
 }
 
@@ -826,13 +798,6 @@ _handle_build_completion() {
     else
         return 1
     fi
-}
-
-_push_handle_build_result() {
-    local job_name="$1"
-    local build_number="$2"
-
-    _handle_build_completion "$job_name" "$build_number"
 }
 
 # Push command handler
@@ -884,58 +849,11 @@ cmd_push() {
     # Part 3: Monitor Jenkins build
     # -------------------------------------------------------------------------
     # Spec: Jenkins Unavailable - Complete git push (done above), then show Jenkins error
-    # Use a helper function to provide consistent error messaging
-
-    # Validate dependencies
-    if ! validate_dependencies; then
+    if ! _validate_jenkins_setup "monitor Jenkins build"; then
         bg_log_success "Git push completed successfully"
-        bg_log_error "Cannot monitor Jenkins build - missing dependencies (jq, curl)"
-        bg_log_essential "Suggestion: Install missing dependencies, or use --no-follow to skip monitoring"
         return 1
     fi
-
-    # Validate environment
-    if ! validate_environment; then
-        bg_log_success "Git push completed successfully"
-        bg_log_error "Cannot monitor Jenkins build - environment not configured"
-        bg_log_essential "Suggestion: Set JENKINS_URL, JENKINS_USER_ID, JENKINS_API_TOKEN, or use --no-follow"
-        return 1
-    fi
-
-    # Resolve job name
-    # Spec: Job Detection Failure for push - Complete git push, display error about Jenkins monitoring
-    local job_name
-    if [[ -n "$JOB_NAME" ]]; then
-        job_name="$JOB_NAME"
-        bg_log_info "Using specified job: $job_name"
-    else
-        bg_log_info "Discovering Jenkins job name..."
-        if ! job_name=$(discover_job_name); then
-            bg_log_success "Git push completed successfully"
-            bg_log_error "Cannot monitor Jenkins build - could not determine job name"
-            bg_log_essential "Suggestion: Use -j/--job to specify job name, or use --no-follow to skip monitoring"
-            return 1
-        fi
-        bg_log_success "Job name: $job_name"
-    fi
-
-    # Verify Jenkins connectivity
-    # Spec: Jenkins Unavailable during push - non-zero exit after git push completes
-    bg_log_info "Verifying Jenkins connectivity..."
-    if ! verify_jenkins_connection; then
-        bg_log_success "Git push completed successfully"
-        bg_log_error "Cannot monitor Jenkins build - cannot connect to Jenkins"
-        bg_log_essential "Suggestion: Check JENKINS_URL ($JENKINS_URL) and network, or use --no-follow"
-        return 1
-    fi
-
-    # Verify job exists
-    if ! verify_job_exists "$job_name"; then
-        bg_log_success "Git push completed successfully"
-        bg_log_error "Cannot monitor Jenkins build - job not found: $job_name"
-        bg_log_essential "Suggestion: Verify job name with -j/--job, or use --no-follow to skip monitoring"
-        return 1
-    fi
+    local job_name="$_VALIDATED_JOB_NAME"
 
     # Record baseline build number
     local baseline_build
@@ -944,7 +862,7 @@ cmd_push() {
 
     # Wait for new build to start
     local new_build_number
-    if ! new_build_number=$(_push_wait_for_build_start "$job_name" "$baseline_build"); then
+    if ! new_build_number=$(_wait_for_build_start "$job_name" "$baseline_build" ""); then
         bg_log_success "Git push completed successfully"
         bg_log_error "Jenkins build monitoring failed - no build started"
         bg_log_essential "Suggestion: Check Jenkins webhook/SCM polling configuration"
@@ -964,7 +882,7 @@ cmd_push() {
 
     # Display build result (blank line separator)
     echo ""
-    _push_handle_build_result "$job_name" "$new_build_number"
+    _handle_build_completion "$job_name" "$new_build_number"
 }
 
 # =============================================================================
@@ -992,65 +910,11 @@ _parse_build_options() {
     done
 }
 
-# Wait for triggered build to start executing
-# Arguments: job_name, queue_url
-# Returns: build number on stdout, or exits on failure
-_build_wait_for_start() {
-    local job_name="$1"
-    local queue_url="$2"
-    local build_start_timeout="${BUILD_START_TIMEOUT:-120}"
-
-    bg_log_info "Waiting for build to start..."
-
-    local build_number
-    if [[ -n "$queue_url" ]]; then
-        # Use queue item API to wait for build start
-        build_number=$(wait_for_queue_item "$queue_url" "$build_start_timeout")
-        if [[ -n "$build_number" ]]; then
-            bg_log_success "Build #${build_number} started"
-            echo "$build_number"
-            return 0
-        fi
-    fi
-
-    # Fallback: poll for new build number
-    local baseline
-    baseline=$(get_last_build_number "$job_name")
-    local elapsed=0
-
-    while [[ $elapsed -lt $build_start_timeout ]]; do
-        local current
-        current=$(get_last_build_number "$job_name")
-
-        if [[ "$current" -gt "$baseline" ]]; then
-            bg_log_success "Build #${current} started"
-            echo "$current"
-            return 0
-        fi
-
-        sleep "$POLL_INTERVAL"
-        elapsed=$((elapsed + POLL_INTERVAL))
-    done
-
-    bg_log_error "Timeout: Build did not start within ${build_start_timeout} seconds"
-    return 1
-}
-
 # Monitor triggered build until completion
 # Arguments: job_name, build_number
 # Returns: 0 on completion, 1 on error
 # _build_monitor removed - consolidated into _monitor_build()
 # Spec: unify-follow-log-spec.md, Implementation Requirements
-
-# Display build result after completion
-# Arguments: job_name, build_number
-# Returns: 0 if build succeeded, 1 otherwise
-_build_handle_result() {
-    local job_name="$1"
-    local build_number="$2"
-
-    _handle_build_completion "$job_name" "$build_number"
-}
 
 # Build command handler
 # Triggers a Jenkins build and monitors it until completion
@@ -1063,58 +927,16 @@ cmd_build() {
     fi
 
     # -------------------------------------------------------------------------
-    # Part 1: Validate environment and connection
+    # Part 1: Validate environment, connection, and resolve job name
     # -------------------------------------------------------------------------
     # Spec: Jenkins Unavailable for build - Fail immediately with descriptive error
-    if ! validate_dependencies; then
-        bg_log_error "Cannot trigger Jenkins build - missing dependencies (jq, curl)"
-        bg_log_essential "Suggestion: Install jq and curl with your package manager"
+    if ! _validate_jenkins_setup "trigger Jenkins build"; then
         return 1
     fi
-
-    if ! validate_environment; then
-        bg_log_error "Cannot trigger Jenkins build - environment not configured"
-        bg_log_essential "Suggestion: Set JENKINS_URL, JENKINS_USER_ID, and JENKINS_API_TOKEN environment variables"
-        return 1
-    fi
+    local job_name="$_VALIDATED_JOB_NAME"
 
     # -------------------------------------------------------------------------
-    # Part 2: Resolve and verify job name
-    # -------------------------------------------------------------------------
-    # Spec: Job Detection Failure for build - Exit with error and descriptive message
-    local job_name
-    if [[ -n "$JOB_NAME" ]]; then
-        job_name="$JOB_NAME"
-        bg_log_info "Using specified job: $job_name"
-    else
-        bg_log_info "Discovering Jenkins job name..."
-        if ! job_name=$(discover_job_name); then
-            bg_log_error "Could not determine Jenkins job name"
-            bg_log_essential "Error: Job name required for build command"
-            bg_log_essential "Suggestion: Use -j/--job to specify job name, or create AGENTS.md with JOB_NAME=<name>"
-            return 1
-        fi
-        bg_log_success "Job name: $job_name"
-    fi
-
-    # Verify Jenkins connectivity
-    # Spec: Jenkins Unavailable for build - Fail immediately
-    bg_log_info "Verifying Jenkins connectivity..."
-    if ! verify_jenkins_connection; then
-        bg_log_error "Cannot trigger Jenkins build - cannot connect to Jenkins"
-        bg_log_essential "Suggestion: Check JENKINS_URL ($JENKINS_URL) and network connectivity"
-        return 1
-    fi
-
-    # Verify job exists
-    if ! verify_job_exists "$job_name"; then
-        bg_log_error "Cannot trigger Jenkins build - job not found: $job_name"
-        bg_log_essential "Suggestion: Verify the job name exists in Jenkins, or use -j/--job with correct name"
-        return 1
-    fi
-
-    # -------------------------------------------------------------------------
-    # Part 3: Trigger the build
+    # Part 2: Trigger the build
     # -------------------------------------------------------------------------
     bg_log_info "Triggering build for job '$job_name'..."
 
@@ -1141,8 +963,11 @@ cmd_build() {
     # -------------------------------------------------------------------------
     # Part 5: Wait for build to start and monitor
     # -------------------------------------------------------------------------
+    local baseline_build
+    baseline_build=$(get_last_build_number "$job_name")
+
     local build_number
-    if ! build_number=$(_build_wait_for_start "$job_name" "$queue_url"); then
+    if ! build_number=$(_wait_for_build_start "$job_name" "$baseline_build" "$queue_url"); then
         bg_log_error "Build did not start within timeout"
         bg_log_essential "Suggestion: Check Jenkins queue at ${JENKINS_URL}/queue/"
         return 1
@@ -1161,7 +986,7 @@ cmd_build() {
 
     # Display build result (blank line separator)
     echo ""
-    _build_handle_result "$job_name" "$build_number"
+    _handle_build_completion "$job_name" "$build_number"
 }
 
 cmd_passthrough() {

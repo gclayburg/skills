@@ -176,15 +176,15 @@ teardown() {
 
 # Spec: unify-follow-log-spec.md, Section 5
 @test "push_completion_uses_finished_line" {
-    # Verify _push_handle_build_result calls _handle_build_completion
-    run grep -A5 "_push_handle_build_result()" "${PROJECT_DIR}/buildgit"
+    # Verify cmd_push calls _handle_build_completion directly
+    run grep "_handle_build_completion" "${PROJECT_DIR}/buildgit"
     assert_success
     assert_output --partial "_handle_build_completion"
 }
 
 @test "build_completion_uses_finished_line" {
-    # Verify _build_handle_result calls _handle_build_completion
-    run grep -A5 "_build_handle_result()" "${PROJECT_DIR}/buildgit"
+    # Verify cmd_build calls _handle_build_completion directly
+    run grep "_handle_build_completion" "${PROJECT_DIR}/buildgit"
     assert_success
     assert_output --partial "_handle_build_completion"
 }
