@@ -201,8 +201,9 @@ mock_get_all_stages_from_file() {
 }
 
 # -----------------------------------------------------------------------------
-# Test Case: display_building_output shows running stage
-# Spec: full-stage-print-spec.md, Section: Build In Progress
+# Test Case: display_building_output shows header without stages
+# Spec: unify-follow-log-spec.md, Section 2 - stages are streamed separately
+# (Updated: stages removed from header per unified output spec)
 # -----------------------------------------------------------------------------
 @test "display_building_shows_running" {
     get_all_stages() {
@@ -219,9 +220,11 @@ mock_get_all_stages_from_file() {
 
     run display_building_output "test-job" "42" "$build_json" "automated" "buildtriggerdude" "abc1234" "Test commit" "your_commit" "Unit Tests"
     assert_success
-    assert_output --partial "Stage: Initialize Submodules (10s)"
-    assert_output --partial "Stage: Build (15s)"
-    assert_output --partial "Stage: Unit Tests (running)"
+    # Stages are no longer displayed in the header (they are streamed separately)
+    # Spec: unify-follow-log-spec.md, Section 2 (Build Header)
+    refute_output --partial "Stage: Initialize Submodules"
+    refute_output --partial "Stage: Build"
+    refute_output --partial "Stage: Unit Tests"
     assert_output --partial "BUILD IN PROGRESS"
 }
 

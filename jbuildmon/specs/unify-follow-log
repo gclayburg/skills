@@ -1,0 +1,105 @@
+We need to unify how buildgit shows a build in progress.  There are 2 ways this tool can show a build in progress.  One is through 'buildgit status -f'.  
+The other is 'buildgit push'
+
+I want to change this so that the output of these commands looks roughly the same and it gives us the infomration we need when a build is in progress.
+
+not enough info:
+
+```bash
+$ echo "#" >> nonsensebuildtrigger.md && ./jbuildmon/buildgit add nonsensebuildtrigger.md && ./jbuildmon/buildgit commit -m 'test123' && ./jbuildmon/buildgit push
+[main b372452] test123
+ 1 file changed, 1 insertion(+)
+To ssh://scranton2:2233/home/git/ralph1.git
+   1905bd5..b372452  main -> main
+[14:19:34] ℹ Verifying Jenkins connectivity...
+[14:19:34] ✓ Connected to Jenkins
+[14:19:34] ℹ Verifying job 'ralph1' exists...
+[14:19:34] ✓ Job 'ralph1' found
+[14:20:00] ℹ   Stage: Initialize Submodules (10s)
+```
+
+buildgit status -f output:
+
+```bash
+
+$ ./jbuildmon/buildgit status -f
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+        modified:   CLAUDE.md
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+        features-to-ralph.md
+        jbuildmon/specs/unify-follow-log
+
+no changes added to commit (use "git add" and/or "git commit -a")
+[14:21:02] ℹ Verifying Jenkins connectivity...
+[14:21:02] ✓ Connected to Jenkins
+[14:21:02] ℹ Verifying job 'ralph1' exists...
+[14:21:02] ✓ Job 'ralph1' found
+
+╔════════════════════════════════════════╗
+║          BUILD IN PROGRESS             ║
+╚════════════════════════════════════════╝
+
+[14:21:02] ℹ   Stage: Declarative: Checkout SCM (<1s)
+[14:21:02] ℹ   Stage: Declarative: Agent Setup (<1s)
+[14:21:02] ℹ   Stage: Initialize Submodules (10s)
+[14:21:02] ℹ   Stage: Build (<1s)
+[14:21:02] ℹ   Stage: Unit Tests (running)
+
+Job:        ralph1
+Build:      #80
+Status:     BUILDING
+Trigger:    Automated (git push)
+Commit:     b372452 - "test123"
+            ✓ Your commit (HEAD)
+Started:    2026-02-06 14:19:44
+Elapsed:    1m 17s
+
+Console:    http://palmer.garyclayburg.com:18080/job/ralph1/80/console
+```
+
+
+The part that 'buildgit status -f' gets correct is that it shows all the stages that have already been completed.  The buildgit push does not.
+Note, in the output above, both commands were executed at about the same tiem, showing the same build.
+
+Here is what I would like to see, starting at the opint where it finds that Job : ralph1 is found
+
+```bash
+╔════════════════════════════════════════╗
+║          BUILD IN PROGRESS             ║
+╚════════════════════════════════════════╝
+
+Job:        ralph1
+Build:      #80
+Status:     BUILDING
+Trigger:    Automated (git push)
+Commit:     b372452 - "test123"
+            ✓ Your commit (HEAD)
+Started:    2026-02-06 14:19:44
+Elapsed:    1m 17s  (so far)
+
+=== Build Info ===
+  Started by:  buildtriggerdude
+  Agent:       agent2paton
+  Pipeline:    Jenkinsfile from git ssh://git@scranton2:2233/home/git/ralph1.git
+==================
+
+[14:21:02] ℹ   Stage: Declarative: Checkout SCM (<1s)
+[14:21:02] ℹ   Stage: Declarative: Agent Setup (<1s)
+[14:21:02] ℹ   Stage: Initialize Submodules (10s)
+[14:21:02] ℹ   Stage: Build (<1s)
+
+```
+At this point , the Stage: output lines would wait for the next stage to complete before printing the line corresponding to that stage.  This would continue until the build is complete.
+
+Once the build has finished, then it should show the relevant output if something has failed or has become unstable. 
+If the build was successful, then it should show the regular output that it shows now.
+
+
+

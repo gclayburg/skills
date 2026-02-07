@@ -44,7 +44,7 @@ teardown() {
 }
 
 # -----------------------------------------------------------------------------
-# Test Case: _push_monitor_build calls track_stage_changes
+# Test Case: _monitor_build calls track_stage_changes
 # Spec: full-stage-print-spec.md, buildgit push
 # -----------------------------------------------------------------------------
 @test "push_monitor_shows_stage_completions" {
@@ -77,7 +77,7 @@ teardown() {
     }
 
     VERBOSE_MODE=false
-    run _push_monitor_build "test-job" "42"
+    run _monitor_build "test-job" "42"
 
     # Verify track_stage_changes was called
     local calls
@@ -87,7 +87,7 @@ teardown() {
 }
 
 # -----------------------------------------------------------------------------
-# Test Case: _follow_monitor_build calls track_stage_changes
+# Test Case: _monitor_build calls track_stage_changes
 # Spec: full-stage-print-spec.md, buildgit status -f
 # -----------------------------------------------------------------------------
 @test "follow_monitor_shows_stage_completions" {
@@ -117,7 +117,7 @@ teardown() {
     }
 
     VERBOSE_MODE=false
-    run _follow_monitor_build "test-job" "42"
+    run _monitor_build "test-job" "42"
 
     local calls
     calls=$(cat "$track_called_file")
@@ -126,7 +126,7 @@ teardown() {
 }
 
 # -----------------------------------------------------------------------------
-# Test Case: _build_monitor calls track_stage_changes
+# Test Case: _monitor_build calls track_stage_changes
 # Spec: full-stage-print-spec.md, buildgit build
 # -----------------------------------------------------------------------------
 @test "build_monitor_shows_stage_completions" {
@@ -156,7 +156,7 @@ teardown() {
     }
 
     VERBOSE_MODE=false
-    run _build_monitor "test-job" "42"
+    run _monitor_build "test-job" "42"
 
     local calls
     calls=$(cat "$track_called_file")
@@ -194,7 +194,7 @@ teardown() {
     MAX_BUILD_TIME=60
     VERBOSE_MODE=true
 
-    run _push_monitor_build "test-job" "42"
+    run _monitor_build "test-job" "42"
 
     [[ "$status" -eq 0 ]]
 }
@@ -226,7 +226,7 @@ teardown() {
 
     VERBOSE_MODE=false
 
-    run _push_monitor_build "test-job" "42"
+    run _monitor_build "test-job" "42"
 
     # Verify no "elapsed" messages in output
     [[ "$output" != *"elapsed"* ]]
@@ -266,7 +266,7 @@ teardown() {
     }
 
     VERBOSE_MODE=true
-    run _push_monitor_build "test-job" "42"
+    run _monitor_build "test-job" "42"
 
     # Verify verbose parameter was passed correctly
     local passed_verbose
@@ -314,7 +314,7 @@ teardown() {
     }
 
     VERBOSE_MODE=false
-    run _push_monitor_build "test-job" "42"
+    run _monitor_build "test-job" "42"
 
     # Verify first call received empty array as previous state
     local first_state
@@ -362,7 +362,7 @@ teardown() {
     }
 
     VERBOSE_MODE=false
-    run _push_monitor_build "test-job" "42"
+    run _monitor_build "test-job" "42"
 
     # Verify second call received the state from first call
     if [[ -f "$second_prev_file" ]]; then
@@ -398,7 +398,7 @@ teardown() {
     }
 
     VERBOSE_MODE=false
-    run _push_monitor_build "test-job" "42"
+    run _monitor_build "test-job" "42"
 
     # Monitor should still return 0 (it just reports completion)
     [[ "$status" -eq 0 ]]

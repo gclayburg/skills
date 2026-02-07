@@ -25,6 +25,7 @@ These files represent completed specifications in the specs/ directory.  This li
 - buildgit-spec.md  combined git and Jenkins build tool (status, push, build commands)
 - full-stage-print-spec.md  display all pipeline stages with durations during build monitoring
 - bug2026-02-04-running-stage-spam-spec.md  fix running stage printed on every poll cycle during monitoring
+- unify-follow-log-spec.md  unified build monitoring output format for push, build, and status -f commands
 
 
 

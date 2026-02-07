@@ -236,73 +236,61 @@ EOF
 }
 
 # -----------------------------------------------------------------------------
-# Test Case: Verify _follow_monitor_build uses bg_log_progress for elapsed time
-# Spec: Issue 3 - Modify _follow_monitor_build
+# Test Case: Verify consolidated _monitor_build uses bg_log_progress for elapsed time
+# Spec: unify-follow-log-spec.md - consolidated monitor function
+# (Updated: three monitor functions consolidated into _monitor_build)
 # -----------------------------------------------------------------------------
 @test "follow_monitor_uses_bg_log_progress_for_elapsed_time" {
-    # Check that _follow_monitor_build uses bg_log_progress for elapsed time updates
-    run grep -A60 "_follow_monitor_build()" "${PROJECT_DIR}/buildgit"
+    run grep -A60 "^_monitor_build()" "${PROJECT_DIR}/buildgit"
     assert_success
     assert_output --partial "bg_log_progress"
     assert_output --partial "elapsed"
 }
 
 # -----------------------------------------------------------------------------
-# Test Case: Verify _follow_monitor_build has stage completion tracking
-# Spec: Issue 3 - Modify _follow_monitor_build
+# Test Case: Verify consolidated _monitor_build has stage tracking
+# Spec: unify-follow-log-spec.md - consolidated monitor function
+# (Updated: three monitor functions consolidated into _monitor_build)
 # -----------------------------------------------------------------------------
 @test "follow_monitor_has_stage_completion_tracking" {
-    # Check that _follow_monitor_build has stage completion logic
-    run grep -A50 "_follow_monitor_build()" "${PROJECT_DIR}/buildgit"
+    run grep -A50 "^_monitor_build()" "${PROJECT_DIR}/buildgit"
     assert_success
-    assert_output --partial "bg_log_progress_success"
-    assert_output --partial "Stage completed"
+    assert_output --partial "track_stage_changes"
 }
 
 # -----------------------------------------------------------------------------
-# Test Case: Verify _push_monitor_build uses bg_log_progress for elapsed time
-# Spec: Issue 3 - Modify _push_monitor_build
+# Test Case: Verify _monitor_build is used by push command path
+# Spec: unify-follow-log-spec.md - consolidated monitor function
 # -----------------------------------------------------------------------------
 @test "push_monitor_uses_bg_log_progress_for_elapsed_time" {
-    # Check that _push_monitor_build uses bg_log_progress for elapsed time updates
-    run grep -A60 "_push_monitor_build()" "${PROJECT_DIR}/buildgit"
+    run grep "_monitor_build" "${PROJECT_DIR}/buildgit"
     assert_success
-    assert_output --partial "bg_log_progress"
-    assert_output --partial "elapsed"
+    assert_output --partial "_monitor_build"
 }
 
 # -----------------------------------------------------------------------------
-# Test Case: Verify _push_monitor_build has stage completion tracking
-# Spec: Issue 3 - Modify _push_monitor_build
+# Test Case: Verify old _push_monitor_build no longer exists
+# Spec: unify-follow-log-spec.md - consolidated monitor function
 # -----------------------------------------------------------------------------
 @test "push_monitor_has_stage_completion_tracking" {
-    # Check that _push_monitor_build has stage completion logic
-    run grep -A50 "_push_monitor_build()" "${PROJECT_DIR}/buildgit"
-    assert_success
-    assert_output --partial "bg_log_progress_success"
-    assert_output --partial "Stage completed"
+    run grep -c "^_push_monitor_build()" "${PROJECT_DIR}/buildgit"
+    assert_failure
 }
 
 # -----------------------------------------------------------------------------
-# Test Case: Verify _build_monitor uses bg_log_progress for elapsed time
-# Spec: Issue 3 - Modify _build_monitor
+# Test Case: Verify old _build_monitor no longer exists
+# Spec: unify-follow-log-spec.md - consolidated monitor function
 # -----------------------------------------------------------------------------
 @test "build_monitor_uses_bg_log_progress_for_elapsed_time" {
-    # Check that _build_monitor uses bg_log_progress for elapsed time updates
-    run grep -A60 "_build_monitor()" "${PROJECT_DIR}/buildgit"
-    assert_success
-    assert_output --partial "bg_log_progress"
-    assert_output --partial "elapsed"
+    run grep -c "^_build_monitor()" "${PROJECT_DIR}/buildgit"
+    assert_failure
 }
 
 # -----------------------------------------------------------------------------
-# Test Case: Verify _build_monitor has stage completion tracking
-# Spec: Issue 3 - Modify _build_monitor
+# Test Case: Verify old _follow_monitor_build no longer exists
+# Spec: unify-follow-log-spec.md - consolidated monitor function
 # -----------------------------------------------------------------------------
 @test "build_monitor_has_stage_completion_tracking" {
-    # Check that _build_monitor has stage completion logic
-    run grep -A50 "_build_monitor()" "${PROJECT_DIR}/buildgit"
-    assert_success
-    assert_output --partial "bg_log_progress_success"
-    assert_output --partial "Stage completed"
+    run grep -c "^_follow_monitor_build()" "${PROJECT_DIR}/buildgit"
+    assert_failure
 }

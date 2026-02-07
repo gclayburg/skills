@@ -238,8 +238,9 @@ Running on agent1
 }
 
 # -----------------------------------------------------------------------------
-# Test Case: Banner shows current stage
-# Spec: Issue 1 - Missing Build Information in Follow Mode
+# Test Case: Banner no longer shows current stage in header (stages streamed separately)
+# Spec: unify-follow-log-spec.md, Section 2 - stages removed from header
+# (Updated: stages removed from header per unified output spec)
 # -----------------------------------------------------------------------------
 @test "follow_mode_banner_shows_current_stage" {
     create_banner_test_wrapper \
@@ -250,7 +251,9 @@ Running on agent1
     run bash "${TEST_TEMP_DIR}/banner_test.sh" display_banner ralph1 53
 
     assert_success
-    assert_output --partial "Stage:      Unit Tests"
+    # Stages are no longer displayed in the header per unified output spec
+    # They are streamed separately by the monitoring loop
+    assert_output --partial "BUILD IN PROGRESS"
 }
 
 # -----------------------------------------------------------------------------
@@ -301,18 +304,19 @@ Running on agent1
 # -----------------------------------------------------------------------------
 @test "follow_mode_banner_before_monitoring" {
     # Find the section of _cmd_status_follow where building==true is handled
-    # and verify banner is called before _follow_monitor_build
+    # and verify banner is called before _monitor_build
+    # (Updated: _follow_monitor_build consolidated into _monitor_build)
     run bash -c "
         # Extract the in-progress build handling block from _cmd_status_follow
         awk '/if.*building.*==.*true/,/fi/' '${PROJECT_DIR}/buildgit' | \
-        grep -E '_display_build_in_progress_banner|_follow_monitor_build'
+        grep -E '_display_build_in_progress_banner|_monitor_build'
     "
     assert_success
 
-    # Verify _display_build_in_progress_banner appears before _follow_monitor_build
+    # Verify _display_build_in_progress_banner appears before _monitor_build
     local banner_pos monitor_pos
     banner_pos=$(echo "$output" | grep -n '_display_build_in_progress_banner' | head -1 | cut -d: -f1)
-    monitor_pos=$(echo "$output" | grep -n '_follow_monitor_build' | head -1 | cut -d: -f1)
+    monitor_pos=$(echo "$output" | grep -n '_monitor_build' | head -1 | cut -d: -f1)
 
     # Banner should come before monitor (line number comparison)
     [[ "$banner_pos" -lt "$monitor_pos" ]]

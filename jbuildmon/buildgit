@@ -357,7 +357,12 @@ _jenkins_status_check() {
 # Reuses monitoring logic from pushmon.sh pattern
 # Arguments: job_name, build_number
 # Returns: 0 when build completes
-_follow_monitor_build() {
+# Unified build monitoring loop
+# Polls Jenkins API until build completes, tracking stage changes in real-time
+# Arguments: job_name, build_number
+# Returns: 0 when build completes, 1 on timeout/error
+# Spec: unify-follow-log-spec.md, Section 3 (Stage Output)
+_monitor_build() {
     local job_name="$1"
     local build_number="$2"
     local elapsed=0
@@ -410,16 +415,18 @@ _follow_monitor_build() {
     done
 
     bg_log_error "Build timeout: exceeded ${MAX_BUILD_TIME} seconds"
+    bg_log_info "Build may still be running - check Jenkins console" >&2
     return 1
 }
 
-# Display build in progress banner for follow mode
-# Used when joining an already in-progress build
-# Arguments: job_name, build_number
-# Spec reference: bug2026-02-01-buildgit-monitoring-spec.md, Issue 1
+# Display build in progress banner (unified header format)
+# Used before monitoring begins for all commands (push, build, status -f)
+# Arguments: job_name, build_number, [elapsed_suffix]
+# Spec reference: unify-follow-log-spec.md, Section 2 (Build Header)
 _display_build_in_progress_banner() {
     local job_name="$1"
     local build_number="$2"
+    local elapsed_suffix="${3:-}"
 
     # Get build info
     local build_json
@@ -430,7 +437,7 @@ _display_build_in_progress_banner() {
         return 0
     fi
 
-    # Get console output for trigger detection and commit extraction
+    # Get console output for trigger detection, commit extraction, and Build Info section
     local console_output
     console_output=$(get_console_output "$job_name" "$build_number" 2>/dev/null) || true
 
@@ -460,11 +467,18 @@ _display_build_in_progress_banner() {
     local current_stage
     current_stage=$(get_current_stage "$job_name" "$build_number" 2>/dev/null) || true
 
-    # Display the banner using existing display function
+    # Display the unified header (banner + metadata + Build Info + Console URL)
+    # Spec: unify-follow-log-spec.md, Section 2
     display_building_output "$job_name" "$build_number" "$build_json" \
         "$trigger_type" "$trigger_user" \
         "$commit_sha" "$commit_msg" \
-        "$correlation_status" "$current_stage"
+        "$correlation_status" "$current_stage" \
+        "$console_output" "$elapsed_suffix"
+
+    # Display already-completed stages after the header
+    # Spec: unify-follow-log-spec.md, Section 3 (Initial Display)
+    echo ""
+    _display_all_stages "$job_name" "$build_number"
 }
 
 # Wait for a new build to start (for follow mode)
@@ -529,14 +543,14 @@ _cmd_status_follow() {
         if [[ "$building" == "true" ]]; then
             bg_log_info "Build #${build_number} is in progress, monitoring..."
             # Display build info banner before entering monitoring loop
-            # Spec: bug2026-02-01-buildgit-monitoring-spec.md, Issue 1
-            _display_build_in_progress_banner "$job_name" "$build_number"
-            _follow_monitor_build "$job_name" "$build_number"
+            # Spec: unify-follow-log-spec.md, Section 5 (buildgit status -f)
+            _display_build_in_progress_banner "$job_name" "$build_number" "(so far)"
+            _monitor_build "$job_name" "$build_number"
         fi
 
-        # Display build result using existing status check logic
-        echo ""  # Separator before each build result
-        _jenkins_status_check "$job_name" "$json_mode" || true
+        # Display build completion (test results if applicable + Finished line)
+        # Spec: unify-follow-log-spec.md, Section 4 (Build Completion)
+        _handle_build_completion "$job_name" "$build_number" || true
 
         # Show waiting message (always shown - essential output)
         echo ""
@@ -763,72 +777,55 @@ _push_wait_for_build_start() {
 # Monitor push-triggered build until completion
 # Arguments: job_name, build_number
 # Returns: 0 on success, 1 on failure
-_push_monitor_build() {
-    local job_name="$1"
-    local build_number="$2"
-    local elapsed=0
-    local consecutive_failures=0
-    local last_time_report=0
-    local stage_state="[]"
-
-    bg_log_info "Monitoring build #${build_number}..."
-
-    while [[ $elapsed -lt $MAX_BUILD_TIME ]]; do
-        local build_info
-        build_info=$(get_build_info "$job_name" "$build_number")
-
-        if [[ -z "$build_info" ]]; then
-            consecutive_failures=$((consecutive_failures + 1))
-            if [[ $consecutive_failures -ge 5 ]]; then
-                bg_log_error "Too many consecutive API failures ($consecutive_failures)"
-                return 1
-            fi
-            bg_log_warning "API request failed, retrying... ($consecutive_failures/5)"
-            sleep "$POLL_INTERVAL"
-            elapsed=$((elapsed + POLL_INTERVAL))
-            continue
-        fi
-
-        consecutive_failures=0
-
-        local building result
-        building=$(echo "$build_info" | jq -r '.building')
-        result=$(echo "$build_info" | jq -r '.result // empty')
-
-        # Check completion
-        if [[ "$building" == "false" && -n "$result" ]]; then
-            return 0
-        fi
-
-        # Track stage changes (replaces get_current_stage logic)
-        # Spec: full-stage-print-spec.md, Stage Tracking
-        stage_state=$(track_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE")
-
-        # Verbose-only elapsed time messages
-        # Spec: full-stage-print-spec.md, Verbose mode
-        if [[ "$VERBOSE_MODE" == "true" && $((elapsed - last_time_report)) -ge 30 ]]; then
-            bg_log_progress "Build in progress... (${elapsed}s elapsed)"
-            last_time_report=$elapsed
-        fi
-
-        sleep "$POLL_INTERVAL"
-        elapsed=$((elapsed + POLL_INTERVAL))
-    done
-
-    bg_log_error "Build timeout: exceeded ${MAX_BUILD_TIME} seconds"
-    bg_log_info "Build may still be running - check Jenkins console" >&2
-    return 1
-}
+# _push_monitor_build removed - consolidated into _monitor_build()
+# Spec: unify-follow-log-spec.md, Implementation Requirements
 
 # Display build result after push
 # Arguments: job_name, build_number
 # Returns: 0 if build succeeded, 1 otherwise
+# Handle build completion display (unified format)
+# Called after _monitor_build() returns 0
+# Shows test results (if failed/unstable) and "Finished: STATUS" line
+# Arguments: job_name, build_number
+# Returns: 0 for SUCCESS, 1 for FAILURE/UNSTABLE/other
+# Spec: unify-follow-log-spec.md, Section 4 (Build Completion)
+_handle_build_completion() {
+    local job_name="$1"
+    local build_number="$2"
+
+    # Fetch final build info
+    local build_json
+    build_json=$(get_build_info "$job_name" "$build_number")
+    local result
+    result=$(echo "$build_json" | jq -r '.result // "UNKNOWN"')
+
+    # Display test failure details if applicable (UNSTABLE or FAILURE)
+    # Spec: unify-follow-log-spec.md, Section 4 (Build Completion) - test failure details
+    if [[ "$result" == "UNSTABLE" || "$result" == "FAILURE" ]]; then
+        local test_results_json
+        test_results_json=$(fetch_test_results "$job_name" "$build_number")
+        if [[ -n "$test_results_json" ]]; then
+            display_test_results "$test_results_json"
+        fi
+    fi
+
+    # Print final status line
+    echo ""
+    print_finished_line "$result"
+
+    # Return appropriate exit code
+    if [[ "$result" == "SUCCESS" ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
 _push_handle_build_result() {
     local job_name="$1"
     local build_number="$2"
 
-    # Use existing _jenkins_status_check for consistent output
-    _jenkins_status_check "$job_name" "false"
+    _handle_build_completion "$job_name" "$build_number"
 }
 
 # Push command handler
@@ -947,8 +944,12 @@ cmd_push() {
         return 1
     fi
 
+    # Display unified build header before monitoring
+    # Spec: unify-follow-log-spec.md, Section 5 (buildgit push)
+    _display_build_in_progress_banner "$job_name" "$new_build_number"
+
     # Monitor build until completion
-    if ! _push_monitor_build "$job_name" "$new_build_number"; then
+    if ! _monitor_build "$job_name" "$new_build_number"; then
         bg_log_error "Build monitoring interrupted or timed out"
         bg_log_essential "Suggestion: Check Jenkins console at ${JENKINS_URL}/job/${job_name}/${new_build_number}/console"
         return 1
@@ -1031,62 +1032,8 @@ _build_wait_for_start() {
 # Monitor triggered build until completion
 # Arguments: job_name, build_number
 # Returns: 0 on completion, 1 on error
-_build_monitor() {
-    local job_name="$1"
-    local build_number="$2"
-    local elapsed=0
-    local consecutive_failures=0
-    local last_time_report=0
-    local stage_state="[]"
-
-    bg_log_info "Monitoring build #${build_number}..."
-
-    while [[ $elapsed -lt $MAX_BUILD_TIME ]]; do
-        local build_info
-        build_info=$(get_build_info "$job_name" "$build_number")
-
-        if [[ -z "$build_info" ]]; then
-            consecutive_failures=$((consecutive_failures + 1))
-            if [[ $consecutive_failures -ge 5 ]]; then
-                bg_log_error "Too many consecutive API failures ($consecutive_failures)"
-                return 1
-            fi
-            bg_log_warning "API request failed, retrying... ($consecutive_failures/5)"
-            sleep "$POLL_INTERVAL"
-            elapsed=$((elapsed + POLL_INTERVAL))
-            continue
-        fi
-
-        consecutive_failures=0
-
-        local building result
-        building=$(echo "$build_info" | jq -r '.building')
-        result=$(echo "$build_info" | jq -r '.result // empty')
-
-        # Check completion
-        if [[ "$building" == "false" && -n "$result" ]]; then
-            return 0
-        fi
-
-        # Track stage changes (replaces get_current_stage logic)
-        # Spec: full-stage-print-spec.md, Stage Tracking
-        stage_state=$(track_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE")
-
-        # Verbose-only elapsed time messages
-        # Spec: full-stage-print-spec.md, Verbose mode
-        if [[ "$VERBOSE_MODE" == "true" && $((elapsed - last_time_report)) -ge 30 ]]; then
-            bg_log_progress "Build in progress... (${elapsed}s elapsed)"
-            last_time_report=$elapsed
-        fi
-
-        sleep "$POLL_INTERVAL"
-        elapsed=$((elapsed + POLL_INTERVAL))
-    done
-
-    bg_log_error "Build timeout: exceeded ${MAX_BUILD_TIME} seconds"
-    bg_log_info "Build may still be running - check Jenkins console" >&2
-    return 1
-}
+# _build_monitor removed - consolidated into _monitor_build()
+# Spec: unify-follow-log-spec.md, Implementation Requirements
 
 # Display build result after completion
 # Arguments: job_name, build_number
@@ -1095,8 +1042,7 @@ _build_handle_result() {
     local job_name="$1"
     local build_number="$2"
 
-    # Use existing _jenkins_status_check for consistent output
-    _jenkins_status_check "$job_name" "false"
+    _handle_build_completion "$job_name" "$build_number"
 }
 
 # Build command handler
@@ -1195,8 +1141,12 @@ cmd_build() {
         return 1
     fi
 
+    # Display unified build header before monitoring
+    # Spec: unify-follow-log-spec.md, Section 5 (buildgit build)
+    _display_build_in_progress_banner "$job_name" "$build_number"
+
     # Monitor build until completion
-    if ! _build_monitor "$job_name" "$build_number"; then
+    if ! _monitor_build "$job_name" "$build_number"; then
         bg_log_error "Build monitoring interrupted or timed out"
         bg_log_essential "Suggestion: Check Jenkins console at ${JENKINS_URL}/job/${job_name}/${build_number}/console"
         return 1

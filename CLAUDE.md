@@ -9,6 +9,38 @@ Execute this tool with:  ./jbuildmon/buildgit
 e.g.
 ./jbuildmon/buildgit status
 
+$ ./jbuildmon/buildgit --help
+Usage: buildgit [global-options] <command> [command-options] [arguments]
+
+A unified interface for git operations with Jenkins CI/CD integration.
+
+Global Options:
+  -j, --job <name>    Specify Jenkins job name (overrides auto-detection)
+  -h, --help          Show this help message
+  --verbose           Enable verbose output for debugging
+
+Commands:
+  status [-f|--follow] [--json] [git-status-options]
+                      Display combined git and Jenkins build status
+  push [--no-follow] [git-push-options] [remote] [branch]
+                      Push commits and monitor Jenkins build
+  build [--no-follow] Trigger and monitor Jenkins build
+  <any-git-command>   Passed through to git
+
+Examples:
+  buildgit status              # Git status + Jenkins build snapshot
+  buildgit status -f           # Follow builds indefinitely
+  buildgit status --json       # JSON format for Jenkins status
+  buildgit push                # Push + monitor build
+  buildgit push --no-follow    # Push only, no monitoring
+  buildgit --job myjob build   # Trigger build for specific job
+  buildgit log --oneline -5    # Passed through to git
+
+Environment Variables:
+  JENKINS_URL         Base URL of the Jenkins server
+  JENKINS_USER_ID     Jenkins username for API authentication
+  JENKINS_API_TOKEN   Jenkins API token for authentication
+
 ## Detailed Specifications
 - see jbuildmon/specs/README.md for an overview of all specs
 - all specs use this naming pattern: jbuildmon/specs/*-spec.md

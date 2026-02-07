@@ -11,8 +11,10 @@ if [[ ! "$SPEC_FILE" =~ -spec\.md$ ]]; then
     exit 1
 fi
 # Verify that SPEC_FILE exists in the specs/ directory
-if [ ! -f "specs/$(basename "$SPEC_FILE")" ]; then
-    echo "Error: File 'specs/$(basename "$SPEC_FILE")' does not exist."
+# Resolve the full path to the spec file (relative or absolute)
+SPEC_PATH="$(cd "$(dirname "$SPEC_FILE")" && pwd)/$(basename "$SPEC_FILE")"
+if [ ! -f "$SPEC_PATH" ]; then
+    echo "Error: Spec file '$SPEC_PATH' does not exist."
     exit 2
 fi
 SPECS_DIR=$(dirname "$SPEC_FILE")
@@ -27,7 +29,15 @@ if [ -f "$PLAN_FILE" ]; then
         exit 3
     fi
 fi
+# Ensure ROOT_DIR is set to the root of the git repo, not just current working dir
+ROOT_DIR="$(git rev-parse --show-toplevel 2>/dev/null)"
+if [ -z "$ROOT_DIR" ] || [ ! -d "$ROOT_DIR/.git" ]; then
+    echo "Error: Could not determine the root of the git repository."
+    exit 4
+fi
 
-CMD="sherlock claude -- --dangerously-skip-permissions 'use $SPECS_DIR/taskcreator.md to create an implementation plan for $SPEC_FILE  '"
+#CMD="sherlock claude -- --dangerously-skip-permissions 'use $SPECS_DIR/taskcreator.md to create an implementation plan for $SPEC_FILE  '"
+CMD="docker sandbox run claude $ROOT_DIR -- 'use $SPECS_DIR/taskcreator.md to create an implementation plan for $SPEC_FILE  '"
+
 echo "$CMD"
 eval "$CMD"

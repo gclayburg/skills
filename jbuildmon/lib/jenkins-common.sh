@@ -142,6 +142,29 @@ log_banner() {
     echo ""
 }
 
+# Print the final build status line with color
+# Usage: print_finished_line "SUCCESS"
+# Output: "Finished: SUCCESS" in green (or appropriate color per status)
+# Spec: unify-follow-log-spec.md, Section 4 (Build Completion)
+print_finished_line() {
+    local result="$1"
+    local color=""
+
+    case "$result" in
+        SUCCESS)  color="${COLOR_GREEN}" ;;
+        FAILURE)  color="${COLOR_RED}" ;;
+        UNSTABLE) color="${COLOR_YELLOW}" ;;
+        ABORTED)  color="${COLOR_DIM}" ;;
+        *)        color="" ;;
+    esac
+
+    if [[ -n "$color" ]]; then
+        echo "${color}Finished: ${result}${COLOR_RESET}"
+    else
+        echo "Finished: ${result}"
+    fi
+}
+
 # =============================================================================
 # Validation Functions
 # =============================================================================
@@ -1954,8 +1977,9 @@ _display_error_logs() {
     echo "${COLOR_YELLOW}==================${COLOR_RESET}"
 }
 
-# Display in-progress build output
-# Usage: display_building_output "job_name" "build_number" "build_json" "trigger_type" "trigger_user" "commit_sha" "commit_msg" "correlation_status" "current_stage"
+# Display in-progress build output (unified header format)
+# Usage: display_building_output "job_name" "build_number" "build_json" "trigger_type" "trigger_user" "commit_sha" "commit_msg" "correlation_status" "current_stage" "console_output" "elapsed_suffix"
+# Spec: unify-follow-log-spec.md, Section 2 (Build Header)
 display_building_output() {
     local job_name="$1"
     local build_number="$2"
@@ -1966,6 +1990,8 @@ display_building_output() {
     local commit_msg="$7"
     local correlation_status="$8"
     local current_stage="${9:-}"
+    local console_output="${10:-}"
+    local elapsed_suffix="${11:-}"
 
     # Extract values from build JSON
     local timestamp url
@@ -2011,15 +2037,18 @@ display_building_output() {
         correlation_color="${COLOR_RED}"
     fi
 
+    # Format elapsed display with optional suffix
+    local elapsed_display
+    elapsed_display="$(format_duration "$elapsed_ms")"
+    if [[ -n "$elapsed_suffix" ]]; then
+        elapsed_display="${elapsed_display} ${elapsed_suffix}"
+    fi
+
     # Display banner
     log_banner "building"
 
-    # Display all stages (completed stages with durations, running stage with "(running)")
-    # Spec: full-stage-print-spec.md, Section: Display Functions
-    _display_all_stages "$job_name" "$build_number"
-    echo ""
-
-    # Display build details
+    # Display build details (before stages, per unified format)
+    # Spec: unify-follow-log-spec.md, Section 2 (Build Header)
     echo "Job:        ${job_name}"
     echo "Build:      #${build_number}"
     echo "Status:     ${COLOR_YELLOW}BUILDING${COLOR_RESET}"
@@ -2027,7 +2056,13 @@ display_building_output() {
     echo "Commit:     ${commit_display}"
     echo "            ${correlation_color}${correlation_symbol} ${correlation_desc}${COLOR_RESET}"
     echo "Started:    $(format_timestamp "$timestamp")"
-    echo "Elapsed:    $(format_duration "$elapsed_ms")"
+    echo "Elapsed:    ${elapsed_display}"
+
+    # Display Build Info section if console output is available
+    if [[ -n "$console_output" ]]; then
+        display_build_metadata "$console_output"
+    fi
+
     echo ""
     echo "Console:    ${url}console"
 }
