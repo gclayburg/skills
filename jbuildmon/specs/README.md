@@ -12,6 +12,12 @@ If there are conflicting specifications, they must be reviewed and updated to re
 Date: YYYY-MM-DD
 ```
 
+### Todo directory
+The specs/todo directory contains specs or plans for new features and/or bug fixes.  
+- files in this directory represent items that need to be done in the future, but have not been implemented yet.
+- IMPORTANT: when these items are completed, the file should be moved to the specs/directory
+- see specs/todo/README.md for an index of all the todo items in the folder
+
 
 ### Spec and Bug index
 These files represent completed specifications in the specs/ directory.  This list should be updated when the specs are completed.
