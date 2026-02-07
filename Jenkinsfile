@@ -5,6 +5,9 @@ pipeline {
             alwaysPull true
         }
     }
+    options {
+        timeout(time: 15, unit: 'MINUTES')
+    }
 
     stages {
         stage('Initialize Submodules') {

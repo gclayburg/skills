@@ -163,9 +163,10 @@ JOB_NAME="test-repo"
 cmd_push "$@"
 WRAPPER_END
 
-    # Replace placeholders with actual values (use -i '' for macOS BSD sed compatibility)
-    sed -i '' "s|__POLL_CYCLES__|${poll_cycles}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
-    sed -i '' "s|__BUILD_RESULT__|${build_result}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+    # Replace placeholders with actual values (portable: temp file + mv works on both macOS and Linux)
+    sed "s|__POLL_CYCLES__|${poll_cycles}|g; s|__BUILD_RESULT__|${build_result}|g" \
+        "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/buildgit_wrapper.sh.tmp" \
+        && mv "${TEST_TEMP_DIR}/buildgit_wrapper.sh.tmp" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 }
@@ -211,7 +212,7 @@ WRAPPER
     create_push_test_wrapper "SUCCESS" "1"
 
     # Run push with --no-follow to just test git push
-    run bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh' --no-follow"
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --no-follow
 
     # Should succeed
     [ "$status" -eq 0 ]
@@ -240,7 +241,7 @@ WRAPPER
     create_push_test_wrapper "SUCCESS" "2"
 
     # Run push (without --no-follow, so it monitors)
-    bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" > "${TEST_TEMP_DIR}/output.txt" 2>&1 || true
+    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 || true
 
     local output
     output=$(cat "${TEST_TEMP_DIR}/output.txt")
@@ -269,7 +270,7 @@ WRAPPER
     local start_time
     start_time=$(date +%s)
 
-    run bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh' --no-follow"
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --no-follow
 
     local end_time
     end_time=$(date +%s)
@@ -293,7 +294,7 @@ WRAPPER
     export TEST_TEMP_DIR
     create_push_test_wrapper "SUCCESS" "1"
 
-    run bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh' --no-follow"
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --no-follow
 
     # Should succeed (git push returns 0 for "Everything up-to-date")
     [ "$status" -eq 0 ]
@@ -316,7 +317,7 @@ WRAPPER
     export TEST_TEMP_DIR
     create_push_git_failure_wrapper
 
-    run bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh' --no-follow" 2>&1
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --no-follow 2>&1
 
     # Should fail with non-zero exit code
     [ "$status" -ne 0 ]
@@ -339,7 +340,7 @@ WRAPPER
     create_push_test_wrapper "FAILURE" "1"
 
     # Use run - the || true prevents bats from failing on non-zero exit
-    run bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" 2>&1
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 2>&1
 
     # Should return non-zero for failed build (1 for build failure)
     [ "$status" -ne 0 ]
@@ -363,7 +364,7 @@ WRAPPER
     create_push_test_wrapper "SUCCESS" "1"
 
     # Push with explicit remote and branch arguments
-    run bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh' --no-follow origin feature-branch"
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --no-follow origin feature-branch
 
     [ "$status" -eq 0 ]
 
@@ -393,7 +394,7 @@ WRAPPER
 
     # The wrapper always sets JOB_NAME, so for this test we verify
     # that --no-follow works with the job set (testing the global option path)
-    run bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh' --no-follow"
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --no-follow
 
     # Should succeed
     [ "$status" -eq 0 ]
@@ -415,7 +416,7 @@ WRAPPER
     export TEST_TEMP_DIR
     create_push_test_wrapper "SUCCESS" "1"
 
-    run bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh' --no-follow"
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --no-follow
 
     # Should show some git push output
     [ "$status" -eq 0 ]

@@ -149,10 +149,10 @@ JOB_NAME="test-repo"
 cmd_build "$@"
 WRAPPER_END
 
-    # Replace placeholders with actual values (use -i '' for macOS BSD sed compatibility)
-    sed -i '' "s|__POLL_CYCLES__|${poll_cycles}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
-    sed -i '' "s|__BUILD_RESULT__|${build_result}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
-    sed -i '' "s|__TRIGGER_SUCCESS__|${trigger_success}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+    # Replace placeholders with actual values (portable: temp file + mv works on both macOS and Linux)
+    sed "s|__POLL_CYCLES__|${poll_cycles}|g; s|__BUILD_RESULT__|${build_result}|g; s|__TRIGGER_SUCCESS__|${trigger_success}|g" \
+        "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/buildgit_wrapper.sh.tmp" \
+        && mv "${TEST_TEMP_DIR}/buildgit_wrapper.sh.tmp" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 }
@@ -206,7 +206,7 @@ WRAPPER
     create_build_test_wrapper "SUCCESS" "1" "true"
 
     # Run with --no-follow to just test trigger
-    run bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh' --no-follow"
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --no-follow
 
     [ "$status" -eq 0 ]
     # Should show confirmation message
@@ -225,7 +225,7 @@ WRAPPER
     create_build_test_wrapper "SUCCESS" "2" "true"
 
     # Run build (without --no-follow, so it monitors)
-    run bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" 2>&1
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 2>&1
 
     # Should complete successfully with build result
     [ "$status" -eq 0 ]
@@ -246,7 +246,7 @@ WRAPPER
     local start_time
     start_time=$(date +%s)
 
-    run bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh' --no-follow"
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --no-follow
 
     local end_time
     end_time=$(date +%s)
@@ -270,7 +270,7 @@ WRAPPER
     export TEST_TEMP_DIR
     create_build_test_wrapper "SUCCESS" "1" "true"
 
-    run bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" 2>&1
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 2>&1
 
     [ "$status" -eq 0 ]
 }
@@ -286,7 +286,7 @@ WRAPPER
     export TEST_TEMP_DIR
     create_build_test_wrapper "FAILURE" "1" "true"
 
-    run bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" 2>&1
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 2>&1
 
     # Should return non-zero for failed build
     [ "$status" -ne 0 ]
@@ -303,7 +303,7 @@ WRAPPER
     export TEST_TEMP_DIR
     create_build_no_job_wrapper
 
-    run bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'"
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
     # Should fail with error about job name
     [ "$status" -ne 0 ]
@@ -322,7 +322,7 @@ WRAPPER
     create_build_test_wrapper "SUCCESS" "1" "true"
 
     # Note: In our wrapper JOB_NAME is already set, this tests the --no-follow path
-    run bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh' --no-follow"
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --no-follow
 
     [ "$status" -eq 0 ]
 }
@@ -338,7 +338,7 @@ WRAPPER
     export TEST_TEMP_DIR
     create_build_test_wrapper "SUCCESS" "1" "false"  # trigger fails
 
-    run bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'"
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
     # Should fail with error message
     [ "$status" -ne 0 ]
@@ -356,7 +356,7 @@ WRAPPER
     export TEST_TEMP_DIR
     create_build_test_wrapper "SUCCESS" "1" "true"
 
-    run bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" 2>&1
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 2>&1
 
     [ "$status" -eq 0 ]
     # Should show build number somewhere in output

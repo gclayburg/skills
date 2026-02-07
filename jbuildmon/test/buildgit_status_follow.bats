@@ -6,6 +6,15 @@
 
 load test_helper
 
+# Kill a process and all its children (portable across macOS and Linux)
+_kill_process_tree() {
+    local pid="$1"
+    # Kill children first, then parent
+    pkill -P "$pid" 2>/dev/null || true
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+}
+
 # =============================================================================
 # Setup and Teardown
 # =============================================================================
@@ -43,8 +52,7 @@ setup() {
 teardown() {
     # Clean up any background processes
     if [[ -n "${FOLLOW_PID:-}" ]]; then
-        kill "$FOLLOW_PID" 2>/dev/null || true
-        wait "$FOLLOW_PID" 2>/dev/null || true
+        _kill_process_tree "$FOLLOW_PID"
     fi
 
     # Clean up temporary directory
@@ -140,10 +148,10 @@ JOB_NAME="test-repo"
 cmd_status -f "$@"
 WRAPPER_END
 
-    # Replace placeholders with actual values
-    sed -i '' "s|__POLL_CYCLES__|${poll_cycles}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
-    sed -i '' "s|__INITIAL_BUILDING__|${initial_building}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
-    sed -i '' "s|__FINAL_RESULT__|${final_result}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+    # Replace placeholders with actual values (portable: temp file + mv works on both macOS and Linux)
+    sed "s|__POLL_CYCLES__|${poll_cycles}|g; s|__INITIAL_BUILDING__|${initial_building}|g; s|__FINAL_RESULT__|${final_result}|g" \
+        "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/buildgit_wrapper.sh.tmp" \
+        && mv "${TEST_TEMP_DIR}/buildgit_wrapper.sh.tmp" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 }
@@ -213,9 +221,10 @@ JOB_NAME="test-repo"
 cmd_status -f "$@"
 WRAPPER
 
-    # Substitute paths
-    sed -i '' "s|__PROJECT_DIR__|${PROJECT_DIR}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
-    sed -i '' "s|__TEST_TEMP_DIR__|${TEST_TEMP_DIR}|g" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+    # Substitute paths (portable: temp file + mv works on both macOS and Linux)
+    sed "s|__PROJECT_DIR__|${PROJECT_DIR}|g; s|__TEST_TEMP_DIR__|${TEST_TEMP_DIR}|g" \
+        "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/buildgit_wrapper.sh.tmp" \
+        && mv "${TEST_TEMP_DIR}/buildgit_wrapper.sh.tmp" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 }
@@ -268,15 +277,14 @@ WRAPPER_END
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
     # Run in background
-    bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
+    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
     FOLLOW_PID=$!
 
     # Wait for output to be generated
     sleep 5
 
     # Kill the process
-    kill "$FOLLOW_PID" 2>/dev/null || true
-    wait "$FOLLOW_PID" 2>/dev/null || true
+    _kill_process_tree "$FOLLOW_PID"
 
     # Check output
     local output
@@ -299,15 +307,14 @@ WRAPPER_END
     create_follow_test_wrapper "false" "SUCCESS" "1"
 
     # Run in background
-    bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
+    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
     FOLLOW_PID=$!
 
     # Wait for waiting message to appear
     sleep 5
 
     # Kill the process
-    kill "$FOLLOW_PID" 2>/dev/null || true
-    wait "$FOLLOW_PID" 2>/dev/null || true
+    _kill_process_tree "$FOLLOW_PID"
 
     # Check output for waiting message
     local output
@@ -328,15 +335,14 @@ WRAPPER_END
     create_new_build_detection_wrapper
 
     # Run in background
-    bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
+    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
     FOLLOW_PID=$!
 
     # Wait for new build detection
     sleep 6
 
     # Kill the process
-    kill "$FOLLOW_PID" 2>/dev/null || true
-    wait "$FOLLOW_PID" 2>/dev/null || true
+    _kill_process_tree "$FOLLOW_PID"
 
     # Check output - should show multiple build results or waiting messages
     local output
@@ -392,11 +398,10 @@ WRAPPER_END
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
     # Run with timeout (simulates forced termination)
-    bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
+    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
     local bg_pid=$!
     sleep 4
-    kill "$bg_pid" 2>/dev/null || true
-    wait "$bg_pid" 2>/dev/null || true
+    _kill_process_tree "$bg_pid"
 
     local output
     output=$(cat "${TEST_TEMP_DIR}/output.txt")
@@ -421,15 +426,14 @@ WRAPPER_END
     create_follow_test_wrapper "false" "SUCCESS" "1"
 
     # Run in background with short timeout
-    bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
+    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
     FOLLOW_PID=$!
 
     # Wait for result to be displayed
     sleep 5
 
     # Kill the process
-    kill "$FOLLOW_PID" 2>/dev/null || true
-    wait "$FOLLOW_PID" 2>/dev/null || true
+    _kill_process_tree "$FOLLOW_PID"
 
     # Check that build result was displayed
     local output
@@ -451,12 +455,11 @@ WRAPPER_END
     create_follow_test_wrapper "false" "SUCCESS" "1"
 
     # Run with -f option
-    bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
+    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
     FOLLOW_PID=$!
 
     sleep 4
-    kill "$FOLLOW_PID" 2>/dev/null || true
-    wait "$FOLLOW_PID" 2>/dev/null || true
+    _kill_process_tree "$FOLLOW_PID"
 
     local output
     output=$(cat "${TEST_TEMP_DIR}/output.txt")
@@ -508,12 +511,11 @@ WRAPPER
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
-    bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
+    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
     FOLLOW_PID=$!
 
     sleep 4
-    kill "$FOLLOW_PID" 2>/dev/null || true
-    wait "$FOLLOW_PID" 2>/dev/null || true
+    _kill_process_tree "$FOLLOW_PID"
 
     local output
     output=$(cat "${TEST_TEMP_DIR}/output.txt")
@@ -536,12 +538,11 @@ WRAPPER
     export TEST_TEMP_DIR
     create_follow_test_wrapper "false" "SUCCESS" "1"
 
-    bash -c "export TEST_TEMP_DIR='${TEST_TEMP_DIR}'; bash '${TEST_TEMP_DIR}/buildgit_wrapper.sh'" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
+    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 &
     FOLLOW_PID=$!
 
     sleep 4
-    kill "$FOLLOW_PID" 2>/dev/null || true
-    wait "$FOLLOW_PID" 2>/dev/null || true
+    _kill_process_tree "$FOLLOW_PID"
 
     local output
     output=$(cat "${TEST_TEMP_DIR}/output.txt")
