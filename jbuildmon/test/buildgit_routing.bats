@@ -92,7 +92,7 @@ teardown() {
 # Spec: Commands
 # -----------------------------------------------------------------------------
 @test "route_build_command" {
-    c failure-simulator-boom d "${TEST_REPO}"
+    cd "${TEST_REPO}"
 
     run "${PROJECT_DIR}/buildgit" build
 
