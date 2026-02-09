@@ -92,7 +92,7 @@ teardown() {
 # Spec: Commands
 # -----------------------------------------------------------------------------
 @test "route_build_command" {
-    c this-is-a-typo-please-fail-the-test d "${TEST_REPO}"
+    cd "${TEST_REPO}"
 
     run "${PROJECT_DIR}/buildgit" build
 
