@@ -1,0 +1,30 @@
+{
+  "failCount": 1,
+  "passCount": 32,
+  "skipCount": 0,
+  "suites": [
+    {
+      "name": "buildgit_routing.bats",
+      "cases": [
+        {
+          "className": "buildgit_routing.bats",
+          "name": "route_build_command",
+          "status": "REGRESSION",
+          "duration": 0.095,
+          "age": 1,
+          "errorDetails": "c: command not found",
+          "errorStackTrace": "(in test file test/buildgit_routing.bats, line 95)\n`c this-is-a-typo-please-fail-the-test d \"${TEST_REPO}\"' failed with status 127\n/home/jenkins/workspace/ralph1/jbuildmon/test/buildgit_routing.bats: line 95: c: command not found"
+        },
+        {
+          "className": "buildgit_routing.bats",
+          "name": "route_status_command",
+          "status": "PASSED",
+          "duration": 0.012,
+          "age": 0,
+          "errorDetails": null,
+          "errorStackTrace": null
+        }
+      ]
+    }
+  ]
+}

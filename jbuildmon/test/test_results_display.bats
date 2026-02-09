@@ -1189,8 +1189,8 @@ Line 8 of stack trace"
     echo "$fixture_json" | jq -e '.childReports[0].result | has("suites")' >/dev/null
     echo "$fixture_json" | jq -e '.childReports[0].result.suites[0] | has("cases")' >/dev/null
 
-    # Verify at least one FAILED test exists with error info
-    echo "$fixture_json" | jq -e '.childReports[0].result.suites[0].cases[] | select(.status == "FAILED") | has("errorStackTrace")' >/dev/null
+    # Verify at least one FAILED/REGRESSION test exists with error info
+    echo "$fixture_json" | jq -e '.childReports[0].result.suites[0].cases[] | select(.status == "FAILED" or .status == "REGRESSION") | has("errorStackTrace")' >/dev/null
 }
 
 # =============================================================================
@@ -1312,4 +1312,78 @@ Line 8 of stack trace"
 
     # Should show the stack trace content
     assert_output --partial "smoke.bats"
+}
+
+# =============================================================================
+# REGRESSION Status Tests
+# Spec: bug-no-testfail-stacktrace-shown-spec.md
+# Jenkins uses "REGRESSION" for newly-broken tests (first failure)
+# and "FAILED" for recurring failures (age > 1)
+# =============================================================================
+
+@test "parse_failed_tests_handles_regression_status" {
+    local fixture_json
+    fixture_json=$(cat "${FIXTURES_DIR}/test_report_regression.json")
+
+    run parse_failed_tests "$fixture_json"
+    assert_success
+
+    # Should find the REGRESSION test
+    local count
+    count=$(echo "$output" | jq 'length')
+    [[ "$count" -eq 1 ]] || fail "Expected 1 failed test from REGRESSION fixture, got $count"
+
+    # Verify it found the correct test
+    echo "$output" | jq -e '.[0].className == "buildgit_routing.bats"' >/dev/null || fail "Wrong className"
+    echo "$output" | jq -e '.[0].name == "route_build_command"' >/dev/null || fail "Wrong test name"
+}
+
+@test "parse_failed_tests_handles_mixed_regression_and_failed" {
+    local fixture_json
+    fixture_json=$(cat "${FIXTURES_DIR}/test_report_regression_and_failed.json")
+
+    run parse_failed_tests "$fixture_json"
+    assert_success
+
+    # Should find both REGRESSION and FAILED tests
+    local count
+    count=$(echo "$output" | jq 'length')
+    [[ "$count" -eq 2 ]] || fail "Expected 2 failed tests from mixed fixture, got $count"
+
+    # Verify both tests are present
+    echo "$output" | jq -e 'any(.[]; .className == "buildgit_routing.bats")' >/dev/null || fail "Missing REGRESSION test"
+    echo "$output" | jq -e 'any(.[]; .className == "checkbuild_job_flag.bats")' >/dev/null || fail "Missing FAILED test"
+}
+
+@test "display_test_results_shows_regression_failures" {
+    local fixture_json
+    fixture_json=$(cat "${FIXTURES_DIR}/test_report_regression.json")
+
+    export NO_COLOR=1
+    unset _JENKINS_COMMON_LOADED
+    source "${PROJECT_DIR}/lib/jenkins-common.sh"
+
+    run display_test_results "$fixture_json"
+    assert_success
+
+    assert_output --partial "=== Test Results ==="
+    assert_output --partial "Total: 33 | Passed: 32 | Failed: 1"
+    assert_output --partial "FAILED TESTS:"
+    assert_output --partial "buildgit_routing.bats::route_build_command"
+    assert_output --partial "c: command not found"
+}
+
+@test "format_test_results_json_includes_regression" {
+    local fixture_json
+    fixture_json=$(cat "${FIXTURES_DIR}/test_report_regression.json")
+
+    run format_test_results_json "$fixture_json"
+    assert_success
+
+    # Should include the REGRESSION test in the failed_tests array
+    local count
+    count=$(echo "$output" | jq '.failed_tests | length')
+    [[ "$count" -eq 1 ]] || fail "Expected 1 failed test in JSON, got $count"
+
+    echo "$output" | jq -e '.failed_tests[0].test_name == "route_build_command"' >/dev/null || fail "Wrong test_name in JSON"
 }

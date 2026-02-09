@@ -784,9 +784,11 @@ parse_failed_tests() {
     echo "$test_json" | jq -r --argjson max_display "$max_display" --argjson max_error_len "$max_error_len" '
         # Collect failed tests from BOTH direct suites path AND childReports path
         # This handles both freestyle jobs (.suites[].cases[]) and pipeline jobs (.childReports[].result.suites[].cases[])
+        # Include both FAILED (recurring) and REGRESSION (newly broken) statuses
+        # Spec: bug-no-testfail-stacktrace-shown-spec.md
         (
-            [.suites[]?.cases[]? | select(.status == "FAILED")] +
-            [.childReports[]?.result?.suites[]?.cases[]? | select(.status == "FAILED")]
+            [.suites[]?.cases[]? | select(.status == "FAILED" or .status == "REGRESSION")] +
+            [.childReports[]?.result?.suites[]?.cases[]? | select(.status == "FAILED" or .status == "REGRESSION")]
         ) |
 
         # Remove duplicates (in case both paths exist)

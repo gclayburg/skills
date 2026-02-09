@@ -1,0 +1,44 @@
+{
+  "failCount": 2,
+  "passCount": 30,
+  "skipCount": 0,
+  "suites": [
+    {
+      "name": "buildgit_routing.bats",
+      "cases": [
+        {
+          "className": "buildgit_routing.bats",
+          "name": "route_build_command",
+          "status": "REGRESSION",
+          "duration": 0.095,
+          "age": 1,
+          "errorDetails": "c: command not found",
+          "errorStackTrace": "(in test file test/buildgit_routing.bats, line 95)\n`c this-is-a-typo' failed with status 127"
+        },
+        {
+          "className": "buildgit_routing.bats",
+          "name": "route_status_command",
+          "status": "PASSED",
+          "duration": 0.012,
+          "age": 0,
+          "errorDetails": null,
+          "errorStackTrace": null
+        }
+      ]
+    },
+    {
+      "name": "checkbuild_job_flag.bats",
+      "cases": [
+        {
+          "className": "checkbuild_job_flag.bats",
+          "name": "job_flag_overrides_autodetection",
+          "status": "FAILED",
+          "duration": 0.033,
+          "age": 5,
+          "errorDetails": "sed: can't read checkbuild.sh: No such file or directory",
+          "errorStackTrace": "(from function `create_test_wrapper' in file test/checkbuild_job_flag.bats, line 113)\n`create_test_wrapper' failed with status 2"
+        }
+      ]
+    }
+  ]
+}
