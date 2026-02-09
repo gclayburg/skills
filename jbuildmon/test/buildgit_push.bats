@@ -303,6 +303,31 @@ WRAPPER
 }
 
 # -----------------------------------------------------------------------------
+# Test Case: Push with nothing to push exits cleanly (default follow mode)
+# Spec: "If nothing to push, display git's output and exit with git's exit code"
+# Verifies that when there's nothing to push and --no-follow is NOT used,
+# the command still exits cleanly without attempting to monitor a build.
+# -----------------------------------------------------------------------------
+@test "push_nothing_to_push_default_follow" {
+    cd "${TEST_REPO}"
+
+    # Don't create any new commits - nothing to push
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_push_test_wrapper "SUCCESS" "1"
+
+    # Run push WITHOUT --no-follow (default monitoring mode)
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+
+    # Should succeed - "Everything up-to-date" path returns 0
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Everything up-to-date"* ]] || [[ "$output" == *"up-to-date"* ]] || [[ "$output" == *"Nothing to push"* ]]
+    # Should NOT attempt to monitor a build
+    refute_output --partial "Waiting for Jenkins build"
+}
+
+# -----------------------------------------------------------------------------
 # Test Case: Push returns git exit code on failure
 # Spec: "Git command fails: Git's exit code"
 # -----------------------------------------------------------------------------

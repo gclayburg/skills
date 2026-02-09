@@ -316,6 +316,54 @@ WRAPPER
     assert_output --partial "VERIFIED_JOB: custom-job"
 }
 
+# -----------------------------------------------------------------------------
+# Test Case: --json works together with global --job flag
+# Spec: Global Options + buildgit status Options
+# -----------------------------------------------------------------------------
+@test "status_json_with_job_flag" {
+    cd "${TEST_REPO}"
+
+    # Create wrapper that verifies job name AND outputs JSON
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER
+#!/usr/bin/env bash
+set -euo pipefail
+
+export PROJECT_DIR="${PROJECT_DIR}"
+export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
+
+_BUILDGIT_TESTING=1
+source "\${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+verify_jenkins_connection() { return 0; }
+verify_job_exists() {
+    local job_name="\$1"
+    echo "VERIFIED_JOB: \$job_name"
+    JOB_URL="\${JENKINS_URL}/job/\${job_name}"
+    return 0
+}
+get_last_build_number() { echo "42"; }
+get_build_info() {
+    echo '{"number":42,"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/custom-job/42/"}'
+}
+get_console_output() { echo "Started by user testuser"; }
+
+JOB_NAME="custom-job"
+cmd_status "\$@"
+WRAPPER
+    chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --json
+
+    assert_success
+    assert_output --partial "VERIFIED_JOB: custom-job"
+    assert_output --partial '"job":'
+    assert_output --partial '"status":'
+}
+
 # =============================================================================
 # Test Cases: Exit Codes
 # =============================================================================

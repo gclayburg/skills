@@ -280,6 +280,17 @@ EOF
 }
 
 # -----------------------------------------------------------------------------
+# Test Case: --job with empty string shows error
+# Spec: Global Options
+# -----------------------------------------------------------------------------
+@test "parse_job_empty_value" {
+    run "${PROJECT_DIR}/buildgit" --job "" status
+
+    assert_failure
+    assert_output --partial "requires a job name"
+}
+
+# -----------------------------------------------------------------------------
 # Test Case: Unknown global option shows error
 # Spec: Global Options
 # -----------------------------------------------------------------------------
