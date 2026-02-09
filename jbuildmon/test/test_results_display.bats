@@ -953,7 +953,8 @@ Line 8 of stack trace"
 # Spec: test-failure-display-spec.md, Section: 6 Output Ordering
 # -----------------------------------------------------------------------------
 @test "integration_display_correct_ordering" {
-    # Disable colors for testing
+    # Spec: console-on-unstable-spec.md - Error Logs suppressed when test failures exist
+    # Verify: Failed Jobs before Test Results, and no Error Logs by default
     export NO_COLOR=1
     unset _JENKINS_COMMON_LOADED
     source "${PROJECT_DIR}/lib/jenkins-common.sh"
@@ -976,19 +977,54 @@ Line 8 of stack trace"
 
     local build_json='{"result": "FAILURE", "duration": 60000, "timestamp": 1706400000000, "url": "http://jenkins/job/test/1/"}'
 
+    CONSOLE_MODE=""
     run display_failure_output "test-job" "123" "$build_json" "manual" "testuser" "abc1234" "Test commit" "in_history" "console output here"
     assert_success
 
     # Verify ordering: Failed Jobs comes before Test Results
+    local failed_jobs_pos test_results_pos
+    failed_jobs_pos=$(echo "$output" | grep -n "=== Failed Jobs ===" | head -1 | cut -d: -f1)
+    test_results_pos=$(echo "$output" | grep -n "=== Test Results ===" | head -1 | cut -d: -f1)
+
+    # Failed Jobs should come before Test Results
+    [[ "$failed_jobs_pos" -lt "$test_results_pos" ]] || fail "Failed Jobs should come before Test Results"
+
+    # Error Logs should NOT appear when test failures exist and --console not specified
+    refute_output --partial "=== Error Logs ==="
+}
+
+@test "integration_display_correct_ordering_with_console_auto" {
+    # Spec: console-on-unstable-spec.md - Error Logs shown with --console auto
+    export NO_COLOR=1
+    unset _JENKINS_COMMON_LOADED
+    source "${PROJECT_DIR}/lib/jenkins-common.sh"
+
+    fetch_test_results() {
+        cat "${FIXTURES_DIR}/test_report_1_failure.json"
+    }
+    export -f fetch_test_results
+    export FIXTURES_DIR
+
+    get_all_stages() { echo '[{"name":"Unit Tests","status":"FAILED","startTimeMillis":0,"durationMillis":5000}]'; }
+    get_failed_stage() { echo "Unit Tests"; }
+    detect_all_downstream_builds() { echo ""; }
+    get_console_output() { echo "Some console output"; }
+    find_failed_downstream_build() { echo ""; }
+    extract_error_lines() { echo "ERROR: some error"; }
+    export -f get_all_stages get_failed_stage detect_all_downstream_builds get_console_output find_failed_downstream_build extract_error_lines
+
+    local build_json='{"result": "FAILURE", "duration": 60000, "timestamp": 1706400000000, "url": "http://jenkins/job/test/1/"}'
+
+    CONSOLE_MODE="auto"
+    run display_failure_output "test-job" "123" "$build_json" "manual" "testuser" "abc1234" "Test commit" "in_history" "console output here"
+    assert_success
+
     local failed_jobs_pos test_results_pos error_logs_pos
     failed_jobs_pos=$(echo "$output" | grep -n "=== Failed Jobs ===" | head -1 | cut -d: -f1)
     test_results_pos=$(echo "$output" | grep -n "=== Test Results ===" | head -1 | cut -d: -f1)
     error_logs_pos=$(echo "$output" | grep -n "=== Error Logs ===" | head -1 | cut -d: -f1)
 
-    # Failed Jobs should come before Test Results
     [[ "$failed_jobs_pos" -lt "$test_results_pos" ]] || fail "Failed Jobs should come before Test Results"
-
-    # Test Results should come before Error Logs
     [[ "$test_results_pos" -lt "$error_logs_pos" ]] || fail "Test Results should come before Error Logs"
 }
 

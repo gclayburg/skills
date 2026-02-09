@@ -35,6 +35,7 @@ source "${SCRIPT_DIR}/lib/jenkins-common.sh"
 
 JOB_NAME=""
 VERBOSE_MODE=false
+CONSOLE_MODE=""
 COMMAND=""
 COMMAND_ARGS=()
 
@@ -129,9 +130,10 @@ Usage: buildgit [global-options] <command> [command-options] [arguments]
 A unified interface for git operations with Jenkins CI/CD integration.
 
 Global Options:
-  -j, --job <name>    Specify Jenkins job name (overrides auto-detection)
-  -h, --help          Show this help message
-  --verbose           Enable verbose output for debugging
+  -j, --job <name>               Specify Jenkins job name (overrides auto-detection)
+  -c, --console <mode>           Show console log output (auto or line count)
+  -h, --help                     Show this help message
+  --verbose                      Enable verbose output for debugging
 
 Commands:
   status [-f|--follow] [--json] [git-status-options]
@@ -173,6 +175,18 @@ parse_global_options() {
                     exit 1
                 fi
                 JOB_NAME="$2"
+                shift 2
+                ;;
+            -c|--console)
+                if [[ -z "${2:-}" ]]; then
+                    log_error "Option $1 requires a mode (auto or line count)"
+                    exit 1
+                fi
+                if [[ "$2" != "auto" ]] && ! [[ "$2" =~ ^[0-9]+$ ]]; then
+                    log_error "Invalid console mode: $2 (must be 'auto' or a number)"
+                    exit 1
+                fi
+                CONSOLE_MODE="$2"
                 shift 2
                 ;;
             -h|--help)
@@ -840,6 +854,28 @@ _handle_build_completion() {
             test_results_json=$(fetch_test_results "$job_name" "$build_number")
             if [[ -n "$test_results_json" ]]; then
                 display_test_results "$test_results_json"
+            fi
+
+            # Show console log output when --console is specified
+            # Spec: console-on-unstable-spec.md, Section 3 (Behavior With --console)
+            if [[ -n "${CONSOLE_MODE:-}" ]]; then
+                local has_test_failures=false
+                if [[ -n "$test_results_json" ]]; then
+                    local fail_count
+                    fail_count=$(echo "$test_results_json" | jq -r '.failCount // 0') || fail_count=0
+                    if [[ "$fail_count" -gt 0 ]]; then
+                        has_test_failures=true
+                    fi
+                fi
+
+                if [[ "${CONSOLE_MODE}" =~ ^[0-9]+$ ]]; then
+                    echo ""
+                    echo "=== Console Log (last ${CONSOLE_MODE} lines) ==="
+                    echo "$console_output" | tail -"${CONSOLE_MODE}"
+                    echo "================================================"
+                elif [[ "${CONSOLE_MODE}" == "auto" ]]; then
+                    _display_error_logs "$job_name" "$build_number" "$console_output"
+                fi
             fi
         fi
     fi

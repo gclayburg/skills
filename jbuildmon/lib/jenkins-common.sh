@@ -1829,8 +1829,30 @@ display_failure_output() {
         display_test_results "$test_results_json"
     fi
 
-    # Display error logs
-    _display_error_logs "$job_name" "$build_number" "$console_output"
+    # Display console log output based on CONSOLE_MODE and test failure presence
+    # Spec: console-on-unstable-spec.md, Section 2 (Default Behavior Change)
+    local has_test_failures=false
+    if [[ -n "$test_results_json" ]]; then
+        local fail_count
+        fail_count=$(echo "$test_results_json" | jq -r '.failCount // 0') || fail_count=0
+        if [[ "$fail_count" -gt 0 ]]; then
+            has_test_failures=true
+        fi
+    fi
+
+    if [[ "$has_test_failures" == "true" && -z "${CONSOLE_MODE:-}" ]]; then
+        # Suppress error logs: test results section is sufficient
+        :
+    elif [[ "${CONSOLE_MODE:-}" =~ ^[0-9]+$ ]]; then
+        # Show last N lines of raw console output
+        echo ""
+        echo "${COLOR_YELLOW}=== Console Log (last ${CONSOLE_MODE} lines) ===${COLOR_RESET}"
+        echo "$console_output" | tail -"${CONSOLE_MODE}"
+        echo "${COLOR_YELLOW}================================================${COLOR_RESET}"
+    else
+        # Default for FAILURE without test failures, or --console auto
+        _display_error_logs "$job_name" "$build_number" "$console_output"
+    fi
 
     echo ""
     echo "Console:    ${url}console"
@@ -2329,6 +2351,32 @@ output_json() {
                     '. + {test_results: $test_results}')
             fi
         fi
+
+        # Adjust failure.error_summary and failure.console_log based on CONSOLE_MODE
+        # Spec: console-on-unstable-spec.md, Section 3 (JSON output)
+        local has_test_failures=false
+        if [[ -n "$test_report_json" ]]; then
+            local fail_count
+            fail_count=$(echo "$test_report_json" | jq -r '.failCount // 0') || fail_count=0
+            if [[ "$fail_count" -gt 0 ]]; then
+                has_test_failures=true
+            fi
+        fi
+
+        if [[ "$has_test_failures" == "true" && -z "${CONSOLE_MODE:-}" ]]; then
+            # Suppress error_summary when test failures present and no --console
+            json_output=$(echo "$json_output" | jq \
+                'if .failure then .failure.error_summary = null else . end')
+        fi
+
+        if [[ "${CONSOLE_MODE:-}" =~ ^[0-9]+$ ]]; then
+            # --console N: add console_log with last N lines, null out error_summary
+            local console_log_lines
+            console_log_lines=$(echo "$console_output" | tail -"${CONSOLE_MODE}")
+            json_output=$(echo "$json_output" | jq \
+                --arg console_log "$console_log_lines" \
+                'if .failure then .failure.error_summary = null | .failure.console_log = $console_log else . end')
+        fi
     fi
 
     echo "$json_output"
@@ -2451,7 +2499,8 @@ _build_failure_json() {
             root_cause_job: $root_cause_job,
             failed_stage: (if $failed_stage == "" then null else $failed_stage end),
             error_summary: (if $error_summary == "" then null else $error_summary end),
-            console_output: (if $console_output == "" then null else $console_output end)
+            console_output: (if $console_output == "" then null else $console_output end),
+            console_log: null
         }'
 }
 
