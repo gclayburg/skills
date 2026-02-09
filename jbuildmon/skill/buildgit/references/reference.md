@@ -1,9 +1,11 @@
 # buildgit — Full Command Reference
 
+The `buildgit` script and its `lib/jenkins-common.sh` library are bundled in this skill package under `scripts/`. No separate installation is required.
+
 ## Usage
 
 ```
-buildgit [global-options] <command> [command-options] [arguments]
+scripts/buildgit [global-options] <command> [command-options] [arguments]
 ```
 
 ## Global Options

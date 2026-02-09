@@ -1,48 +1,41 @@
 ---
 name: buildgit
-description: >-
+description:
   Jenkins CI/CD build monitor. Check build status, push and monitor builds,
   follow builds in real-time. Use when the user asks about CI/CD status,
   build results, wants to push code and monitor the Jenkins build, or asks
-  if CI is passing.
-compatibility: Requires bash, curl, jq, and buildgit on PATH
-allowed-tools: Bash(buildgit:*)
+  if CI is passing. Triggers: "check build", "build status", "is CI passing",
+  "is the build green", "push and watch", "push and monitor", "what failed in CI",
+  "why did the build fail", "follow the build", "watch the build", "trigger a build",
+  "run the build".
 ---
 
 # buildgit
 
 A unified CLI for git operations with Jenkins CI/CD integration.
 
-## When to Use
-
-Activate this skill when the user's intent matches any of these:
-- "check build", "build status", "is CI passing", "is the build green"
-- "push and watch", "push and monitor"
-- "what failed in CI", "why did the build fail"
-- "follow the build", "watch the build"
-- "trigger a build", "run the build"
-
 ## Prerequisites
 
 Before running any command, verify:
-1. `buildgit` is on PATH — run `which buildgit`
-2. Jenkins env vars are set: `JENKINS_URL`, `JENKINS_USER_ID`, `JENKINS_API_TOKEN`
-3. Project has `JOB_NAME=<name>` in its CLAUDE.md or AGENTS.md
+1. Jenkins env vars are set: `JENKINS_URL`, `JENKINS_USER_ID`, `JENKINS_API_TOKEN`
+2. Project has `JOB_NAME=<name>` in its CLAUDE.md or AGENTS.md
 
 If any prerequisite is missing, tell the user what's needed instead of attempting the command.
+
+The `buildgit` script is bundled at `scripts/buildgit` within this skill package.
 
 ## Commands
 
 | Command | Purpose |
 |---------|---------|
-| `buildgit status` | Git status + Jenkins build snapshot |
-| `buildgit status -f` | Follow builds in real-time (Ctrl+C to stop) |
-| `buildgit status --json` | Machine-readable Jenkins build status |
-| `buildgit push` | Push + monitor Jenkins build until complete |
-| `buildgit push --no-follow` | Push only, no build monitoring |
-| `buildgit build` | Trigger a new build + monitor until complete |
-| `buildgit build --no-follow` | Trigger only, no monitoring |
-| `buildgit --job <name> <cmd>` | Override auto-detected job name |
+| `scripts/buildgit status` | Git status + Jenkins build snapshot |
+| `scripts/buildgit status -f` | Follow builds in real-time (Ctrl+C to stop) |
+| `scripts/buildgit status --json` | Machine-readable Jenkins build status |
+| `scripts/buildgit push` | Push + monitor Jenkins build until complete |
+| `scripts/buildgit push --no-follow` | Push only, no build monitoring |
+| `scripts/buildgit build` | Trigger a new build + monitor until complete |
+| `scripts/buildgit build --no-follow` | Trigger only, no monitoring |
+| `scripts/buildgit --job <name> <cmd>` | Override auto-detected job name |
 
 ## Interpreting Output
 
@@ -64,10 +57,10 @@ For failures, summarize the failed stage name, error logs, and test failure deta
 
 ## Dynamic Context
 
-To inject live build state into context:
+To inject live build state into context before reasoning about build issues:
 
 ```
-!`buildgit status --json 2>/dev/null`
+!`scripts/buildgit status --json 2>/dev/null`
 ```
 
 ## Reference

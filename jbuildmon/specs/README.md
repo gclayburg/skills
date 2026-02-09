@@ -6,14 +6,16 @@ Individual `*-spec.md` files are treated as the specification for each featureâ€
 
 - If there are conflicting specifications, newer ones are always more important than older ones
 - All spec files that are created from other raw report documents should reference those documents in the title header of the spec
+- When writing a new spec, review the existing specs in the specs/ directory and identify any that are clearly superseded by your new specification. List only the directly superseded (first-level) specs.
 
 ## Creating a new spec
 
 **Specification template (include at top of each spec):**
 ```
 # Title
-Date: YYYY-MM-DD
+Date: <ISO 8601 format with seconds, America/Denver timezone>
 References: list of <other-raw-report-path.md> or <none>
+Supersedes: list of <other-spec-file.md>
 ```
 
 ## Spec rules
@@ -43,7 +45,8 @@ These files represent completed specifications in the specs/ directory.  This li
 - buildgit-early-build-failure-spec.md  show full console log when a build fails before any pipeline stage runs (e.g. Jenkinsfile syntax error)
 - bug-status-f-missing-header-spec.md  fix for missing build header when `buildgit status -f` detects a build that already completed
 - bug-status-json-spec.md  fix `buildgit status --json` to include console output for early failures and multi-line error extraction for stage failures
-
+- buildgit-skill-spec.md  make buildgit a portable Agent Skill following the agentskills.io open standard
+- console-on-unstable-spec.md  add `--console` global option to suppress noisy error logs for UNSTABLE builds and allow explicit console log display
 
 
 

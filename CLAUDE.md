@@ -5,6 +5,10 @@ This file provides guidance to Claude Code (claude.ai/code) amd other agents lik
 ## Project Overview
 
 This repository contains **jbuildmon** (Jenkins Build Monitor), a CLI tool that automates the developer workflow of committing code, pushing to a remote repository, and monitoring the resulting Jenkins CI/CD build until completion.
+
+The canonical location of the buildgit script is `jbuildmon/skill/buildgit/scripts/buildgit`.
+A symlink at `jbuildmon/buildgit` preserves backward compatibility.
+
 Execute this tool with:  ./jbuildmon/buildgit
 e.g.
 ./jbuildmon/buildgit status
