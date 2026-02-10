@@ -215,9 +215,9 @@ EOF
 # Test Case: Verify buildgit has bg_log_progress function
 # Spec: Issue 3 - Implementation Details
 # -----------------------------------------------------------------------------
-@test "buildgit_has_bg_log_progress_function" {
+@test "buildgit_has_bg_log_progress_function"  {
     # Check that buildgit contains the bg_log_progress function
-    run grep -A3 "bg_log_progress()" "${PROJECT_DIR}/buildgit"
+    run grep -A3 "bg_log_progress()" "${PROJECT_DIR}/lib/jenkins-common.sh"
     assert_success
     assert_output --partial "log_info"
     assert_output --partial ">&2"
@@ -229,7 +229,7 @@ EOF
 # -----------------------------------------------------------------------------
 @test "buildgit_has_bg_log_progress_success_function" {
     # Check that buildgit contains the bg_log_progress_success function
-    run grep -A3 "bg_log_progress_success()" "${PROJECT_DIR}/buildgit"
+    run grep -A3 "bg_log_progress_success()" "${PROJECT_DIR}/lib/jenkins-common.sh"
     assert_success
     assert_output --partial "log_success"
     assert_output --partial ">&2"

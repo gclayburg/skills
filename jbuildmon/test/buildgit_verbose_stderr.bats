@@ -212,7 +212,7 @@ EOF
 # -----------------------------------------------------------------------------
 @test "buildgit_bg_log_info_has_stderr_redirect" {
     # Check that buildgit contains the stderr redirect in bg_log_info
-    run grep -A3 "bg_log_info()" "${PROJECT_DIR}/buildgit"
+    run grep -A3 "bg_log_info()" "${PROJECT_DIR}/lib/jenkins-common.sh"
     assert_success
     assert_output --partial ">&2"
 }
@@ -223,7 +223,7 @@ EOF
 # -----------------------------------------------------------------------------
 @test "buildgit_bg_log_success_has_stderr_redirect" {
     # Check that buildgit contains the stderr redirect in bg_log_success
-    run grep -A3 "bg_log_success()" "${PROJECT_DIR}/buildgit"
+    run grep -A3 "bg_log_success()" "${PROJECT_DIR}/lib/jenkins-common.sh"
     assert_success
     assert_output --partial ">&2"
 }

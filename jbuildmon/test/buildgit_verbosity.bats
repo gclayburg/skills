@@ -312,18 +312,18 @@ EOF
 # -----------------------------------------------------------------------------
 @test "buildgit_has_logging_functions" {
     # Check that buildgit contains the verbosity logging functions
-    run grep -c "bg_log_info()" "${PROJECT_DIR}/buildgit"
+    run grep -c "bg_log_info()" "${PROJECT_DIR}/lib/jenkins-common.sh"
     assert_success
 
-    run grep -c "bg_log_success()" "${PROJECT_DIR}/buildgit"
+    run grep -c "bg_log_success()" "${PROJECT_DIR}/lib/jenkins-common.sh"
     assert_success
 
-    run grep -c "bg_log_warning()" "${PROJECT_DIR}/buildgit"
+    run grep -c "bg_log_warning()" "${PROJECT_DIR}/lib/jenkins-common.sh"
     assert_success
 
-    run grep -c "bg_log_error()" "${PROJECT_DIR}/buildgit"
+    run grep -c "bg_log_error()" "${PROJECT_DIR}/lib/jenkins-common.sh"
     assert_success
 
-    run grep -c "bg_log_essential()" "${PROJECT_DIR}/buildgit"
+    run grep -c "bg_log_essential()" "${PROJECT_DIR}/lib/jenkins-common.sh"
     assert_success
 }
