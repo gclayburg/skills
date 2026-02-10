@@ -79,6 +79,64 @@ _timestamp() {
 # Logging Functions
 # =============================================================================
 
+# =============================================================================
+# Verbosity-Aware Logging Functions
+# =============================================================================
+# These wrappers respect the VERBOSE_MODE setting.
+# - Informational messages (info, success) are suppressed in quiet mode (default)
+# - Warnings, errors, and essential output are always shown
+# Spec reference: buildgit-spec.md, Verbosity Behavior
+
+# INFO level - Only output if VERBOSE_MODE=true
+# Use for: "Verifying Jenkins connectivity...", "Found job name", etc.
+# Note: Output to stderr to avoid corrupting command substitution return values
+bg_log_info() {
+    if [[ "$VERBOSE_MODE" == "true" ]]; then
+        log_info "$@" >&2
+    fi
+}
+
+# SUCCESS level - Only output if VERBOSE_MODE=true
+# Use for: "Connected to Jenkins", "Job found", etc.
+# Note: Output to stderr to avoid corrupting command substitution return values
+bg_log_success() {
+    if [[ "$VERBOSE_MODE" == "true" ]]; then
+        log_success "$@" >&2
+    fi
+}
+
+# WARNING level - Always output (warnings are important)
+bg_log_warning() {
+    log_warning "$@"
+}
+
+# ERROR level - Always output (errors are critical)
+bg_log_error() {
+    log_error "$@"
+}
+
+# ESSENTIAL level - Always output regardless of verbosity
+# Use for: git command output, build results, test failures, final status
+bg_log_essential() {
+    echo "$@"
+}
+
+# PROGRESS level - Always output for real-time monitoring feedback
+# Use for: stage completions, elapsed time updates during monitoring
+# Note: Uses stderr to avoid corrupting any command substitution
+# Spec reference: bug2026-02-01-buildgit-monitoring-spec.md, Issue 3
+bg_log_progress() {
+    log_info "$@" >&2
+}
+
+# PROGRESS_SUCCESS level - Always output for stage completion messages
+# Use for: stage completion messages with checkmark formatting
+# Note: Uses stderr to avoid corrupting any command substitution
+# Spec reference: bug2026-02-01-buildgit-monitoring-spec.md, Issue 3
+bg_log_progress_success() {
+    log_success "$@" >&2
+}
+
 # INFO level - General status updates (blue indicator)
 log_info() {
     echo "${COLOR_BLUE}[$(_timestamp)] ℹ${COLOR_RESET} $*"
@@ -385,7 +443,6 @@ jenkins_api_with_status() {
 # Tests connection to Jenkins root API endpoint
 # Returns: 0 on success, 1 on failure (with error logged)
 verify_jenkins_connection() {
-    log_info "Verifying Jenkins connectivity..."
 
     local response
     local http_code
@@ -396,7 +453,7 @@ verify_jenkins_connection() {
 
     case "$http_code" in
         200)
-            log_success "Connected to Jenkins"
+            bg_log_success "Connected to Jenkins"
             return 0
             ;;
         401)
@@ -423,7 +480,7 @@ verify_jenkins_connection() {
 # Returns: 0 on success, 1 on failure (with error logged)
 verify_job_exists() {
     local job_name="$1"
-    log_info "Verifying job '$job_name' exists..."
+    bg_log_info "Verifying job '$job_name' exists..."
 
     local response
     local http_code
@@ -433,7 +490,7 @@ verify_job_exists() {
 
     case "$http_code" in
         200)
-            log_success "Job '$job_name' found"
+            bg_log_success "Job '$job_name' found"
             JOB_URL="${JENKINS_URL}/job/${job_name}"
             return 0
             ;;
@@ -549,7 +606,7 @@ wait_for_queue_item() {
             local why
             why=$(echo "$response" | jq -r '.why // empty' 2>/dev/null)
             if [[ -n "$why" && "$why" != "null" ]]; then
-                log_info "Waiting in queue: $why" >&2
+                bg_log_info "Waiting in queue: $why" >&2
             fi
 
             # Check if cancelled

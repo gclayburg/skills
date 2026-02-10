@@ -62,64 +62,6 @@ _follow_mode_cleanup() {
 _FOLLOW_JOB_NAME=""
 
 # =============================================================================
-# Verbosity-Aware Logging Functions
-# =============================================================================
-# These wrappers respect the VERBOSE_MODE setting.
-# - Informational messages (info, success) are suppressed in quiet mode (default)
-# - Warnings, errors, and essential output are always shown
-# Spec reference: buildgit-spec.md, Verbosity Behavior
-
-# INFO level - Only output if VERBOSE_MODE=true
-# Use for: "Verifying Jenkins connectivity...", "Found job name", etc.
-# Note: Output to stderr to avoid corrupting command substitution return values
-bg_log_info() {
-    if [[ "$VERBOSE_MODE" == "true" ]]; then
-        log_info "$@" >&2
-    fi
-}
-
-# SUCCESS level - Only output if VERBOSE_MODE=true
-# Use for: "Connected to Jenkins", "Job found", etc.
-# Note: Output to stderr to avoid corrupting command substitution return values
-bg_log_success() {
-    if [[ "$VERBOSE_MODE" == "true" ]]; then
-        log_success "$@" >&2
-    fi
-}
-
-# WARNING level - Always output (warnings are important)
-bg_log_warning() {
-    log_warning "$@"
-}
-
-# ERROR level - Always output (errors are critical)
-bg_log_error() {
-    log_error "$@"
-}
-
-# ESSENTIAL level - Always output regardless of verbosity
-# Use for: git command output, build results, test failures, final status
-bg_log_essential() {
-    echo "$@"
-}
-
-# PROGRESS level - Always output for real-time monitoring feedback
-# Use for: stage completions, elapsed time updates during monitoring
-# Note: Uses stderr to avoid corrupting any command substitution
-# Spec reference: bug2026-02-01-buildgit-monitoring-spec.md, Issue 3
-bg_log_progress() {
-    log_info "$@" >&2
-}
-
-# PROGRESS_SUCCESS level - Always output for stage completion messages
-# Use for: stage completion messages with checkmark formatting
-# Note: Uses stderr to avoid corrupting any command substitution
-# Spec reference: bug2026-02-01-buildgit-monitoring-spec.md, Issue 3
-bg_log_progress_success() {
-    log_success "$@" >&2
-}
-
-# =============================================================================
 # Usage
 # =============================================================================
 
@@ -616,7 +558,7 @@ _cmd_status_follow() {
 
         # Show waiting message (always shown - essential output)
         echo ""
-        bg_log_essential "Waiting for next build of $job_name..."
+        log_info "Waiting for next build of $job_name..."
 
         # Wait for a new build to start
         local new_build_number
@@ -766,7 +708,7 @@ _wait_for_build_start() {
     local queue_url="${3:-}"
     local build_start_timeout="${BUILD_START_TIMEOUT:-120}"
 
-    bg_log_info "Waiting for Jenkins build to start..."
+    bg_log_progress "Waiting for Jenkins build $job_name to start..."
 
     # If queue_url provided, try queue API first
     if [[ -n "$queue_url" ]]; then
