@@ -1,8 +1,0 @@
-study specs/jenkins-build-monitor-spec.md
-study specs/pushmon_implementation_plan.md and pick the most important thing to do
-
-
-IMPORTANT:
-- the script name you create is pushmon.sh
-- the bash script must be usable on mac and linux
-- update the implementation plan when the task is done
