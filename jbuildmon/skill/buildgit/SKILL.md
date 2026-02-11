@@ -28,7 +28,7 @@ The `buildgit` script is bundled at `scripts/buildgit` within this skill package
 
 | Command | Purpose |
 |---------|---------|
-| `scripts/buildgit status` | Git status + Jenkins build snapshot |
+| `scripts/buildgit status` | Jenkins build status snapshot |
 | `scripts/buildgit status -f` | Follow builds in real-time (Ctrl+C to stop) |
 | `scripts/buildgit status --json` | Machine-readable Jenkins build status |
 | `scripts/buildgit push` | Push + monitor Jenkins build until complete |

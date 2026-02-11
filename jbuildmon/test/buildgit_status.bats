@@ -153,26 +153,6 @@ WRAPPER
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-# Test Case: Status shows git status output
-# Spec: buildgit status - "Execute and display git status output"
-# -----------------------------------------------------------------------------
-@test "status_shows_git_status" {
-    cd "${TEST_REPO}"
-
-    # Create an untracked file to appear in git status
-    echo "new file" > newfile.txt
-
-    export PROJECT_DIR
-    create_status_test_wrapper "SUCCESS" "false"
-
-    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
-
-    # Should show git status output
-    assert_output --partial "Untracked files"
-    assert_output --partial "newfile.txt"
-}
-
-# -----------------------------------------------------------------------------
 # Test Case: Status shows Jenkins build status
 # Spec: buildgit status - "Display Jenkins build status"
 # -----------------------------------------------------------------------------
@@ -188,52 +168,6 @@ WRAPPER
     assert_output --partial "BUILD SUCCESSFUL"
     assert_output --partial "Build:"
     assert_output --partial "#42"
-}
-
-# -----------------------------------------------------------------------------
-# Test Case: Status has blank line between git and Jenkins output
-# Spec: Output Format - "[git status output]\n\n[checkbuild.sh equivalent output]"
-# -----------------------------------------------------------------------------
-@test "status_has_separator_between_outputs" {
-    cd "${TEST_REPO}"
-
-    export PROJECT_DIR
-    create_status_test_wrapper "SUCCESS" "false"
-
-    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
-
-    # The output should contain git status followed by Jenkins status
-    # with a blank line separator (handled by echo "")
-    assert_success
-    assert_output --partial "On branch"
-    assert_output --partial "BUILD SUCCESSFUL"
-}
-
-# =============================================================================
-# Test Cases: Git Options Passthrough
-# =============================================================================
-
-# -----------------------------------------------------------------------------
-# Test Case: -s (short) option passes through to git status
-# Spec: buildgit status Options - "Other options: Passed through to git status"
-# -----------------------------------------------------------------------------
-@test "status_git_options_passthrough" {
-    cd "${TEST_REPO}"
-
-    # Create a modified file
-    echo "modified" >> README.md
-    git add README.md
-
-    export PROJECT_DIR
-    create_status_test_wrapper "SUCCESS" "false"
-
-    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -s
-
-    # Short format should show abbreviated output
-    assert_success
-    # Short format uses M for modified
-    assert_output --partial "M"
-    assert_output --partial "README.md"
 }
 
 # =============================================================================
@@ -253,8 +187,6 @@ WRAPPER
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --json
 
     assert_success
-    # Should still show git status (plain text)
-    assert_output --partial "On branch"
     # Should have JSON output for Jenkins status
     assert_output --partial '"job":'
     assert_output --partial '"build":'
@@ -428,9 +360,6 @@ WRAPPER
 @test "status_jenkins_unavailable" {
     cd "${TEST_REPO}"
 
-    # Create untracked file to show in git status
-    echo "test" > testfile.txt
-
     export PROJECT_DIR
     create_jenkins_unavailable_wrapper
 
@@ -438,9 +367,6 @@ WRAPPER
 
     # Should fail (Jenkins unavailable)
     assert_failure
-    # But git status should still be shown
-    assert_output --partial "Untracked files"
-    assert_output --partial "testfile.txt"
     # Should show Jenkins error
     assert_output --partial "Failed to connect to Jenkins"
 }

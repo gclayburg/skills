@@ -78,15 +78,15 @@ Global Options:
   --verbose                      Enable verbose output for debugging
 
 Commands:
-  status [-f|--follow] [--json] [git-status-options]
-                      Display combined git and Jenkins build status
+  status [-f|--follow] [--json]
+                      Display Jenkins build status
   push [--no-follow] [git-push-options] [remote] [branch]
                       Push commits and monitor Jenkins build
   build [--no-follow] Trigger and monitor Jenkins build
   <any-git-command>   Passed through to git
 
 Examples:
-  buildgit status              # Git status + Jenkins build snapshot
+  buildgit status              # Jenkins build status snapshot
   buildgit status -f           # Follow builds indefinitely
   buildgit status --json       # JSON format for Jenkins status
   buildgit push                # Push + monitor build
@@ -167,12 +167,10 @@ parse_global_options() {
 # =============================================================================
 
 # Parse status command options
-# Separates buildgit options (--json, -f/--follow) from git status options
-# Sets: STATUS_JSON_MODE, STATUS_FOLLOW_MODE, STATUS_GIT_ARGS
+# Sets: STATUS_JSON_MODE, STATUS_FOLLOW_MODE
 _parse_status_options() {
     STATUS_JSON_MODE=false
     STATUS_FOLLOW_MODE=false
-    STATUS_GIT_ARGS=()
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -185,9 +183,8 @@ _parse_status_options() {
                 shift
                 ;;
             *)
-                # Pass through to git status
-                STATUS_GIT_ARGS+=("$1")
-                shift
+                bg_log_error "Unknown option for status command: $1"
+                return 1
                 ;;
         esac
     done
@@ -624,12 +621,8 @@ cmd_status() {
     # Parse status-specific options
     _parse_status_options "$@"
 
-    # For follow mode, skip git status display after first iteration
-    # and jump straight to Jenkins monitoring
+    # For follow mode, jump straight to Jenkins monitoring
     if [[ "$STATUS_FOLLOW_MODE" == "true" ]]; then
-        # Still show git status once at the start (may fail if not in git repo)
-        git status "${STATUS_GIT_ARGS[@]+"${STATUS_GIT_ARGS[@]}"}" || true
-
         # Validate and setup Jenkins connection
         if ! _validate_jenkins_setup "monitor Jenkins builds"; then
             return 1
@@ -642,33 +635,13 @@ cmd_status() {
     fi
 
     # -------------------------------------------------------------------------
-    # Part 1: Display git status
+    # Display Jenkins build status
     # -------------------------------------------------------------------------
-    # Execute git status with any passthrough options
-    # Always show git output regardless of verbosity (essential output)
-    # Spec: Non-git directory handling - capture exit code, continue if --job provided
-    local git_exit_code=0
-    git status "${STATUS_GIT_ARGS[@]+"${STATUS_GIT_ARGS[@]}"}" || git_exit_code=$?
-
-    # Print blank line separator between git status and Jenkins status
-    echo ""
-
-    # -------------------------------------------------------------------------
-    # Part 2: Display Jenkins build status
-    # -------------------------------------------------------------------------
-    # Spec: Error Handling - graceful degradation for Jenkins portion
-    local jenkins_exit_code=0
-
     if ! _validate_jenkins_setup "check Jenkins status"; then
-        return $((git_exit_code > 0 ? git_exit_code : 1))
+        return 1
     fi
 
-    # Perform Jenkins status check and display
     _jenkins_status_check "$_VALIDATED_JOB_NAME" "$STATUS_JSON_MODE"
-    jenkins_exit_code=$?
-
-    # Return the more severe exit code (git failure takes precedence if non-zero)
-    return $((git_exit_code > 0 ? git_exit_code : jenkins_exit_code))
 }
 
 # =============================================================================

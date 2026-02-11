@@ -20,47 +20,33 @@ scripts/buildgit [global-options] <command> [command-options] [arguments]
 
 ### `buildgit status`
 
-Display combined git and Jenkins build status.
+Display Jenkins build status.
 
 **Options:**
 - `-f, --follow` — Follow builds: monitor current build if in progress, then wait indefinitely for subsequent builds. Exit with Ctrl+C.
 - `--json` — Output Jenkins status in JSON format
-- Other options are passed through to `git status`
 
 **Examples:**
 ```bash
-buildgit status              # Git status + Jenkins build snapshot
+buildgit status              # Jenkins build status snapshot
 buildgit status -f           # Follow builds indefinitely
 buildgit status --json       # JSON format for Jenkins status
-buildgit status -s           # Short git status + Jenkins status
 buildgit --job myjob status --json  # Specific job, JSON output
 ```
 
 **Example output (`buildgit status`):**
 ```
-On branch main
-Your branch is up to date with 'origin/main'.
-
-nothing to commit, working tree clean
-
 Jenkins Build Status: ralph1 #42
 Result: SUCCESS
 ```
 
 **Example output (`buildgit status --json`):**
 ```
-On branch main
-Your branch is up to date with 'origin/main'.
-
-nothing to commit, working tree clean
-
 {"result":"SUCCESS","building":false,"number":42,"url":"http://jenkins:8080/job/ralph1/42/", ...}
 ```
 
 **Example output (`buildgit status -f`):**
 ```
-[git status output]
-
 Monitoring build ralph1 #42...
 Stage: Build        ✓ (3s)
 Stage: Test         ✓ (12s)

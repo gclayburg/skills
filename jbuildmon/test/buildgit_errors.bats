@@ -75,8 +75,6 @@ clear_jenkins_env() {
     # Provide job name to skip job discovery and test Jenkins connectivity
     run "${PROJECT_DIR}/buildgit" -j testjob status
 
-    # Should show git status output
-    assert_output --partial "On branch"
     # Should show Jenkins error
     assert_output --partial "cannot connect to Jenkins"
     # Should include actionable suggestion
@@ -139,8 +137,8 @@ clear_jenkins_env() {
 
     run "${PROJECT_DIR}/buildgit" status
 
-    # Should show git's error about not being in a git repo
-    assert_output --partial "not a git repository"
+    # Without a git repo, job discovery fails (no remote URL)
+    assert_output --partial "could not determine job name"
     # Should fail
     assert_failure
 }
@@ -156,10 +154,8 @@ clear_jenkins_env() {
 
     run "${PROJECT_DIR}/buildgit" -j testjob status
 
-    # Should show git's error
-    assert_output --partial "not a git repository"
-    # Should still attempt Jenkins (and fail due to invalid Jenkins)
-    # The important thing is it tried - we can verify by checking for Jenkins-related output
+    # With --job provided, skips job discovery and tries Jenkins connectivity
+    assert_output --partial "cannot connect to Jenkins"
     assert_failure
 }
 
@@ -181,8 +177,6 @@ clear_jenkins_env() {
 
     run "${PROJECT_DIR}/buildgit" status
 
-    # Should show git status
-    assert_output --partial "On branch"
     # Should show job detection error
     assert_output --partial "Could not determine Jenkins job name"
     # Should include suggestion
@@ -227,8 +221,6 @@ clear_jenkins_env() {
 
     run "${PROJECT_DIR}/buildgit" status
 
-    # Should show git status
-    assert_output --partial "On branch"
     # Should show environment error
     assert_output --partial "environment not configured"
     # Should include actionable suggestion
@@ -352,27 +344,6 @@ clear_jenkins_env() {
 # =============================================================================
 # Test Cases: Graceful Degradation
 # =============================================================================
-
-# -----------------------------------------------------------------------------
-# Test Case: status still shows git output even when Jenkins fails
-# Spec: Error Handling - graceful degradation
-# -----------------------------------------------------------------------------
-@test "graceful_degradation_status" {
-    create_test_repo
-
-    # Make some changes to show in git status
-    echo "modified" >> README.md
-
-    setup_invalid_jenkins
-
-    run "${PROJECT_DIR}/buildgit" status
-
-    # Should still show git status with modification info
-    assert_output --partial "README.md"
-    assert_output --partial "modified"
-    # Jenkins error comes after
-    assert_failure
-}
 
 # -----------------------------------------------------------------------------
 # Test Case: push --no-follow works even with invalid Jenkins config

@@ -551,33 +551,6 @@ WRAPPER
     [[ "$output" == *"Waiting for next build"* ]] || [[ "$output" == *"BUILD"* ]]
 }
 
-# -----------------------------------------------------------------------------
-# Test Case: Follow mode shows git status once at start
-# Spec: buildgit status displays git status output
-# -----------------------------------------------------------------------------
-@test "follow_shows_git_status_at_start" {
-    cd "${TEST_REPO}"
-
-    # Create an untracked file
-    echo "test" > newfile.txt
-
-    export PROJECT_DIR
-    export TEST_TEMP_DIR
-    create_follow_test_wrapper "false" "SUCCESS" "1"
-
-    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
-    FOLLOW_PID=$!
-
-    sleep 4
-    _kill_process_tree "$FOLLOW_PID"
-
-    local output
-    output=$(cat "${TEST_TEMP_DIR}/output.txt")
-
-    # Should show git status with the untracked file
-    [[ "$output" == *"newfile.txt"* ]] || [[ "$output" == *"Untracked"* ]]
-}
-
 # =============================================================================
 # Test Cases: Completed Build Header Display (bug-status-f-missing-header-spec)
 # =============================================================================

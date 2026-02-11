@@ -65,10 +65,10 @@ teardown() {
 
     run "${PROJECT_DIR}/buildgit" status
 
-    # Status command is implemented - it shows git status then tries Jenkins
-    # Without valid Jenkins config, it will fail after git status
-    # But we can verify it routes correctly by seeing git status output
-    assert_output --partial "On branch"
+    # Status command routes to cmd_status which tries Jenkins
+    # Without valid Jenkins setup, it fails with a Jenkins-related error
+    assert_failure
+    assert_output --partial "could not determine job name"
 }
 
 # -----------------------------------------------------------------------------

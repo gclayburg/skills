@@ -72,8 +72,8 @@ Global Options:
   --verbose           Enable verbose output for debugging
 
 Commands:
-  status [-f|--follow] [--json] [git-status-options]
-                      Display combined git and Jenkins build status
+  status [-f|--follow] [--json]
+                      Display Jenkins build status
   push [--no-follow] [git-push-options] [remote] [branch]
                       Push commits and monitor Jenkins build
   build [--no-follow] Trigger and monitor Jenkins build
