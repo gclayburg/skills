@@ -9,6 +9,11 @@ load "${TEST_DIR}/test_helper/bats-support/load"
 load "${TEST_DIR}/test_helper/bats-assert/load"
 load "${TEST_DIR}/test_helper/bats-file/load"
 
+# Prevent BASH_ENV from re-sourcing sandbox environment in subprocesses.
+# Without this, test overrides (export/unset of JENKINS_* vars) get clobbered
+# when bats spawns buildgit as a child process.
+unset BASH_ENV
+
 # Common setup for all tests
 setup() {
     # Create a temporary directory for test artifacts

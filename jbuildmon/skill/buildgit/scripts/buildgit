@@ -14,7 +14,7 @@
 #   --verbose           Enable verbose/debug output
 #
 # Commands:
-#   status              Git status + Jenkins build status
+#   status              Jenkins build status
 #   push                Push commits + monitor Jenkins build
 #   build               Trigger + monitor Jenkins build
 #   <any-git-command>   Passed through to git
@@ -614,7 +614,7 @@ _validate_jenkins_setup() {
 }
 
 # Status command handler
-# Displays combined git status and Jenkins build status
+# Displays Jenkins build status
 # Spec reference: buildgit-spec.md, buildgit status
 # Error handling: buildgit-spec.md, Error Handling section
 cmd_status() {

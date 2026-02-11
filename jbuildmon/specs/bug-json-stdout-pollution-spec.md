@@ -45,7 +45,7 @@ buildgit log -1    # Passthrough to git log
 
 ### Passthrough options removed
 
-The `buildgit status` command currently accepts passthrough options like `-s` (short format) that are forwarded to `git status`. Since `git status` is no longer called, these passthrough options are no longer relevant. The `_parse_status_options` function should continue to collect unknown options into `STATUS_GIT_ARGS` for forward compatibility, but they will simply be ignored. No error should be raised for unrecognized options.
+The `buildgit status` command previously accepted passthrough options like `-s` (short format) that were forwarded to `git status`. Since `git status` is no longer called, these passthrough options have been removed. Unrecognized options now raise an error, as `_parse_status_options` only accepts `--json` and `-f`/`--follow`.
 
 ### Error handling change
 

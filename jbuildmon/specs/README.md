@@ -47,6 +47,7 @@ These files represent completed specifications in the specs/ directory.  This li
 - bug-status-json-spec.md  fix `buildgit status --json` to include console output for early failures and multi-line error extraction for stage failures
 - buildgit-skill-spec.md  make buildgit a portable Agent Skill following the agentskills.io open standard
 - console-on-unstable-spec.md  add `--console` global option to suppress noisy error logs for UNSTABLE builds and allow explicit console log display
+- bug-json-stdout-pollution-spec.md  remove `git status` from `buildgit status` to fix JSON stdout pollution and make status Jenkins-only
 
 
 

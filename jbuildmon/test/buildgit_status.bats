@@ -354,8 +354,8 @@ WRAPPER
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-# Test Case: Shows git status even when Jenkins is unavailable
-# Spec: Error Handling - "Git operations should still be attempted and complete"
+# Test Case: Shows Jenkins error when Jenkins is unavailable
+# Spec: Error Handling - Jenkins Unavailable
 # -----------------------------------------------------------------------------
 @test "status_jenkins_unavailable" {
     cd "${TEST_REPO}"

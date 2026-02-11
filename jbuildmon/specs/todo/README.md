@@ -8,7 +8,6 @@ Items in this directory represent features, enhancements, or bug fixes that have
 
 ## Index ready to implement
 
-- **bug-json-stdout-pollution-spec.md** — Remove `git status` from `buildgit status` entirely. The git status output is unused by any code path, pollutes stdout (breaking `--json` piping to `jq`), and duplicates a command users already have. `buildgit status` becomes Jenkins-only.
 - **needed_tools.md** — New `buildgit` subcommands (`console`, `tests`, `status <build#>`) identified during debugging of build failures. Prioritized by usefulness during incident triage.
 
 ## Index of files not ready to implement

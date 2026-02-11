@@ -65,7 +65,7 @@ clear_jenkins_env() {
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-# Test Case: status shows git status then Jenkins error when Jenkins unavailable
+# Test Case: status shows Jenkins error when Jenkins unavailable
 # Spec: Error Handling - Jenkins Unavailable
 # -----------------------------------------------------------------------------
 @test "error_jenkins_unavailable_status" {
@@ -164,7 +164,7 @@ clear_jenkins_env() {
 # =============================================================================
 
 # -----------------------------------------------------------------------------
-# Test Case: status shows git status then job detection error
+# Test Case: status shows job detection error
 # Spec: Error Handling - Job Detection Failure
 # -----------------------------------------------------------------------------
 @test "error_job_detection_failure_status" {
