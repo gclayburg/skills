@@ -1,69 +1,218 @@
+# buildgit
 
+A CLI tool that lets you push code and see if the Jenkins build passed — without ever leaving your terminal. Built for humans on the command line and AI agents alike.
 
-# Ralph Wiggum process
-1. brainstorm and write down some ideas for a new feature, a bug fix, or a new user story .  include as much clarifying detail as possible
-2. write this to a file like specs/some-new-feature-raw.md
+## The Problem
 
-3. Use claude Opus to read about your idea then force it to ask you clarifying questions about what exactly you want.  when satisfied, have claude code write a specification document in the specs folder using the name standard specs/some-new-feature-spec.md
+Every developer knows this workflow:
 
-Do it with this script
+1. `git push`
+2. Open Jenkins in a browser
+3. Stare at the build page, hitting refresh
+4. Eventually find out the build failed 4 minutes ago because of a missing semicolon
 
-```bash
-./raw-to-spec.sh specs/some-new-feature-raw.md 
+**buildgit** collapses all of that into one command. Push your code, and it monitors the Jenkins build right in your terminal until it passes or fails. When the build succeeds, you see a clean summary. When it fails, you see exactly what went wrong — the failed stage, the error, the failing tests — without wading through hundreds of lines of console log.
+
+## The Workflow
+
+```
+# 1. Make your changes
+vim src/app.js
+
+# 2. Commit
+git commit -am "fix auth timeout"
+
+# 3. Push and watch
+buildgit push
 ```
 
-4. human verifies the spec has everything needed
-5. use claude to break down specs into a plan according to instructions:
+That's it. Step 3 pushes your code, picks up the Jenkins build, and streams the result:
 
-```bash
-$ ./createchunks.sh specs/some-new-feature-spec.md
+```
+$ buildgit push
+Enumerating objects: 5, done.
+Writing objects: 100% (3/3), 312 bytes | 312.00 KiB/s, done.
+To github.com:user/myproject.git
+   a1b2c3d..e4f5g6h  main -> main
+
+Monitoring build myproject #42...
+Stage: Initialize      ✓ (2s)
+Stage: Build           ✓ (3s)
+Stage: Unit Tests      ✓ (12s)
+Stage: Deploy          ✓ (1s)
+Build #42: SUCCESS
 ```
 
-6. Human verifies the plan.
+When something breaks, you see only what matters:
 
-7. implement one task with unit test
+```
+Stage: Unit Tests      FAILED (8s)
 
-```bash
-$ ./executeplan.sh specs/some-new-feature-plan.md
+FAILED TESTS:
+  - com.example.AuthTest.testLoginExpired
+  - com.example.AuthTest.testTokenRefresh
+
+Error: 2 test(s) failed
+Build #43: FAILURE
 ```
 
-repeat 7 until all tasks marked complete.
+No scrolling through a full console log. buildgit filters out the noise and shows you the details you need to fix the problem.
 
+## For Humans and Agents
 
-## use claude opus for creating taskcreator.md:
+buildgit is designed for two audiences:
 
-```bash
-claude 'study AGENTS.md README.md and specs/taskcreator.md  is there anything in specs/taskcreator.md that is not clear or needs further explanation.  at some point, I will ask you to use this to generate a plan.  '
-```
+**Humans** use it on the command line. Push code, see results, fix failures — all without leaving the terminal.
 
-repeat this prompt again after making edits.
+**AI agents** (Claude Code, Cursor, Codex, Gemini CLI, etc.) use it as an [Agent Skill](https://agentskills.io). When you tell your agent "push this and watch the build" or "is CI green?", it invokes buildgit automatically. Because the output is concise — just stages, results, and failures — the agent gets the signal it needs without burning context on a massive console log. The agent can then immediately act on failures: read the error, fix the code, and push again.
 
+## Install
 
+### As an Agent Skill
 
-# Bugs
-
-1. describe bug in claude prompt with all the detail we know.  ask claude to create a bug report with root cause analysis and save file in specs/bug#-thingthatbroke.md
-
-2. review document
-3. have claude create implementation plan, just like a spec:
+Install buildgit so your AI coding agent can discover and use it automatically:
 
 ```bash
-claude 'use taskcreator.md to create an implementation plan for specs/build-tools-enhancement-spec.md'
+npx skills add https://github.com/gclayburg/skills --skill buildgit
 ```
 
-4. run this as many times as it takes to build all chunks:
+Once installed, any Agent Skills-compatible tool (Claude Code, Cursor, etc.) will pick it up. Ask your agent "is the build passing?" and it just works.
+
+### Manual install
+
+Clone the repo and add the script to your PATH:
 
 ```bash
-claude 'study  specs/bug1-jenkins-log-truncated-plan.md . use your judgement to pick the highest priority task or chunk and build that.  do not ask questions, just do it.  When finished mark the chunk as completed in  specs/bug1-jenkins-log-truncated-plan.md '
+git clone https://github.com/gclayburg/skills.git
+export PATH="$PATH:$(pwd)/skills/jbuildmon/skill/buildgit/scripts"
 ```
 
-# security
-Use this to clone fully and run in docker sandbox:
-This project uses git submodules for the bats-core unit tests
-The policy allows internet traffic outbound, but blocks all internal traffic, except for the jenkins build server and git remote server
+### Prerequisites
+
+buildgit sits on top of an existing git + Jenkins setup. You'll need:
+
+- **bash**, **curl**, **jq**
+- **Git** for your project, with a remote repository
+- **Jenkins** with a **Pipeline** job for your project (freestyle jobs are not supported)
+- **Automatic build triggers** — your git remote must be configured to trigger a Jenkins build on every push (e.g. via a webhook, a git post-receive hook, or a Jenkins plugin like GitHub Branch Source). buildgit monitors builds; it doesn't create the link between your repo and Jenkins.
+
+### Jenkins user setup
+
+buildgit needs a Jenkins user with read and build permissions. It does **not** need any administrative access. The minimum required permissions are:
+
+- **Overall/Read** — connect to Jenkins
+- **Job/Read** — view job and build details
+- **Job/Build** — trigger new builds (only needed for `buildgit build`)
+
+The user does not need permissions to create, delete, configure, or administer jobs or Jenkins itself. A role with just these permissions keeps the attack surface small.
+
+### Jenkins credentials
+
+Once you have a Jenkins user, generate an API token and set these environment variables (e.g. in your `~/.bashrc` or `~/.zshrc`):
 
 ```bash
-$ git clone --recurse-submodules <your-repo-url>
-$ cd ralph1
-$ docker sandbox network  proxy claude-ralph1 --policy allow --allow-host palmer.garyclayburg.com --allow-host jenkins.garyclayburg.com --allow-host scranton2.garyclayburg.com --allow-host scranton2 --block-cidr 192.168.0.0/16
+export JENKINS_URL="https://jenkins.example.com"
+export JENKINS_USER_ID="your-username"
+export JENKINS_API_TOKEN="your-api-token"
 ```
+
+To generate an API token: Jenkins > your user > Configure > API Token > Add new Token.
+
+
+## Usage
+
+### Push and monitor
+
+The core workflow — push your commits and watch the build:
+
+```bash
+buildgit push
+```
+
+Just want to push without waiting?
+
+```bash
+buildgit push --no-follow
+```
+
+### Check build status
+
+See the current state of the latest build:
+
+```bash
+buildgit status
+```
+
+Follow builds in real-time (stays open and watches for new builds):
+
+```bash
+buildgit status -f
+```
+
+Get machine-readable output for scripting or agent consumption:
+
+```bash
+buildgit status --json
+```
+
+### Trigger a build
+
+Kick off a build without pushing (like hitting "Build Now" in Jenkins):
+
+```bash
+buildgit build
+```
+
+### Git passthrough
+
+Any command buildgit doesn't recognize gets passed straight to `git`:
+
+```bash
+buildgit log --oneline -5
+buildgit diff HEAD~1
+buildgit checkout -b feature
+```
+
+### Multiple projects
+
+buildgit auto-detects the Jenkins job name from your project configuration. Override it with `--job`:
+
+```bash
+buildgit --job other-project status
+```
+
+## Per-Project Setup
+
+Add the Jenkins job name to your project's root `CLAUDE.md` or `AGENTS.md`:
+
+```markdown
+## Jenkins CI
+- JOB_NAME=my-project
+```
+
+This lets both buildgit and your AI agent find the right Jenkins job automatically.
+
+## Quick Reference
+
+| Command | What it does |
+|---------|-------------|
+| `buildgit push` | Push + monitor build |
+| `buildgit push --no-follow` | Push only |
+| `buildgit status` | Build status snapshot |
+| `buildgit status -f` | Follow builds in real-time |
+| `buildgit status --json` | JSON output |
+| `buildgit build` | Trigger + monitor build |
+| `buildgit build --no-follow` | Trigger only |
+| `buildgit --job NAME CMD` | Override job name |
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success — build passed |
+| 1 | Failure — build failed or error occurred |
+| 2 | Build is in progress |
+
+## License
+
+MIT
