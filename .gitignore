@@ -1,5 +1,3 @@
 # Ignore local settings and environment state
-.claude/settings.local.json
+.claude/*
 .agents/*
-# But explicitly allow the skills source code
-!.agents/skills/
