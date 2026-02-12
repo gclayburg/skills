@@ -1,6 +1,6 @@
 ---
 name: buildgit
-description: Jenkins CI/CD build monitor. Check build status, push and monitor builds,  follow builds in real-time. Use when the user asks about CI/CD status,  build results, wants to push code and monitor the Jenkins build, or asks if CI is passing. 
+description: Jenkins CI/CD build monitor. Check build status, push and monitor builds,  follow builds in real-time. Use when the user asks about CI/CD status,  build results, wants to push code and monitor the Jenkins build, or asks if CI is passing. Triggers: "check build"
 ---
 
 # buildgit
