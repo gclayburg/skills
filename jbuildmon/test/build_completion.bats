@@ -97,21 +97,20 @@ teardown() {
     assert_output --partial "Finished: UNSTABLE"
 }
 
-@test "completion_success_no_test_results" {
+@test "completion_success_shows_test_results" {
+    # Spec: show-test-results-always-spec.md, Section 1.2
     get_build_info() {
-        echo '{"building":false,"result":"SUCCESS"}'
+        echo '{"building":false,"result":"SUCCESS","duration":60000}'
     }
-    # fetch_test_results should NOT be called for SUCCESS
-    local fetch_called=false
+    # fetch_test_results IS called for SUCCESS builds now
     fetch_test_results() {
-        echo "SHOULD_NOT_APPEAR" > "${TEST_TEMP_DIR}/fetch_called"
         echo ""
     }
 
     run _handle_build_completion "testjob" "42"
     assert_success
-    # Test results fetch should not have been called
-    [[ ! -f "${TEST_TEMP_DIR}/fetch_called" ]]
+    # Should show placeholder when no test report
+    assert_output --partial "(no test results available)"
 }
 
 # =============================================================================

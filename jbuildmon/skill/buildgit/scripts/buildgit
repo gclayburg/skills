@@ -881,6 +881,12 @@ _handle_build_completion() {
 
         # Failure diagnostics (shared)
         _display_failure_diagnostics "$job_name" "$build_number" "$console_output"
+    else
+        # Display test results for SUCCESS builds
+        # Spec: show-test-results-always-spec.md, Section 1.2
+        local test_results_json
+        test_results_json=$(fetch_test_results "$job_name" "$build_number")
+        display_test_results "$test_results_json"
     fi
 
     # Print final status line

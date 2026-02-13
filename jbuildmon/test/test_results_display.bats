@@ -591,7 +591,7 @@ teardown() {
 # Test Case: display_test_results shows all passed message
 # Spec: test-failure-display-spec.md, Section: 3.1 Test Summary Section
 # -----------------------------------------------------------------------------
-@test "display_test_results_shows_all_passed_message" {
+@test "display_test_results_shows_all_passed_summary" {
     local fixture_json
     fixture_json=$(cat "${FIXTURES_DIR}/test_report_all_passed.json")
 
@@ -605,8 +605,8 @@ teardown() {
 
     # Should show summary with 0 failures
     assert_output --partial "Total: 33 | Passed: 33 | Failed: 0 | Skipped: 0"
-    # Should show the special message
-    assert_output --partial "All tests passed - failure may be from other causes"
+    # Should show closing bar
+    assert_output --partial "===================="
     # Should NOT show "FAILED TESTS:"
     refute_output --partial "FAILED TESTS:"
 }
@@ -721,7 +721,7 @@ Line 8 of stack trace"
 # Test Case: display_test_results handles empty input
 # Spec: test-failure-display-spec.md, Section: Error Handling
 # -----------------------------------------------------------------------------
-@test "display_test_results_handles_empty_input" {
+@test "display_test_results_shows_placeholder_for_empty_input" {
     export NO_COLOR=1
     unset _JENKINS_COMMON_LOADED
     source "${PROJECT_DIR}/lib/jenkins-common.sh"
@@ -729,15 +729,18 @@ Line 8 of stack trace"
     run display_test_results ""
     assert_success
 
-    # Should produce no output for empty input
-    assert_output ""
+    # Spec: show-test-results-always-spec.md, Section 3
+    # Should show placeholder when no test report available
+    assert_output --partial "=== Test Results ==="
+    assert_output --partial "(no test results available)"
+    assert_output --partial "===================="
 }
 
 # -----------------------------------------------------------------------------
 # Test Case: display_test_results handles zero tests
 # Spec: test-failure-display-spec.md, Section: Error Handling
 # -----------------------------------------------------------------------------
-@test "display_test_results_handles_zero_tests" {
+@test "display_test_results_shows_placeholder_for_zero_tests" {
     local test_json='{
         "failCount": 0,
         "passCount": 0,
@@ -752,8 +755,11 @@ Line 8 of stack trace"
     run display_test_results "$test_json"
     assert_success
 
-    # Should produce no output for zero tests
-    assert_output ""
+    # Spec: show-test-results-always-spec.md, Section 3
+    # Should show placeholder when total is 0
+    assert_output --partial "=== Test Results ==="
+    assert_output --partial "(no test results available)"
+    assert_output --partial "===================="
 }
 
 # =============================================================================
@@ -1033,8 +1039,8 @@ Line 8 of stack trace"
 # Test Case: display_failure_output skips test results when API returns 404
 # Spec: test-failure-display-spec.md, Section: 1.2 Handle Missing Test Reports
 # -----------------------------------------------------------------------------
-@test "integration_display_skips_when_no_tests" {
-    # Disable colors for testing
+@test "integration_display_shows_placeholder_when_no_tests" {
+    # Spec: show-test-results-always-spec.md, Section 3
     export NO_COLOR=1
     unset _JENKINS_COMMON_LOADED
     source "${PROJECT_DIR}/lib/jenkins-common.sh"
@@ -1059,8 +1065,9 @@ Line 8 of stack trace"
     run display_failure_output "test-job" "123" "$build_json" "manual" "testuser" "abc1234" "Test commit" "in_history" "console output here"
     assert_success
 
-    # Should NOT show test results section when no test data
-    refute_output --partial "=== Test Results ==="
+    # Should show test results placeholder when no test data
+    assert_output --partial "=== Test Results ==="
+    assert_output --partial "(no test results available)"
     refute_output --partial "FAILED TESTS:"
 
     # Should still show other sections
@@ -1115,8 +1122,8 @@ Line 8 of stack trace"
 # Test Case: output_json omits test_results when not available
 # Spec: test-failure-display-spec.md, Section: 4.3 Absent Test Results
 # -----------------------------------------------------------------------------
-@test "integration_json_omits_when_no_tests" {
-    # Disable colors for testing
+@test "integration_json_null_when_no_tests" {
+    # Spec: show-test-results-always-spec.md, Section 3.2
     export NO_COLOR=1
     unset _JENKINS_COMMON_LOADED
     source "${PROJECT_DIR}/lib/jenkins-common.sh"
@@ -1134,7 +1141,7 @@ Line 8 of stack trace"
     find_failed_downstream_build() { echo ""; }
     export -f get_failed_stage detect_all_downstream_builds get_console_output find_failed_downstream_build
 
-    local build_json='{"result": "FAILURE", "duration": 60000, "timestamp": 1706400000000, "url": "http://jenkins/job/test/1/"}'
+    local build_json='{"result": "FAILURE", "building": false, "duration": 60000, "timestamp": 1706400000000, "url": "http://jenkins/job/test/1/"}'
     local console_output="Started by user testuser"
 
     run output_json "test-job" "123" "$build_json" "manual" "testuser" "abc1234" "Test commit" "in_history" "$console_output"
@@ -1143,10 +1150,9 @@ Line 8 of stack trace"
     # Verify output is valid JSON
     echo "$output" | jq . >/dev/null || fail "Output is not valid JSON"
 
-    # Verify test_results field does NOT exist
-    local has_test_results
-    has_test_results=$(echo "$output" | jq 'has("test_results")')
-    [[ "$has_test_results" == "false" ]] || fail "test_results field should be absent when no test data"
+    # Verify test_results field is null (not absent)
+    echo "$output" | jq -e 'has("test_results")' >/dev/null || fail "test_results field should exist"
+    echo "$output" | jq -e '.test_results == null' >/dev/null || fail "test_results should be null when no test data"
 
     # But other failure fields should exist
     echo "$output" | jq -e 'has("failure")' >/dev/null || fail "failure field should exist"
@@ -1387,4 +1393,154 @@ Line 8 of stack trace"
     [[ "$count" -eq 1 ]] || fail "Expected 1 failed test in JSON, got $count"
 
     echo "$output" | jq -e '.failed_tests[0].test_name == "route_build_command"' >/dev/null || fail "Wrong test_name in JSON"
+}
+
+# =============================================================================
+# Show Test Results Always - New Feature Tests
+# Spec: show-test-results-always-spec.md
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Test Case: Green color codes for all-pass test results
+# Spec: show-test-results-always-spec.md, Section 2.1
+# -----------------------------------------------------------------------------
+@test "display_test_results_green_color_for_all_pass" {
+    local fixture_json
+    fixture_json=$(cat "${FIXTURES_DIR}/test_report_all_passed.json")
+
+    # Force color codes on by setting them directly
+    unset NO_COLOR
+    unset _JENKINS_COMMON_LOADED
+    source "${PROJECT_DIR}/lib/jenkins-common.sh"
+    COLOR_GREEN="<GREEN>"
+    COLOR_YELLOW="<YELLOW>"
+    COLOR_RESET="<RESET>"
+
+    run display_test_results "$fixture_json"
+    assert_success
+
+    # Should use green, not yellow, for all-pass results
+    assert_output --partial "<GREEN>=== Test Results ===<RESET>"
+    assert_output --partial "<GREEN>Total: 33"
+    assert_output --partial "<GREEN>====================<RESET>"
+    refute_output --partial "<YELLOW>"
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: Yellow color codes for failures (existing behavior preserved)
+# Spec: show-test-results-always-spec.md, Section 2.2
+# -----------------------------------------------------------------------------
+@test "display_test_results_yellow_color_for_failures" {
+    local fixture_json
+    fixture_json=$(cat "${FIXTURES_DIR}/test_report_1_failure.json")
+
+    # Force color codes on by setting them directly
+    unset NO_COLOR
+    unset _JENKINS_COMMON_LOADED
+    source "${PROJECT_DIR}/lib/jenkins-common.sh"
+    COLOR_GREEN="<GREEN>"
+    COLOR_YELLOW="<YELLOW>"
+    COLOR_RED="<RED>"
+    COLOR_RESET="<RESET>"
+
+    run display_test_results "$fixture_json"
+    assert_success
+
+    # Should use yellow, not green, for failure results
+    assert_output --partial "<YELLOW>=== Test Results ===<RESET>"
+    assert_output --partial "<YELLOW>Total: 33"
+    refute_output --partial "<GREEN>=== Test Results ==="
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: Closing bar always present for all-pass
+# Spec: show-test-results-always-spec.md, Section 4
+# -----------------------------------------------------------------------------
+@test "display_test_results_closing_bar_for_all_pass" {
+    local fixture_json
+    fixture_json=$(cat "${FIXTURES_DIR}/test_report_all_passed.json")
+
+    export NO_COLOR=1
+    unset _JENKINS_COMMON_LOADED
+    source "${PROJECT_DIR}/lib/jenkins-common.sh"
+
+    run display_test_results "$fixture_json"
+    assert_success
+
+    assert_output --partial "===================="
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: Closing bar present for placeholder
+# Spec: show-test-results-always-spec.md, Section 4
+# -----------------------------------------------------------------------------
+@test "display_test_results_closing_bar_for_placeholder" {
+    export NO_COLOR=1
+    unset _JENKINS_COMMON_LOADED
+    source "${PROJECT_DIR}/lib/jenkins-common.sh"
+
+    run display_test_results ""
+    assert_success
+
+    assert_output --partial "===================="
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: JSON includes test_results for SUCCESS build
+# Spec: show-test-results-always-spec.md, Section 7
+# -----------------------------------------------------------------------------
+@test "integration_json_includes_test_results_for_success" {
+    export NO_COLOR=1
+    unset _JENKINS_COMMON_LOADED
+    source "${PROJECT_DIR}/lib/jenkins-common.sh"
+
+    # Mock fetch_test_results to return all-passed fixture
+    fetch_test_results() {
+        cat "${FIXTURES_DIR}/test_report_all_passed.json"
+    }
+    export -f fetch_test_results
+    export FIXTURES_DIR
+
+    local build_json='{"result": "SUCCESS", "building": false, "duration": 60000, "timestamp": 1706400000000, "url": "http://jenkins/job/test/1/"}'
+
+    run output_json "test-job" "123" "$build_json" "manual" "testuser" "abc1234" "Test commit" "in_history"
+    assert_success
+
+    # Verify output is valid JSON
+    echo "$output" | jq . >/dev/null || fail "Output is not valid JSON"
+
+    # Verify test_results field exists for SUCCESS build
+    echo "$output" | jq -e 'has("test_results")' >/dev/null || fail "Missing test_results for SUCCESS build"
+    echo "$output" | jq -e '.test_results.total == 33' >/dev/null || fail "Wrong total"
+    echo "$output" | jq -e '.test_results.passed == 33' >/dev/null || fail "Wrong passed"
+    echo "$output" | jq -e '.test_results.failed == 0' >/dev/null || fail "Wrong failed"
+    echo "$output" | jq -e '.test_results.failed_tests | length == 0' >/dev/null || fail "Should have no failed_tests"
+
+    # Should NOT have failure field for SUCCESS build
+    echo "$output" | jq -e 'has("failure") | not' >/dev/null || fail "SUCCESS build should not have failure field"
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: JSON test_results null for SUCCESS build with no test report
+# Spec: show-test-results-always-spec.md, Section 3.2
+# -----------------------------------------------------------------------------
+@test "integration_json_null_test_results_for_success_no_report" {
+    export NO_COLOR=1
+    unset _JENKINS_COMMON_LOADED
+    source "${PROJECT_DIR}/lib/jenkins-common.sh"
+
+    # Mock fetch_test_results to return empty (no junit results)
+    fetch_test_results() {
+        echo ""
+    }
+    export -f fetch_test_results
+
+    local build_json='{"result": "SUCCESS", "building": false, "duration": 60000, "timestamp": 1706400000000, "url": "http://jenkins/job/test/1/"}'
+
+    run output_json "test-job" "123" "$build_json" "manual" "testuser" "abc1234" "Test commit" "in_history"
+    assert_success
+
+    echo "$output" | jq . >/dev/null || fail "Output is not valid JSON"
+    echo "$output" | jq -e 'has("test_results")' >/dev/null || fail "test_results field should exist"
+    echo "$output" | jq -e '.test_results == null' >/dev/null || fail "test_results should be null"
 }

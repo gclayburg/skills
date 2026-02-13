@@ -882,8 +882,13 @@ parse_failed_tests() {
 display_test_results() {
     local test_json="$1"
 
-    # Handle empty input
+    # Handle empty input - show placeholder
+    # Spec: show-test-results-always-spec.md, Section 3
     if [[ -z "$test_json" ]]; then
+        echo ""
+        echo "=== Test Results ==="
+        echo "  (no test results available)"
+        echo "===================="
         return 0
     fi
 
@@ -899,6 +904,10 @@ display_test_results() {
 
     # Skip display if no tests at all
     if [[ "$total" -eq 0 ]]; then
+        echo ""
+        echo "=== Test Results ==="
+        echo "  (no test results available)"
+        echo "===================="
         return 0
     fi
 
@@ -915,17 +924,25 @@ display_test_results() {
     local max_display="${MAX_FAILED_TESTS_DISPLAY:-10}"
     local max_error_lines="${MAX_ERROR_LINES:-5}"
 
+    # Choose color based on failure count
+    # Spec: show-test-results-always-spec.md, Section 2
+    local section_color
+    if [[ "$failed" -eq 0 ]]; then
+        section_color="${COLOR_GREEN}"
+    else
+        section_color="${COLOR_YELLOW}"
+    fi
+
     # Display header
     echo ""
-    echo "${COLOR_YELLOW}=== Test Results ===${COLOR_RESET}"
+    echo "${section_color}=== Test Results ===${COLOR_RESET}"
 
     # Display summary line
-    echo "  Total: ${total} | Passed: ${passed} | Failed: ${failed} | Skipped: ${skipped}"
+    echo "  ${section_color}Total: ${total} | Passed: ${passed} | Failed: ${failed} | Skipped: ${skipped}${COLOR_RESET}"
 
-    # Check if all tests passed but build still failed
+    # All tests passed - no failure details needed
     if [[ "$failed" -eq 0 ]]; then
-        echo "  ${COLOR_CYAN}(All tests passed - failure may be from other causes)${COLOR_RESET}"
-        echo "${COLOR_YELLOW}====================${COLOR_RESET}"
+        echo "${section_color}====================${COLOR_RESET}"
         return 0
     fi
 
@@ -988,7 +1005,7 @@ display_test_results() {
         echo "  ${COLOR_YELLOW}... and ${remaining} more failed tests${COLOR_RESET}"
     fi
 
-    echo "${COLOR_YELLOW}====================${COLOR_RESET}"
+    echo "${section_color}====================${COLOR_RESET}"
 }
 
 # Format test results as JSON for machine-readable output
@@ -2131,6 +2148,12 @@ display_success_output() {
     echo ""
     _display_stages "$job_name" "$build_number"
 
+    # Display test results for SUCCESS builds
+    # Spec: show-test-results-always-spec.md, Section 1.1
+    local test_results_json
+    test_results_json=$(fetch_test_results "$job_name" "$build_number")
+    display_test_results "$test_results_json"
+
     # Finished line and duration
     echo ""
     print_finished_line "SUCCESS"
@@ -2452,12 +2475,11 @@ _display_failure_diagnostics() {
     # 2. Failed jobs tree (with downstream detection)
     _display_failed_jobs_tree "$job_name" "$build_number" "$console_output"
 
-    # 3. Test results
+    # 3. Test results (always shown, placeholder if no report)
+    # Spec: show-test-results-always-spec.md, Section 1
     local test_results_json
     test_results_json=$(fetch_test_results "$job_name" "$build_number")
-    if [[ -n "$test_results_json" ]]; then
-        display_test_results "$test_results_json"
-    fi
+    display_test_results "$test_results_json"
 
     # 4. Error log section (respects --console and test failure suppression)
     _display_error_log_section "$job_name" "$build_number" "$console_output" "$test_results_json"
@@ -2778,10 +2800,14 @@ output_json() {
             '. + {failure: $failure, build_info: $build_info}')
     fi
 
-    # Add test results if available (for failed builds)
-    # Spec: test-failure-display-spec.md, Section: Integration Points (5.1)
-    # The test_results field appears after failure, before build_info in JSON
-    if [[ "$is_failed" == "true" ]]; then
+    # Add test results for all completed builds
+    # Spec: show-test-results-always-spec.md, Section 7
+    local is_completed=false
+    if [[ "$result" != "null" && -n "$result" && "$building" == "false" ]]; then
+        is_completed=true
+    fi
+
+    if [[ "$is_completed" == "true" ]]; then
         local test_report_json
         test_report_json=$(fetch_test_results "$job_name" "$build_number")
 
@@ -2794,32 +2820,38 @@ output_json() {
                     --argjson test_results "$test_results_formatted" \
                     '. + {test_results: $test_results}')
             fi
+        else
+            # No test report available - include null sentinel
+            # Spec: show-test-results-always-spec.md, Section 3.2
+            json_output=$(echo "$json_output" | jq '. + {test_results: null}')
         fi
 
-        # Adjust failure.error_summary and failure.console_log based on CONSOLE_MODE
+        # Adjust failure.error_summary and failure.console_log based on CONSOLE_MODE (failures only)
         # Spec: console-on-unstable-spec.md, Section 3 (JSON output)
-        local has_test_failures=false
-        if [[ -n "$test_report_json" ]]; then
-            local fail_count
-            fail_count=$(echo "$test_report_json" | jq -r '.failCount // 0') || fail_count=0
-            if [[ "$fail_count" -gt 0 ]]; then
-                has_test_failures=true
+        if [[ "$is_failed" == "true" ]]; then
+            local has_test_failures=false
+            if [[ -n "$test_report_json" ]]; then
+                local fail_count
+                fail_count=$(echo "$test_report_json" | jq -r '.failCount // 0') || fail_count=0
+                if [[ "$fail_count" -gt 0 ]]; then
+                    has_test_failures=true
+                fi
             fi
-        fi
 
-        if [[ "$has_test_failures" == "true" && -z "${CONSOLE_MODE:-}" ]]; then
-            # Suppress error_summary when test failures present and no --console
-            json_output=$(echo "$json_output" | jq \
-                'if .failure then .failure.error_summary = null else . end')
-        fi
+            if [[ "$has_test_failures" == "true" && -z "${CONSOLE_MODE:-}" ]]; then
+                # Suppress error_summary when test failures present and no --console
+                json_output=$(echo "$json_output" | jq \
+                    'if .failure then .failure.error_summary = null else . end')
+            fi
 
-        if [[ "${CONSOLE_MODE:-}" =~ ^[0-9]+$ ]]; then
-            # --console N: add console_log with last N lines, null out error_summary
-            local console_log_lines
-            console_log_lines=$(echo "$console_output" | tail -"${CONSOLE_MODE}")
-            json_output=$(echo "$json_output" | jq \
-                --arg console_log "$console_log_lines" \
-                'if .failure then .failure.error_summary = null | .failure.console_log = $console_log else . end')
+            if [[ "${CONSOLE_MODE:-}" =~ ^[0-9]+$ ]]; then
+                # --console N: add console_log with last N lines, null out error_summary
+                local console_log_lines
+                console_log_lines=$(echo "$console_output" | tail -"${CONSOLE_MODE}")
+                json_output=$(echo "$json_output" | jq \
+                    --arg console_log "$console_log_lines" \
+                    'if .failure then .failure.error_summary = null | .failure.console_log = $console_log else . end')
+            fi
         fi
     fi
 

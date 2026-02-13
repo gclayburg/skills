@@ -10,6 +10,7 @@ When implementing a spec or bug fix from `specs/todo/`:
 - Update `skill/buildgit/SKILL.md` as needed
 - Make sure all unit tests pass before considering the item complete
 - When complete, move the spec file from `specs/todo/` to `specs/` and add it to the index in `specs/README.md`; remove it from `specs/todo/README.md`
+- When compmlete, if the spec references other files in the References: heade move these files to specs/done-reports and update the reference path in the spec
 
 ## Skill
 - buildgit shell script is distributed as a skill in folder skill/buildgit, update skill/buildgit/SKILL.md as necessary.

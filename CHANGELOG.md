@@ -4,6 +4,9 @@ All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are do
 
 ## 2026-02-13
 
+### Features
+- **Show test results for all builds** — Test results summary (`=== Test Results ===`) now appears for all completed builds including SUCCESS, not just failures. Uses green color for all-pass, yellow for failures. Shows placeholder when no test report is available. JSON output includes `test_results` field for all completed builds.
+
 ### Bug Fixes
 - **Build monitoring header cleanup** — Removed misleading `Elapsed:` field from build header; added `Duration:` line after `Finished:` in monitoring mode.
 - **Snapshot mode missing Agent/Pipeline** — Fixed `buildgit status` not passing console output to header, so Build Info section (Agent, Pipeline) now displays in snapshot mode.
