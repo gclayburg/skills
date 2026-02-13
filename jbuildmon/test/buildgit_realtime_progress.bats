@@ -255,7 +255,7 @@ EOF
 @test "follow_monitor_has_stage_completion_tracking" {
     run grep -A50 "^_monitor_build()" "${PROJECT_DIR}/buildgit"
     assert_success
-    assert_output --partial "track_stage_changes"
+    assert_output --partial "_track_nested_stage_changes"
 }
 
 # -----------------------------------------------------------------------------

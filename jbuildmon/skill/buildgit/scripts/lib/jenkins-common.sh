@@ -1495,14 +1495,19 @@ format_stage_duration() {
 }
 
 # Print a single stage line with appropriate color and format
-# Usage: print_stage_line "stage-name" "status" [duration_ms]
+# Usage: print_stage_line "stage-name" "status" [duration_ms] [indent] [agent_prefix]
 # status: SUCCESS, FAILED, UNSTABLE, IN_PROGRESS, NOT_EXECUTED, ABORTED
-# Output format: [HH:MM:SS] ℹ   Stage: <name> (<duration>)
+# indent: string of spaces for nesting (e.g., "  " for depth 1)
+# agent_prefix: "[agent-name] " prepended to stage name
+# Output format: [HH:MM:SS] ℹ   Stage: <indent>[agent] <name> (<duration>)
 # Spec: full-stage-print-spec.md, Section: Stage Display Format
+# Spec: nested-jobs-display-spec.md, Section: Nested Stage Line Format
 print_stage_line() {
     local stage_name="$1"
     local status="$2"
     local duration_ms="${3:-}"
+    local indent="${4:-}"
+    local agent_prefix="${5:-}"
 
     local timestamp
     timestamp=$(_timestamp)
@@ -1545,16 +1550,17 @@ print_stage_line() {
     esac
 
     # Build and output the stage line
-    # Format: [HH:MM:SS] ℹ   Stage: <name> (<suffix>)
-    echo "${color}[${timestamp}] ℹ   Stage: ${stage_name} (${suffix})${COLOR_RESET}${marker}"
+    # Format: [HH:MM:SS] ℹ   Stage: <indent>[agent] <name> (<suffix>)
+    echo "${color}[${timestamp}] ℹ   Stage: ${indent}${agent_prefix}${stage_name} (${suffix})${COLOR_RESET}${marker}"
 }
 
-# Display stages from a build
+# Display stages from a build (with nested downstream stage expansion)
 # Usage: _display_stages "job-name" "build-number" [--completed-only]
 # When --completed-only: skips IN_PROGRESS/NOT_EXECUTED, saves state to _BANNER_STAGES_JSON
 # Outputs: Stage lines to stdout in execution order
 # Spec: full-stage-print-spec.md, Section: Display Functions
 # Spec: bug-show-all-stages.md - never show "(running)" in initial display
+# Spec: nested-jobs-display-spec.md - inline nested stage display
 _display_stages() {
     local job_name="$1"
     local build_number="$2"
@@ -1563,40 +1569,98 @@ _display_stages() {
         completed_only=true
     fi
 
-    local stages_json
-    stages_json=$(get_all_stages "$job_name" "$build_number")
+    # Get nested stages (includes downstream expansion)
+    local nested_stages_json
+    nested_stages_json=$(_get_nested_stages "$job_name" "$build_number" 2>/dev/null) || nested_stages_json="[]"
 
-    # Save full stages JSON for monitor initialization when in completed-only mode
-    if [[ "$completed_only" == "true" ]]; then
-        _BANNER_STAGES_JSON="${stages_json:-[]}"
-    fi
+    # Fallback to flat stages if nested fetch fails
+    if [[ -z "$nested_stages_json" || "$nested_stages_json" == "[]" || "$nested_stages_json" == "null" ]]; then
+        local stages_json
+        stages_json=$(get_all_stages "$job_name" "$build_number")
 
-    # Handle empty or invalid stages
-    if [[ -z "$stages_json" || "$stages_json" == "[]" || "$stages_json" == "null" ]]; then
+        # Save full stages JSON for monitor initialization when in completed-only mode
+        if [[ "$completed_only" == "true" ]]; then
+            _BANNER_STAGES_JSON="${stages_json:-[]}"
+        fi
+
+        if [[ -z "$stages_json" || "$stages_json" == "[]" || "$stages_json" == "null" ]]; then
+            return 0
+        fi
+
+        # Display flat stages (backward compatible)
+        local stage_count
+        stage_count=$(echo "$stages_json" | jq 'length')
+        local i=0
+        while [[ $i -lt $stage_count ]]; do
+            local stage_name status duration_ms
+            stage_name=$(echo "$stages_json" | jq -r ".[$i].name")
+            status=$(echo "$stages_json" | jq -r ".[$i].status")
+            duration_ms=$(echo "$stages_json" | jq -r ".[$i].durationMillis")
+
+            if [[ "$completed_only" == "true" ]]; then
+                case "$status" in
+                    SUCCESS|FAILED|UNSTABLE|ABORTED)
+                        print_stage_line "$stage_name" "$status" "$duration_ms"
+                        ;;
+                esac
+            else
+                print_stage_line "$stage_name" "$status" "$duration_ms"
+            fi
+            i=$((i + 1))
+        done
         return 0
     fi
 
-    # Get number of stages
-    local stage_count
-    stage_count=$(echo "$stages_json" | jq 'length')
+    # Save full stages JSON for monitor initialization when in completed-only mode
+    # We save just the parent build's stages for tracking state
+    if [[ "$completed_only" == "true" ]]; then
+        _BANNER_STAGES_JSON=$(get_all_stages "$job_name" "$build_number") || _BANNER_STAGES_JSON="[]"
+    fi
 
-    # Iterate through each stage and print it
+    # Display nested stages with proper indentation and agent prefixes
+    _display_nested_stages_json "$nested_stages_json" "$completed_only"
+}
+
+# Display nested stages from a pre-built JSON array
+# Usage: _display_nested_stages_json "$nested_stages_json" "$completed_only"
+_display_nested_stages_json() {
+    local nested_stages_json="$1"
+    local completed_only="${2:-false}"
+
+    local stage_count
+    stage_count=$(echo "$nested_stages_json" | jq 'length')
+
     local i=0
     while [[ $i -lt $stage_count ]]; do
-        local stage_name status duration_ms
-        stage_name=$(echo "$stages_json" | jq -r ".[$i].name")
-        status=$(echo "$stages_json" | jq -r ".[$i].status")
-        duration_ms=$(echo "$stages_json" | jq -r ".[$i].durationMillis")
+        local stage_name status duration_ms agent nesting_depth
+        stage_name=$(echo "$nested_stages_json" | jq -r ".[$i].name")
+        status=$(echo "$nested_stages_json" | jq -r ".[$i].status")
+        duration_ms=$(echo "$nested_stages_json" | jq -r ".[$i].durationMillis")
+        agent=$(echo "$nested_stages_json" | jq -r ".[$i].agent // empty")
+        nesting_depth=$(echo "$nested_stages_json" | jq -r ".[$i].nesting_depth // 0")
+
+        # Build indentation (2 spaces per nesting level)
+        local indent=""
+        local d=0
+        while [[ $d -lt $nesting_depth ]]; do
+            indent="${indent}  "
+            d=$((d + 1))
+        done
+
+        # Build agent prefix
+        local agent_prefix=""
+        if [[ -n "$agent" ]]; then
+            agent_prefix="[${agent}] "
+        fi
 
         if [[ "$completed_only" == "true" ]]; then
-            # Only show stages with a final status (not running or pending)
             case "$status" in
                 SUCCESS|FAILED|UNSTABLE|ABORTED)
-                    print_stage_line "$stage_name" "$status" "$duration_ms"
+                    print_stage_line "$stage_name" "$status" "$duration_ms" "$indent" "$agent_prefix"
                     ;;
             esac
         else
-            print_stage_line "$stage_name" "$status" "$duration_ms"
+            print_stage_line "$stage_name" "$status" "$duration_ms" "$indent" "$agent_prefix"
         fi
 
         i=$((i + 1))
@@ -1688,6 +1752,238 @@ track_stage_changes() {
 
     # Return current state for next iteration
     echo "$current_stages_json"
+}
+
+# Track nested stage changes for monitoring mode
+# Wraps track_stage_changes() to also track downstream build stages
+# Usage: new_state=$(_track_nested_stage_changes "job-name" "build-number" "$previous_composite_state" "$verbose")
+# Returns: Composite state JSON on stdout (capture for next iteration)
+# Side effect: Prints completed/running stage lines to stderr (with nesting)
+# Spec: nested-jobs-display-spec.md, Section: Monitoring Mode Behavior
+_track_nested_stage_changes() {
+    local job_name="$1"
+    local build_number="$2"
+    local previous_composite_state="${3:-}"
+    local verbose="${4:-false}"
+
+    # Parse composite state (or initialize)
+    local parent_stages_json="[]"
+    local downstream_state="{}"
+    local stage_downstream_map_state="{}"
+
+    if [[ -n "$previous_composite_state" && "$previous_composite_state" != "[]" && "$previous_composite_state" != "null" ]]; then
+        # Check if it's a composite state object or just a flat stages array
+        local is_composite
+        is_composite=$(echo "$previous_composite_state" | jq 'has("parent")' 2>/dev/null) || is_composite="false"
+
+        if [[ "$is_composite" == "true" ]]; then
+            parent_stages_json=$(echo "$previous_composite_state" | jq '.parent // []')
+            downstream_state=$(echo "$previous_composite_state" | jq '.downstream // {}')
+            stage_downstream_map_state=$(echo "$previous_composite_state" | jq '.stage_downstream_map // {}')
+        else
+            # Backward compatible: treat as flat parent stages
+            parent_stages_json="$previous_composite_state"
+        fi
+    fi
+
+    # Track parent build stages (existing behavior)
+    local current_parent_stages
+    current_parent_stages=$(get_all_stages "$job_name" "$build_number")
+
+    if [[ -z "$current_parent_stages" || "$current_parent_stages" == "[]" ]]; then
+        current_parent_stages="$parent_stages_json"
+    fi
+
+    # Get console output for downstream detection
+    local console_output
+    console_output=$(get_console_output "$job_name" "$build_number" 2>/dev/null) || true
+
+    # Get agent name for parent build
+    local parent_agent=""
+    if [[ -n "$console_output" ]]; then
+        parent_agent=$(_extract_agent_name "$console_output")
+    fi
+
+    # Detect downstream builds for IN_PROGRESS parent stages
+    local stage_count
+    stage_count=$(echo "$current_parent_stages" | jq 'length')
+
+    local i=0
+    while [[ $i -lt $stage_count ]]; do
+        local stage_name current_status
+        stage_name=$(echo "$current_parent_stages" | jq -r ".[$i].name")
+        current_status=$(echo "$current_parent_stages" | jq -r ".[$i].status")
+
+        # For IN_PROGRESS or completed stages, check for downstream builds
+        if [[ "$current_status" == "IN_PROGRESS" || "$current_status" == "SUCCESS" || "$current_status" == "FAILED" || "$current_status" == "UNSTABLE" ]]; then
+            # Check if we already know about this stage's downstream build
+            local known_ds
+            known_ds=$(echo "$stage_downstream_map_state" | jq -r --arg s "$stage_name" '.[$s] // empty')
+
+            if [[ -z "$known_ds" || "$known_ds" == "null" ]] && [[ -n "$console_output" ]]; then
+                # Try to detect downstream build from stage logs
+                local stage_logs
+                stage_logs=$(extract_stage_logs "$console_output" "$stage_name")
+
+                if [[ -n "$stage_logs" ]]; then
+                    local downstream
+                    downstream=$(detect_all_downstream_builds "$stage_logs")
+
+                    if [[ -n "$downstream" ]]; then
+                        local ds_job ds_build
+                        ds_job=$(echo "$downstream" | head -1 | cut -d' ' -f1)
+                        ds_build=$(echo "$downstream" | head -1 | cut -d' ' -f2)
+
+                        if [[ -n "$ds_job" && -n "$ds_build" ]]; then
+                            stage_downstream_map_state=$(echo "$stage_downstream_map_state" | jq \
+                                --arg stage "$stage_name" \
+                                --arg job "$ds_job" \
+                                --argjson build "$ds_build" \
+                                '. + {($stage): {"job": $job, "build": $build}}')
+                        fi
+                    fi
+                fi
+            fi
+        fi
+
+        i=$((i + 1))
+    done
+
+    # Track each known downstream build
+    local ds_stage_names
+    ds_stage_names=$(echo "$stage_downstream_map_state" | jq -r 'keys[]' 2>/dev/null) || true
+
+    while IFS= read -r ds_parent_stage; do
+        [[ -z "$ds_parent_stage" ]] && continue
+
+        local ds_info
+        ds_info=$(echo "$stage_downstream_map_state" | jq -r --arg s "$ds_parent_stage" '.[$s]')
+        local ds_job ds_build
+        ds_job=$(echo "$ds_info" | jq -r '.job')
+        ds_build=$(echo "$ds_info" | jq -r '.build')
+
+        local ds_key="${ds_job}:${ds_build}"
+
+        # Get previous downstream state
+        local prev_ds_stages
+        prev_ds_stages=$(echo "$downstream_state" | jq -r --arg k "$ds_key" '.[$k].stages // []')
+        local ds_agent
+        ds_agent=$(echo "$downstream_state" | jq -r --arg k "$ds_key" '.[$k].agent // empty')
+
+        # Fetch downstream agent if not known
+        if [[ -z "$ds_agent" || "$ds_agent" == "null" ]]; then
+            local ds_console
+            ds_console=$(get_console_output "$ds_job" "$ds_build" 2>/dev/null) || true
+            if [[ -n "$ds_console" ]]; then
+                ds_agent=$(_extract_agent_name "$ds_console")
+            fi
+        fi
+
+        # Track downstream stage changes
+        local current_ds_stages
+        current_ds_stages=$(get_all_stages "$ds_job" "$ds_build" 2>/dev/null) || current_ds_stages="[]"
+
+        if [[ "$current_ds_stages" != "[]" ]]; then
+            # Process downstream stage transitions
+            local ds_stage_count
+            ds_stage_count=$(echo "$current_ds_stages" | jq 'length')
+
+            local j=0
+            while [[ $j -lt $ds_stage_count ]]; do
+                local ds_stage_name ds_current_status ds_duration_ms
+                ds_stage_name=$(echo "$current_ds_stages" | jq -r ".[$j].name")
+                ds_current_status=$(echo "$current_ds_stages" | jq -r ".[$j].status")
+                ds_duration_ms=$(echo "$current_ds_stages" | jq -r ".[$j].durationMillis")
+
+                # Get previous status for this downstream stage
+                local ds_previous_status
+                ds_previous_status=$(echo "$prev_ds_stages" | jq -r --arg name "$ds_stage_name" \
+                    '.[] | select(.name == $name) | .status // "NOT_EXECUTED"' 2>/dev/null)
+                if [[ -z "$ds_previous_status" ]]; then
+                    ds_previous_status="NOT_EXECUTED"
+                fi
+
+                # Build display name and indentation for nested stage
+                local nested_display_name="${ds_parent_stage}->${ds_stage_name}"
+                local nested_indent="  "
+                local nested_agent_prefix=""
+                if [[ -n "$ds_agent" ]]; then
+                    nested_agent_prefix="[${ds_agent}] "
+                fi
+
+                # Detect transitions
+                case "$ds_current_status" in
+                    SUCCESS|FAILED|UNSTABLE|ABORTED)
+                        if [[ "$ds_previous_status" == "IN_PROGRESS" || "$ds_previous_status" == "NOT_EXECUTED" ]]; then
+                            print_stage_line "$nested_display_name" "$ds_current_status" "$ds_duration_ms" "$nested_indent" "$nested_agent_prefix" >&2
+                        fi
+                        ;;
+                    IN_PROGRESS)
+                        if [[ "$verbose" == "true" && "$ds_previous_status" == "NOT_EXECUTED" ]]; then
+                            print_stage_line "$nested_display_name" "IN_PROGRESS" "" "$nested_indent" "$nested_agent_prefix" >&2
+                        fi
+                        ;;
+                esac
+
+                j=$((j + 1))
+            done
+        fi
+
+        # Update downstream state
+        downstream_state=$(echo "$downstream_state" | jq \
+            --arg key "$ds_key" \
+            --argjson stages "$current_ds_stages" \
+            --arg agent "${ds_agent:-}" \
+            --arg parent_stage "$ds_parent_stage" \
+            '.[$key] = {"stages": $stages, "agent": $agent, "parent_stage": $parent_stage}')
+    done <<< "$ds_stage_names"
+
+    # Now process parent stage transitions (after downstream, so nested appear before parent)
+    local prev_count
+    prev_count=$(echo "$parent_stages_json" | jq 'length')
+
+    i=0
+    while [[ $i -lt $stage_count ]]; do
+        local stage_name current_status duration_ms
+        stage_name=$(echo "$current_parent_stages" | jq -r ".[$i].name")
+        current_status=$(echo "$current_parent_stages" | jq -r ".[$i].status")
+        duration_ms=$(echo "$current_parent_stages" | jq -r ".[$i].durationMillis")
+
+        local previous_status
+        previous_status=$(echo "$parent_stages_json" | jq -r --arg name "$stage_name" \
+            '.[] | select(.name == $name) | .status // "NOT_EXECUTED"')
+        if [[ -z "$previous_status" ]]; then
+            previous_status="NOT_EXECUTED"
+        fi
+
+        # Build agent prefix for parent stages
+        local parent_agent_prefix=""
+        if [[ -n "$parent_agent" ]]; then
+            parent_agent_prefix="[${parent_agent}] "
+        fi
+
+        case "$current_status" in
+            SUCCESS|FAILED|UNSTABLE|ABORTED)
+                if [[ "$previous_status" == "IN_PROGRESS" || "$previous_status" == "NOT_EXECUTED" ]]; then
+                    print_stage_line "$stage_name" "$current_status" "$duration_ms" "" "$parent_agent_prefix" >&2
+                fi
+                ;;
+            IN_PROGRESS)
+                if [[ "$verbose" == "true" && "$previous_status" == "NOT_EXECUTED" ]]; then
+                    print_stage_line "$stage_name" "IN_PROGRESS" "" "" "$parent_agent_prefix" >&2
+                fi
+                ;;
+        esac
+
+        i=$((i + 1))
+    done
+
+    # Return composite state
+    jq -n \
+        --argjson parent "$current_parent_stages" \
+        --argjson downstream "$downstream_state" \
+        --argjson stage_downstream_map "$stage_downstream_map_state" \
+        '{parent: $parent, downstream: $downstream, stage_downstream_map: $stage_downstream_map}'
 }
 
 # Format epoch timestamp (milliseconds) to human-readable date
@@ -2411,6 +2707,40 @@ output_json() {
             console_url: $console_url
         }')
 
+    # Add nested stages array to JSON output
+    # Spec: nested-jobs-display-spec.md, Section: JSON Output
+    local nested_stages_json
+    nested_stages_json=$(_get_nested_stages "$job_name" "$build_number" 2>/dev/null) || nested_stages_json="[]"
+
+    if [[ -n "$nested_stages_json" && "$nested_stages_json" != "[]" ]]; then
+        # Transform to match JSON output spec: rename durationMillis to duration_ms
+        local stages_for_json
+        stages_for_json=$(echo "$nested_stages_json" | jq '
+            [.[] | {
+                name: .name,
+                status: .status,
+                duration_ms: .durationMillis,
+                agent: .agent
+            } + (if .downstream_job then {
+                downstream_job: .downstream_job,
+                downstream_build: .downstream_build,
+                parent_stage: .parent_stage,
+                nesting_depth: .nesting_depth
+            } else {} end) + (if .has_downstream then {
+                has_downstream: true
+            } else {} end) + (if .nesting_depth > 0 and (.downstream_job | not) then {
+                nesting_depth: .nesting_depth,
+                downstream_job: .downstream_job,
+                downstream_build: .downstream_build,
+                parent_stage: .parent_stage
+            } else {} end)]
+        ' 2>/dev/null) || stages_for_json="[]"
+
+        if [[ -n "$stages_for_json" && "$stages_for_json" != "[]" ]]; then
+            json_output=$(echo "$json_output" | jq --argjson stages "$stages_for_json" '. + {stages: $stages}')
+        fi
+    fi
+
     # Add failure info if build failed
     if [[ "$is_failed" == "true" && -n "$console_output" ]]; then
         local failure_json
@@ -2639,4 +2969,218 @@ _build_info_json() {
             agent: (if $agent == "" then null else $agent end),
             pipeline: (if $pipeline == "" then null else $pipeline end)
         }'
+}
+
+# =============================================================================
+# Nested/Downstream Stage Display Functions
+# =============================================================================
+# Spec: nested-jobs-display-spec.md
+
+# Extract agent name from build console output
+# Usage: _extract_agent_name "$console_output"
+# Returns: agent name string, or empty
+_extract_agent_name() {
+    local console_output="$1"
+    echo "$console_output" | grep -m1 "^Running on " | sed 's/^Running on \([^ ]*\).*/\1/' || true
+}
+
+# Map parent stages to their downstream builds
+# Usage: _map_stages_to_downstream "$console_output" "$stages_json"
+# Returns: JSON object mapping stage names to {job, build} pairs
+# Example: {"Build Handle": {"job": "downstream-job", "build": 42}}
+_map_stages_to_downstream() {
+    local console_output="$1"
+    local stages_json="$2"
+
+    local result="{}"
+    local stage_count
+    stage_count=$(echo "$stages_json" | jq 'length' 2>/dev/null) || stage_count=0
+
+    local i=0
+    while [[ $i -lt $stage_count ]]; do
+        local stage_name
+        stage_name=$(echo "$stages_json" | jq -r ".[$i].name")
+
+        # Extract this stage's console logs
+        local stage_logs
+        stage_logs=$(extract_stage_logs "$console_output" "$stage_name")
+
+        if [[ -n "$stage_logs" ]]; then
+            # Check for downstream builds in this stage's logs
+            local downstream
+            downstream=$(detect_all_downstream_builds "$stage_logs")
+
+            if [[ -n "$downstream" ]]; then
+                # Take the first downstream build for this stage
+                local ds_job ds_build
+                ds_job=$(echo "$downstream" | head -1 | cut -d' ' -f1)
+                ds_build=$(echo "$downstream" | head -1 | cut -d' ' -f2)
+
+                if [[ -n "$ds_job" && -n "$ds_build" ]]; then
+                    result=$(echo "$result" | jq \
+                        --arg stage "$stage_name" \
+                        --arg job "$ds_job" \
+                        --argjson build "$ds_build" \
+                        '. + {($stage): {"job": $job, "build": $build}}')
+                fi
+            fi
+        fi
+
+        i=$((i + 1))
+    done
+
+    echo "$result"
+}
+
+# Get nested stages for a build, recursively expanding downstream builds
+# Usage: _get_nested_stages "job-name" "build-number" [prefix] [nesting_depth] [parent_stage]
+# Returns: JSON array of stage objects with nested stage metadata
+# Each object has: name, status, durationMillis, agent, nesting_depth,
+#   and optionally: downstream_job, downstream_build, parent_stage, has_downstream
+_get_nested_stages() {
+    local job_name="$1"
+    local build_number="$2"
+    local prefix="${3:-}"
+    local nesting_depth="${4:-0}"
+    local parent_stage_name="${5:-}"
+
+    # Fetch stages for this build
+    local stages_json
+    stages_json=$(get_all_stages "$job_name" "$build_number")
+
+    if [[ -z "$stages_json" || "$stages_json" == "[]" ]]; then
+        echo "[]"
+        return 0
+    fi
+
+    # Fetch console output for agent name and downstream mapping
+    local console_output
+    console_output=$(get_console_output "$job_name" "$build_number" 2>/dev/null) || true
+
+    # Extract agent name for this build
+    local agent=""
+    if [[ -n "$console_output" ]]; then
+        agent=$(_extract_agent_name "$console_output")
+    fi
+
+    # Map stages to downstream builds
+    local stage_downstream_map="{}"
+    if [[ -n "$console_output" ]]; then
+        stage_downstream_map=$(_map_stages_to_downstream "$console_output" "$stages_json")
+    fi
+
+    # Build the result array
+    local result="[]"
+    local stage_count
+    stage_count=$(echo "$stages_json" | jq 'length')
+
+    local i=0
+    while [[ $i -lt $stage_count ]]; do
+        local stage_name status duration_ms
+        stage_name=$(echo "$stages_json" | jq -r ".[$i].name")
+        status=$(echo "$stages_json" | jq -r ".[$i].status")
+        duration_ms=$(echo "$stages_json" | jq -r ".[$i].durationMillis")
+
+        # Check if this stage has a downstream build
+        local ds_info
+        ds_info=$(echo "$stage_downstream_map" | jq -r --arg s "$stage_name" '.[$s] // empty')
+
+        if [[ -n "$ds_info" && "$ds_info" != "null" ]]; then
+            local ds_job ds_build
+            ds_job=$(echo "$ds_info" | jq -r '.job')
+            ds_build=$(echo "$ds_info" | jq -r '.build')
+
+            # Build the display name prefix for nested stages
+            local nested_prefix
+            if [[ -n "$prefix" ]]; then
+                nested_prefix="${prefix}->${stage_name}"
+            else
+                nested_prefix="${stage_name}"
+            fi
+
+            # Recursively get nested stages (graceful degradation on failure)
+            local nested_stages="[]"
+            nested_stages=$(_get_nested_stages "$ds_job" "$ds_build" "$nested_prefix" "$((nesting_depth + 1))" "$stage_name" 2>/dev/null) || nested_stages="[]"
+
+            # Insert nested stages before the parent stage
+            if [[ "$nested_stages" != "[]" ]]; then
+                result=$(echo "$result" "$nested_stages" | jq -s '.[0] + .[1]')
+            fi
+
+            # Add the parent stage with has_downstream flag
+            local display_name
+            if [[ -n "$prefix" ]]; then
+                display_name="${prefix}->${stage_name}"
+            else
+                display_name="${stage_name}"
+            fi
+
+            result=$(echo "$result" | jq \
+                --arg name "$display_name" \
+                --arg status "$status" \
+                --argjson duration_ms "$duration_ms" \
+                --arg agent "$agent" \
+                --argjson nesting_depth "$nesting_depth" \
+                '. + [{
+                    name: $name,
+                    status: $status,
+                    durationMillis: $duration_ms,
+                    agent: $agent,
+                    nesting_depth: $nesting_depth,
+                    has_downstream: true
+                }]')
+        else
+            # Regular stage (no downstream)
+            local display_name
+            if [[ -n "$prefix" ]]; then
+                display_name="${prefix}->${stage_name}"
+            else
+                display_name="${stage_name}"
+            fi
+
+            # Build stage entry
+            local stage_entry
+            if [[ $nesting_depth -gt 0 ]]; then
+                stage_entry=$(jq -n \
+                    --arg name "$display_name" \
+                    --arg status "$status" \
+                    --argjson duration_ms "$duration_ms" \
+                    --arg agent "$agent" \
+                    --argjson nesting_depth "$nesting_depth" \
+                    --arg downstream_job "$job_name" \
+                    --argjson downstream_build "$build_number" \
+                    --arg parent_stage "$parent_stage_name" \
+                    '{
+                        name: $name,
+                        status: $status,
+                        durationMillis: $duration_ms,
+                        agent: $agent,
+                        nesting_depth: $nesting_depth,
+                        downstream_job: $downstream_job,
+                        downstream_build: $downstream_build,
+                        parent_stage: $parent_stage
+                    }')
+            else
+                stage_entry=$(jq -n \
+                    --arg name "$display_name" \
+                    --arg status "$status" \
+                    --argjson duration_ms "$duration_ms" \
+                    --arg agent "$agent" \
+                    --argjson nesting_depth "$nesting_depth" \
+                    '{
+                        name: $name,
+                        status: $status,
+                        durationMillis: $duration_ms,
+                        agent: $agent,
+                        nesting_depth: $nesting_depth
+                    }')
+            fi
+
+            result=$(echo "$result" | jq --argjson entry "$stage_entry" '. + [$entry]')
+        fi
+
+        i=$((i + 1))
+    done
+
+    echo "$result"
 }

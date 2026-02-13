@@ -362,7 +362,8 @@ _monitor_build() {
         # Track stage changes BEFORE checking completion
         # This ensures the final iteration still catches stage transitions
         # Spec: bug-show-all-stages.md - all stages must be shown
-        stage_state=$(track_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE")
+        # Spec: nested-jobs-display-spec.md - track downstream builds in real-time
+        stage_state=$(_track_nested_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE")
 
         local building result
         building=$(echo "$build_info" | jq -r '.building')

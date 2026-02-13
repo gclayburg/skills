@@ -267,7 +267,7 @@ teardown() {
         echo '{"building": false, "result": "SUCCESS"}'
     }
 
-    track_stage_changes() {
+    _track_nested_stage_changes() {
         local previous_state="$3"
         local count
         count=$(cat "$call_count_file")
@@ -286,7 +286,7 @@ teardown() {
     run _monitor_build "test-job" "42"
 
     assert_success
-    # Verify the first call to track_stage_changes received the banner state
+    # Verify the first call to _track_nested_stage_changes received the banner state
     local first_prev
     first_prev=$(cat "$first_prev_file")
     [[ "$first_prev" == *"Checkout"* ]]
@@ -311,7 +311,7 @@ teardown() {
         echo '{"building": false, "result": "SUCCESS"}'
     }
 
-    track_stage_changes() {
+    _track_nested_stage_changes() {
         echo '[]'
     }
 
@@ -342,7 +342,7 @@ teardown() {
         echo '{"building": false, "result": "SUCCESS"}'
     }
 
-    track_stage_changes() {
+    _track_nested_stage_changes() {
         local count
         count=$(cat "$track_called_file")
         echo "$((count + 1))" > "$track_called_file"
@@ -358,7 +358,7 @@ teardown() {
     run _monitor_build "test-job" "42"
 
     assert_success
-    # track_stage_changes should have been called at least once
+    # _track_nested_stage_changes should have been called at least once
     # even though build was already complete
     local calls
     calls=$(cat "$track_called_file")

@@ -154,7 +154,7 @@ get_build_info() {
     fi
 }
 
-track_stage_changes() {
+_track_nested_stage_changes() {
     local count=\$(cat "\$TRACK_COUNT_FILE")
     count=\$((count + 1))
     echo "\$count" > "\$TRACK_COUNT_FILE"
@@ -171,7 +171,7 @@ OUTEREOF
 
     run bash "${TEST_TEMP_DIR}/monitor_test.sh" "testjob" "42"
     assert_success
-    # track_stage_changes should have been called at least once
+    # _track_nested_stage_changes should have been called at least once
     assert_output --partial "track_calls="
     local count
     count=$(echo "$output" | grep "track_calls=" | sed 's/track_calls=//')

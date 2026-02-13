@@ -44,7 +44,7 @@ teardown() {
 }
 
 # -----------------------------------------------------------------------------
-# Test Case: _monitor_build calls track_stage_changes
+# Test Case: _monitor_build calls _track_nested_stage_changes
 # Spec: full-stage-print-spec.md, buildgit push
 # -----------------------------------------------------------------------------
 @test "push_monitor_shows_stage_completions" {
@@ -68,8 +68,8 @@ teardown() {
         fi
     }
 
-    # Mock track_stage_changes inside test
-    track_stage_changes() {
+    # Mock _track_nested_stage_changes inside test
+    _track_nested_stage_changes() {
         local count
         count=$(cat "$track_called_file")
         echo "$((count + 1))" > "$track_called_file"
@@ -79,7 +79,7 @@ teardown() {
     VERBOSE_MODE=false
     run _monitor_build "test-job" "42"
 
-    # Verify track_stage_changes was called
+    # Verify _track_nested_stage_changes was called
     local calls
     calls=$(cat "$track_called_file")
     [[ "$calls" -ge 1 ]]
@@ -87,7 +87,7 @@ teardown() {
 }
 
 # -----------------------------------------------------------------------------
-# Test Case: _monitor_build calls track_stage_changes
+# Test Case: _monitor_build calls _track_nested_stage_changes
 # Spec: full-stage-print-spec.md, buildgit status -f
 # -----------------------------------------------------------------------------
 @test "follow_monitor_shows_stage_completions" {
@@ -109,7 +109,7 @@ teardown() {
         fi
     }
 
-    track_stage_changes() {
+    _track_nested_stage_changes() {
         local count
         count=$(cat "$track_called_file")
         echo "$((count + 1))" > "$track_called_file"
@@ -126,7 +126,7 @@ teardown() {
 }
 
 # -----------------------------------------------------------------------------
-# Test Case: _monitor_build calls track_stage_changes
+# Test Case: _monitor_build calls _track_nested_stage_changes
 # Spec: full-stage-print-spec.md, buildgit build
 # -----------------------------------------------------------------------------
 @test "build_monitor_shows_stage_completions" {
@@ -148,7 +148,7 @@ teardown() {
         fi
     }
 
-    track_stage_changes() {
+    _track_nested_stage_changes() {
         local count
         count=$(cat "$track_called_file")
         echo "$((count + 1))" > "$track_called_file"
@@ -185,7 +185,7 @@ teardown() {
         fi
     }
 
-    track_stage_changes() {
+    _track_nested_stage_changes() {
         echo '[]'
     }
 
@@ -220,7 +220,7 @@ teardown() {
         fi
     }
 
-    track_stage_changes() {
+    _track_nested_stage_changes() {
         echo '[]'
     }
 
@@ -234,7 +234,7 @@ teardown() {
 }
 
 # -----------------------------------------------------------------------------
-# Test Case: Monitor passes VERBOSE_MODE to track_stage_changes
+# Test Case: Monitor passes VERBOSE_MODE to _track_nested_stage_changes
 # Spec: full-stage-print-spec.md, In-Progress Stages
 # -----------------------------------------------------------------------------
 @test "monitor_shows_running_stage" {
@@ -255,7 +255,7 @@ teardown() {
         fi
     }
 
-    track_stage_changes() {
+    _track_nested_stage_changes() {
         local job_name="$1"
         local build_number="$2"
         local previous_state="$3"
@@ -298,7 +298,7 @@ teardown() {
         fi
     }
 
-    track_stage_changes() {
+    _track_nested_stage_changes() {
         local job_name="$1"
         local build_number="$2"
         local previous_state="$3"
@@ -346,7 +346,7 @@ teardown() {
         fi
     }
 
-    track_stage_changes() {
+    _track_nested_stage_changes() {
         local previous_state="$3"
 
         local count
@@ -393,7 +393,7 @@ teardown() {
         fi
     }
 
-    track_stage_changes() {
+    _track_nested_stage_changes() {
         echo '[]'
     }
 

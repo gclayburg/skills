@@ -50,6 +50,7 @@ These files represent completed specifications in the specs/ directory.  This li
 - bug-json-stdout-pollution-spec.md  remove `git status` from `buildgit status` to fix JSON stdout pollution and make status Jenkins-only
 - bug2026-02-12-phandlemono-no-logs-spec.md  fix NOT_BUILT and other non-SUCCESS results missing error display in monitoring mode; add default error log display to push/build/status -f
 - refactor-shared-failure-diagnostics-spec.md  extract shared `_display_failure_diagnostics()` function so monitoring mode shows same failure output as snapshot mode; adds missing Failed Jobs tree to monitoring mode
+- nested-jobs-display-spec.md  display downstream/nested build stages inline with agent names, `->` nesting notation, real-time monitoring, and recursive support across all output modes
 
 
 
