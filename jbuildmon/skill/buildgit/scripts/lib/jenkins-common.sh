@@ -2091,6 +2091,7 @@ display_success_output() {
     local commit_sha="$6"
     local commit_msg="$7"
     local correlation_status="$8"
+    local console_output="${9:-}"
 
     # Extract values from build JSON
     local duration timestamp url
@@ -2107,22 +2108,35 @@ display_success_output() {
     # Display banner
     log_banner "success"
 
-    # Display all stages
-    # Spec: full-stage-print-spec.md, Section: Display Functions
-    _display_stages "$job_name" "$build_number"
-    echo ""
-
-    # Display build details
+    # Display build details (header fields first, matching monitored output)
+    # Spec: bug-build-monitoring-header-spec.md
     echo "Job:        ${job_name}"
     echo "Build:      #${build_number}"
     echo "Status:     ${COLOR_GREEN}SUCCESS${COLOR_RESET}"
     echo "Trigger:    ${trigger_display}"
     echo "Commit:     ${commit_display}"
     echo "            ${_CORRELATION_COLOR}${_CORRELATION_SYMBOL} ${_CORRELATION_DESC}${COLOR_RESET}"
-    echo "Duration:   $(format_duration "$duration")"
-    echo "Completed:  $(format_timestamp "$timestamp")"
+    echo "Started:    $(format_timestamp "$timestamp")"
+
+    # Display Build Info section if console output is available
+    if [[ -n "$console_output" ]]; then
+        display_build_metadata "$console_output"
+    fi
+
     echo ""
     echo "Console:    ${url}console"
+
+    # Display all stages
+    # Spec: full-stage-print-spec.md, Section: Display Functions
+    echo ""
+    _display_stages "$job_name" "$build_number"
+
+    # Finished line and duration
+    echo ""
+    print_finished_line "SUCCESS"
+    if [[ "$duration" != "0" && "$duration" =~ ^[0-9]+$ ]]; then
+        log_info "Duration: $(format_duration "$duration")"
+    fi
 }
 
 # Display failed build output
@@ -2136,7 +2150,7 @@ display_failure_output() {
     local commit_sha="$6"
     local commit_msg="$7"
     local correlation_status="$8"
-    local console_output="$9"
+    local console_output="${9:-}"
 
     # Extract values from build JSON
     local result duration timestamp url
@@ -2154,32 +2168,39 @@ display_failure_output() {
     # Display banner
     log_banner "failure"
 
-    # Display all stages (includes not-executed stages for failed builds)
-    # Spec: full-stage-print-spec.md, Section: Display Functions
-    _display_stages "$job_name" "$build_number"
-    echo ""
-
-    # Display build details
+    # Display build details (header fields first, matching monitored output)
+    # Spec: bug-build-monitoring-header-spec.md
     echo "Job:        ${job_name}"
     echo "Build:      #${build_number}"
     echo "Status:     ${COLOR_RED}${result}${COLOR_RESET}"
     echo "Trigger:    ${trigger_display}"
     echo "Commit:     ${commit_display}"
     echo "            ${_CORRELATION_COLOR}${_CORRELATION_SYMBOL} ${_CORRELATION_DESC}${COLOR_RESET}"
-    echo "Duration:   $(format_duration "$duration")"
-    echo "Completed:  $(format_timestamp "$timestamp")"
+    echo "Started:    $(format_timestamp "$timestamp")"
 
     # Display build metadata (user, agent, pipeline)
     if [[ -n "$console_output" ]]; then
         display_build_metadata "$console_output"
     fi
 
+    echo ""
+    echo "Console:    ${url}console"
+
+    # Display all stages (includes not-executed stages for failed builds)
+    # Spec: full-stage-print-spec.md, Section: Display Functions
+    echo ""
+    _display_stages "$job_name" "$build_number"
+
     # Failure diagnostics (shared)
     # Spec: refactor-shared-failure-diagnostics-spec.md
     _display_failure_diagnostics "$job_name" "$build_number" "$console_output"
 
+    # Finished line and duration
     echo ""
-    echo "Console:    ${url}console"
+    print_finished_line "$result"
+    if [[ "$duration" != "0" && "$duration" =~ ^[0-9]+$ ]]; then
+        log_info "Duration: $(format_duration "$duration")"
+    fi
 }
 
 # Display failed jobs tree for failure output
@@ -2443,7 +2464,7 @@ _display_failure_diagnostics() {
 }
 
 # Display in-progress build output (unified header format)
-# Usage: display_building_output "job_name" "build_number" "build_json" "trigger_type" "trigger_user" "commit_sha" "commit_msg" "correlation_status" "current_stage" "console_output" "elapsed_suffix"
+# Usage: display_building_output "job_name" "build_number" "build_json" "trigger_type" "trigger_user" "commit_sha" "commit_msg" "correlation_status" "current_stage" "console_output" "running_msg"
 # Spec: unify-follow-log-spec.md, Section 2 (Build Header)
 display_building_output() {
     local job_name="$1"
@@ -2456,17 +2477,12 @@ display_building_output() {
     local correlation_status="$8"
     local current_stage="${9:-}"
     local console_output="${10:-}"
-    local elapsed_suffix="${11:-}"
+    local running_msg="${11:-}"
 
     # Extract values from build JSON
     local timestamp url
     timestamp=$(echo "$build_json" | jq -r '.timestamp // 0')
     url=$(echo "$build_json" | jq -r '.url // empty')
-
-    # Calculate elapsed time
-    local now_ms elapsed_ms
-    now_ms=$(($(date +%s) * 1000))
-    elapsed_ms=$((now_ms - timestamp))
 
     # Format display components
     local trigger_display commit_display
@@ -2474,15 +2490,14 @@ display_building_output() {
     commit_display=$(_format_commit_display "$commit_sha" "$commit_msg")
     _format_correlation_display "$correlation_status"
 
-    # Format elapsed display with optional suffix
-    local elapsed_display
-    elapsed_display="$(format_duration "$elapsed_ms")"
-    if [[ -n "$elapsed_suffix" ]]; then
-        elapsed_display="${elapsed_display} ${elapsed_suffix}"
-    fi
-
     # Display banner
     log_banner "building"
+
+    # Display running-time message if provided (status -f joining in-progress build)
+    if [[ -n "$running_msg" ]]; then
+        echo "$running_msg"
+        echo ""
+    fi
 
     # Display build details (before stages, per unified format)
     # Spec: unify-follow-log-spec.md, Section 2 (Build Header)
@@ -2490,18 +2505,25 @@ display_building_output() {
     echo "Build:      #${build_number}"
     echo "Status:     ${COLOR_YELLOW}BUILDING${COLOR_RESET}"
     echo "Trigger:    ${trigger_display}"
-    echo "Commit:     ${commit_display}"
-    echo "            ${_CORRELATION_COLOR}${_CORRELATION_SYMBOL} ${_CORRELATION_DESC}${COLOR_RESET}"
+
+    # Skip Commit/correlation lines when commit is unknown or empty (deferred header)
+    if [[ -n "$commit_sha" && "$commit_sha" != "unknown" ]]; then
+        echo "Commit:     ${commit_display}"
+        echo "            ${_CORRELATION_COLOR}${_CORRELATION_SYMBOL} ${_CORRELATION_DESC}${COLOR_RESET}"
+    fi
+
     echo "Started:    $(format_timestamp "$timestamp")"
-    echo "Elapsed:    ${elapsed_display}"
 
     # Display Build Info section if console output is available
     if [[ -n "$console_output" ]]; then
         display_build_metadata "$console_output"
     fi
 
-    echo ""
-    echo "Console:    ${url}console"
+    # Display Console URL only if console output is available (skip when deferred)
+    if [[ -n "$console_output" || ( -n "$commit_sha" && "$commit_sha" != "unknown" ) ]]; then
+        echo ""
+        echo "Console:    ${url}console"
+    fi
 }
 
 # =============================================================================

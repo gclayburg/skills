@@ -17,8 +17,4 @@ Items in this directory represent features, enhancements, or bug fixes that have
 
 # todo implementation rules
 
-- before beginning work, make sure all unit tests are in a passing state
-- make sure to update the root level README.md documentation if any options change.  
-- make sure to update the skill documentation as needed in skill/buildgit/SKILL.md.
-- make sure all unit tests pass before considering the todo item file complete.
-- When complete, move the todo item file from jbuildmon/specs/todo/ to jbuildmon/specs/ and add it to the Spec and Bug index in jbuildmon/specs/README.md.  Also remove it from the jbuildmon/specs/todo/README.md file index.
+- see `../CLAUDE.md`

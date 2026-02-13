@@ -50,28 +50,28 @@ Obtained Jenkinsfile from git ssh://git@scranton2:2233/home/git/ralph1.git"
 # Spec: unify-follow-log-spec.md, Section 2 (Build Header)
 @test "header_shows_banner" {
     run display_building_output "ralph1" "80" "$MOCK_BUILD_JSON" \
-        "automated" "scm-trigger" "b372452abc" "test123" "your_commit" "" "" ""
+        "automated" "scm-trigger" "b372452abc" "test123" "your_commit"
     assert_success
     assert_output --partial "BUILD IN PROGRESS"
 }
 
 @test "header_shows_job_field" {
     run display_building_output "ralph1" "80" "$MOCK_BUILD_JSON" \
-        "automated" "scm-trigger" "b372452abc" "test123" "your_commit" "" "" ""
+        "automated" "scm-trigger" "b372452abc" "test123" "your_commit"
     assert_success
     assert_output --partial "Job:        ralph1"
 }
 
 @test "header_shows_build_number" {
     run display_building_output "ralph1" "80" "$MOCK_BUILD_JSON" \
-        "automated" "scm-trigger" "b372452abc" "test123" "your_commit" "" "" ""
+        "automated" "scm-trigger" "b372452abc" "test123" "your_commit"
     assert_success
     assert_output --partial "Build:      #80"
 }
 
 @test "header_shows_status_building" {
     run display_building_output "ralph1" "80" "$MOCK_BUILD_JSON" \
-        "automated" "scm-trigger" "b372452abc" "test123" "your_commit" "" "" ""
+        "automated" "scm-trigger" "b372452abc" "test123" "your_commit"
     assert_success
     assert_output --partial "BUILDING"
 }
@@ -79,14 +79,14 @@ Obtained Jenkinsfile from git ssh://git@scranton2:2233/home/git/ralph1.git"
 # Spec: unify-follow-log-spec.md, Trigger Types
 @test "header_shows_trigger_automated" {
     run display_building_output "ralph1" "80" "$MOCK_BUILD_JSON" \
-        "automated" "scm-trigger" "b372452abc" "test123" "your_commit" "" "" ""
+        "automated" "scm-trigger" "b372452abc" "test123" "your_commit"
     assert_success
     assert_output --partial "Trigger:    Automated (git push)"
 }
 
 @test "header_shows_trigger_manual" {
     run display_building_output "ralph1" "80" "$MOCK_BUILD_JSON" \
-        "manual" "jsmith" "b372452abc" "test123" "your_commit" "" "" ""
+        "manual" "jsmith" "b372452abc" "test123" "your_commit"
     assert_success
     assert_output --partial "Trigger:    Manual (started by jsmith)"
 }
@@ -94,50 +94,83 @@ Obtained Jenkinsfile from git ssh://git@scranton2:2233/home/git/ralph1.git"
 # Spec: unify-follow-log-spec.md, Field Descriptions
 @test "header_shows_commit" {
     run display_building_output "ralph1" "80" "$MOCK_BUILD_JSON" \
-        "automated" "scm-trigger" "b372452abcdef" "test123" "your_commit" "" "" ""
+        "automated" "scm-trigger" "b372452abcdef" "test123" "your_commit"
     assert_success
     assert_output --partial 'Commit:     b372452 - "test123"'
 }
 
 @test "header_shows_correlation" {
     run display_building_output "ralph1" "80" "$MOCK_BUILD_JSON" \
-        "automated" "scm-trigger" "b372452abc" "test123" "your_commit" "" "" ""
+        "automated" "scm-trigger" "b372452abc" "test123" "your_commit"
     assert_success
     assert_output --partial "Your commit (HEAD)"
 }
 
 @test "header_shows_started_time" {
     run display_building_output "ralph1" "80" "$MOCK_BUILD_JSON" \
-        "automated" "scm-trigger" "b372452abc" "test123" "your_commit" "" "" ""
+        "automated" "scm-trigger" "b372452abc" "test123" "your_commit"
     assert_success
     assert_output --partial "Started:"
 }
 
-@test "header_shows_elapsed_time" {
+# Spec: bug-build-monitoring-header-spec.md - Elapsed removed from header
+@test "header_no_elapsed_line" {
     run display_building_output "ralph1" "80" "$MOCK_BUILD_JSON" \
-        "automated" "scm-trigger" "b372452abc" "test123" "your_commit" "" "" ""
+        "automated" "scm-trigger" "b372452abc" "test123" "your_commit"
     assert_success
-    assert_output --partial "Elapsed:"
+    refute_output --partial "Elapsed:"
 }
 
 # =============================================================================
-# Test Cases: Elapsed suffix
+# Test Cases: Running-time message
 # =============================================================================
 
-# Spec: unify-follow-log-spec.md, Elapsed Time Display
-@test "header_elapsed_no_suffix" {
+@test "header_shows_running_msg_when_provided" {
     run display_building_output "ralph1" "80" "$MOCK_BUILD_JSON" \
-        "automated" "scm-trigger" "b372452abc" "test123" "your_commit" "" "" ""
+        "automated" "scm-trigger" "b372452abc" "test123" "your_commit" "" "" \
+        "Job ralph1 #80 has been running for 2m 15s"
     assert_success
-    # Should NOT contain "(so far)"
-    refute_output --partial "(so far)"
+    assert_output --partial "Job ralph1 #80 has been running for 2m 15s"
 }
 
-@test "header_elapsed_so_far_suffix" {
+@test "header_no_running_msg_by_default" {
     run display_building_output "ralph1" "80" "$MOCK_BUILD_JSON" \
-        "automated" "scm-trigger" "b372452abc" "test123" "your_commit" "" "" "(so far)"
+        "automated" "scm-trigger" "b372452abc" "test123" "your_commit"
     assert_success
-    assert_output --partial "(so far)"
+    refute_output --partial "has been running for"
+}
+
+# =============================================================================
+# Test Cases: Deferred header (unknown commit skipped)
+# =============================================================================
+
+@test "header_skips_commit_when_unknown" {
+    run display_building_output "ralph1" "80" "$MOCK_BUILD_JSON" \
+        "automated" "scm-trigger" "unknown" "" "unknown"
+    assert_success
+    refute_output --partial "Commit:"
+}
+
+@test "header_skips_commit_when_empty" {
+    run display_building_output "ralph1" "80" "$MOCK_BUILD_JSON" \
+        "automated" "scm-trigger" "" "" ""
+    assert_success
+    refute_output --partial "Commit:"
+}
+
+@test "header_shows_console_url_with_known_commit" {
+    run display_building_output "ralph1" "80" "$MOCK_BUILD_JSON" \
+        "automated" "scm-trigger" "b372452abc" "test123" "your_commit"
+    assert_success
+    assert_output --partial "Console:"
+}
+
+@test "header_skips_console_url_when_deferred" {
+    # Unknown commit + no console output = fully deferred, skip Console URL
+    run display_building_output "ralph1" "80" "$MOCK_BUILD_JSON" \
+        "automated" "scm-trigger" "unknown" "" "unknown" "" ""
+    assert_success
+    refute_output --partial "Console:"
 }
 
 # =============================================================================
@@ -148,7 +181,7 @@ Obtained Jenkinsfile from git ssh://git@scranton2:2233/home/git/ralph1.git"
 @test "header_shows_build_info_section" {
     run display_building_output "ralph1" "80" "$MOCK_BUILD_JSON" \
         "automated" "scm-trigger" "b372452abc" "test123" "your_commit" "" \
-        "$MOCK_CONSOLE_OUTPUT" ""
+        "$MOCK_CONSOLE_OUTPUT"
     assert_success
     assert_output --partial "=== Build Info ==="
     assert_output --partial "Started by:  buildtriggerdude"
@@ -159,7 +192,7 @@ Obtained Jenkinsfile from git ssh://git@scranton2:2233/home/git/ralph1.git"
 @test "header_shows_console_url_after_build_info" {
     run display_building_output "ralph1" "80" "$MOCK_BUILD_JSON" \
         "automated" "scm-trigger" "b372452abc" "test123" "your_commit" "" \
-        "$MOCK_CONSOLE_OUTPUT" ""
+        "$MOCK_CONSOLE_OUTPUT"
     assert_success
     # Console URL should appear in output
     assert_output --partial "Console:    http://jenkins.example.com:8080/job/ralph1/80/console"
@@ -184,7 +217,7 @@ Obtained Jenkinsfile from git ssh://git@scranton2:2233/home/git/ralph1.git"
     export -f get_all_stages
 
     run display_building_output "ralph1" "80" "$MOCK_BUILD_JSON" \
-        "automated" "scm-trigger" "b372452abc" "test123" "your_commit" "" "" ""
+        "automated" "scm-trigger" "b372452abc" "test123" "your_commit"
     assert_success
     # Should not contain stage lines in the header
     refute_output --partial "Stage: Build"
@@ -196,10 +229,10 @@ Obtained Jenkinsfile from git ssh://git@scranton2:2233/home/git/ralph1.git"
 
 @test "header_without_console_output" {
     run display_building_output "ralph1" "80" "$MOCK_BUILD_JSON" \
-        "automated" "scm-trigger" "b372452abc" "test123" "your_commit" "" "" ""
+        "automated" "scm-trigger" "b372452abc" "test123" "your_commit"
     assert_success
     # Should NOT contain Build Info section
     refute_output --partial "=== Build Info ==="
-    # Should still contain Console URL
+    # Should still contain Console URL (commit is known)
     assert_output --partial "Console:"
 }

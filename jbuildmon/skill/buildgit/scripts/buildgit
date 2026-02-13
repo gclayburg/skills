@@ -302,7 +302,8 @@ _jenkins_status_check() {
             display_building_output "$job_name" "$build_number" "$build_json" \
                 "$_BC_TRIGGER_TYPE" "$_BC_TRIGGER_USER" \
                 "$_BC_COMMIT_SHA" "$_BC_COMMIT_MSG" \
-                "$_BC_CORRELATION_STATUS" "$current_stage"
+                "$_BC_CORRELATION_STATUS" "$current_stage" \
+                "$console_output"
         fi
         exit_code=2
 
@@ -317,7 +318,7 @@ _jenkins_status_check() {
             display_success_output "$job_name" "$build_number" "$build_json" \
                 "$_BC_TRIGGER_TYPE" "$_BC_TRIGGER_USER" \
                 "$_BC_COMMIT_SHA" "$_BC_COMMIT_MSG" \
-                "$_BC_CORRELATION_STATUS"
+                "$_BC_CORRELATION_STATUS" "$console_output"
         fi
         exit_code=0
 
@@ -344,6 +345,59 @@ _jenkins_status_check() {
 # Reuses monitoring logic from pushmon.sh pattern
 # Arguments: job_name, build_number
 # Returns: 0 when build completes
+# Print deferred header fields when data becomes available
+# Called from _monitor_build when console output arrives after initial banner
+# Only prints fields that were actually missing from the initial header
+# Spec: bug-build-monitoring-header-spec.md - deferred header fields
+_print_deferred_header_fields() {
+    local job_name="$1"
+    local build_number="$2"
+    local build_json="$3"
+    local deferred_build_info="${_DEFERRED_BUILD_INFO:-false}"
+
+    # Need console output to resolve deferred fields
+    local console_output
+    console_output=$(get_console_output "$job_name" "$build_number" 2>/dev/null) || true
+
+    if [[ -z "$console_output" ]]; then
+        return 1  # Not yet available
+    fi
+
+    # Re-extract build context with console output
+    _extract_build_context "$job_name" "$build_number" "$console_output"
+
+    # Print Commit line if it was deferred and now available
+    if [[ "$_DEFERRED_COMMIT" == "true" && -n "$_BC_COMMIT_SHA" && "$_BC_COMMIT_SHA" != "unknown" ]]; then
+        local commit_display
+        commit_display=$(_format_commit_display "$_BC_COMMIT_SHA" "$_BC_COMMIT_MSG")
+        _format_correlation_display "$_BC_CORRELATION_STATUS"
+        echo "Commit:     ${commit_display}"
+        echo "            ${_CORRELATION_COLOR}${_CORRELATION_SYMBOL} ${_CORRELATION_DESC}${COLOR_RESET}"
+        _DEFERRED_COMMIT=false
+        printed_something=true
+    fi
+
+    # Print Build Info section if it was deferred
+    if [[ "$_DEFERRED_BUILD_INFO" == "true" ]]; then
+        display_build_metadata "$console_output"
+        _DEFERRED_BUILD_INFO=false
+        printed_something=true
+    fi
+
+    # Print Console URL only if Build Info was deferred (Console URL was skipped
+    # when both commit unknown and no console output in the initial header)
+    if [[ "$deferred_build_info" == "true" ]]; then
+        local url
+        url=$(echo "$build_json" | jq -r '.url // empty')
+        if [[ -n "$url" ]]; then
+            echo ""
+            echo "Console:    ${url}console"
+        fi
+    fi
+
+    return 0
+}
+
 # Unified build monitoring loop
 # Polls Jenkins API until build completes, tracking stage changes in real-time
 # Arguments: job_name, build_number
@@ -382,6 +436,12 @@ _monitor_build() {
 
         consecutive_failures=0
 
+        # Print deferred header fields when data becomes available
+        # Spec: bug-build-monitoring-header-spec.md - deferred header fields
+        if [[ "${_DEFERRED_COMMIT:-false}" == "true" || "${_DEFERRED_BUILD_INFO:-false}" == "true" ]]; then
+            _print_deferred_header_fields "$job_name" "$build_number" "${_DEFERRED_BUILD_JSON:-$build_info}" || true
+        fi
+
         # Track stage changes BEFORE checking completion
         # This ensures the final iteration still catches stage transitions
         # Spec: bug-show-all-stages.md - all stages must be shown
@@ -415,12 +475,12 @@ _monitor_build() {
 
 # Display build in progress banner (unified header format)
 # Used before monitoring begins for all commands (push, build, status -f)
-# Arguments: job_name, build_number, [elapsed_suffix]
+# Arguments: job_name, build_number, [running_msg]
 # Spec reference: unify-follow-log-spec.md, Section 2 (Build Header)
 _display_build_in_progress_banner() {
     local job_name="$1"
     local build_number="$2"
-    local elapsed_suffix="${3:-}"
+    local running_msg="${3:-}"
 
     # Get build info
     local build_json
@@ -448,7 +508,22 @@ _display_build_in_progress_banner() {
         "$_BC_TRIGGER_TYPE" "$_BC_TRIGGER_USER" \
         "$_BC_COMMIT_SHA" "$_BC_COMMIT_MSG" \
         "$_BC_CORRELATION_STATUS" "$current_stage" \
-        "$console_output" "$elapsed_suffix"
+        "$console_output" "$running_msg"
+
+    # Track which header fields need deferred printing by _monitor_build
+    # Spec: bug-build-monitoring-header-spec.md - deferred header fields
+    _DEFERRED_COMMIT=false
+    _DEFERRED_BUILD_INFO=false
+    _DEFERRED_BUILD_JSON=""
+    if [[ -z "$_BC_COMMIT_SHA" || "$_BC_COMMIT_SHA" == "unknown" ]]; then
+        _DEFERRED_COMMIT=true
+    fi
+    if [[ -z "$console_output" ]]; then
+        _DEFERRED_BUILD_INFO=true
+    fi
+    if [[ "$_DEFERRED_COMMIT" == "true" || "$_DEFERRED_BUILD_INFO" == "true" ]]; then
+        _DEFERRED_BUILD_JSON="$build_json"
+    fi
 
     # Display only completed stages after the header (skip IN_PROGRESS)
     # Also saves full stage state to _BANNER_STAGES_JSON for _monitor_build
@@ -499,21 +574,18 @@ _display_completed_build() {
     _extract_build_context "$job_name" "$build_number" "$console_output"
 
     # Display using the same output path as snapshot mode
+    # Finished line and Duration are now included in display_*_output functions
     if [[ "$result" == "SUCCESS" ]]; then
         display_success_output "$job_name" "$build_number" "$build_json" \
             "$_BC_TRIGGER_TYPE" "$_BC_TRIGGER_USER" \
             "$_BC_COMMIT_SHA" "$_BC_COMMIT_MSG" \
-            "$_BC_CORRELATION_STATUS"
+            "$_BC_CORRELATION_STATUS" "$console_output"
     else
         display_failure_output "$job_name" "$build_number" "$build_json" \
             "$_BC_TRIGGER_TYPE" "$_BC_TRIGGER_USER" \
             "$_BC_COMMIT_SHA" "$_BC_COMMIT_MSG" \
             "$_BC_CORRELATION_STATUS" "$console_output"
     fi
-
-    # Print final status line (not included in display_*_output functions)
-    echo ""
-    print_finished_line "$result"
 
     # Return appropriate exit code
     if [[ "$result" == "SUCCESS" ]]; then
@@ -564,9 +636,22 @@ _cmd_status_follow() {
         # If build is in progress, display banner and monitor until completion
         if [[ "$building" == "true" ]]; then
             bg_log_info "Build #${build_number} is in progress, monitoring..."
+
+            # Calculate running time for status -f (joining in-progress build)
+            # Spec: bug-build-monitoring-header-spec.md
+            local build_ts_ms running_msg=""
+            build_ts_ms=$(echo "$build_json" | jq -r '.timestamp // 0')
+            if [[ "$build_ts_ms" != "0" ]]; then
+                local now_ms=$(($(date +%s) * 1000))
+                local running_ms=$((now_ms - build_ts_ms))
+                local running_display
+                running_display=$(format_duration "$running_ms")
+                running_msg="Job ${job_name} #${build_number} has been running for ${running_display}"
+            fi
+
             # Display build info banner before entering monitoring loop
             # Spec: unify-follow-log-spec.md, Section 5 (buildgit status -f)
-            _display_build_in_progress_banner "$job_name" "$build_number" "(so far)"
+            _display_build_in_progress_banner "$job_name" "$build_number" "$running_msg"
             _monitor_build "$job_name" "$build_number"
             # Display build completion (test results if applicable + Finished line)
             # Spec: unify-follow-log-spec.md, Section 4 (Build Completion)
@@ -801,6 +886,14 @@ _handle_build_completion() {
     # Print final status line
     echo ""
     print_finished_line "$result"
+
+    # Print duration
+    # Spec: bug-build-monitoring-header-spec.md
+    local duration_ms
+    duration_ms=$(echo "$build_json" | jq -r '.duration // 0')
+    if [[ "$duration_ms" != "0" && "$duration_ms" =~ ^[0-9]+$ ]]; then
+        log_info "Duration: $(format_duration "$duration_ms")"
+    fi
 
     # Return appropriate exit code
     if [[ "$result" == "SUCCESS" ]]; then

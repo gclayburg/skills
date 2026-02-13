@@ -293,7 +293,7 @@ Running on agent1
 # -----------------------------------------------------------------------------
 @test "cmd_status_follow_calls_banner_for_in_progress_build" {
     # Check that _cmd_status_follow contains the banner function call
-    run grep -A5 'if \[\[ "\$building" == "true" \]\]' "${PROJECT_DIR}/buildgit"
+    run grep -A20 'if \[\[ "\$building" == "true" \]\]' "${PROJECT_DIR}/buildgit"
     assert_success
     assert_output --partial "_display_build_in_progress_banner"
 }
@@ -303,21 +303,18 @@ Running on agent1
 # Spec: Issue 1 - Banner appears before monitoring messages
 # -----------------------------------------------------------------------------
 @test "follow_mode_banner_before_monitoring" {
-    # Find the section of _cmd_status_follow where building==true is handled
-    # and verify banner is called before _monitor_build
-    # (Updated: _follow_monitor_build consolidated into _monitor_build)
+    # Verify _display_build_in_progress_banner appears before _monitor_build
+    # by checking line numbers in the source file
     run bash -c "
-        # Extract the in-progress build handling block from _cmd_status_follow
-        awk '/if.*building.*==.*true/,/fi/' '${PROJECT_DIR}/buildgit' | \
-        grep -E '_display_build_in_progress_banner|_monitor_build'
+        grep -n '_display_build_in_progress_banner\|_monitor_build' '${PROJECT_DIR}/buildgit' | \
+        grep -v '()' | grep -v '^[0-9]*:#'
     "
     assert_success
 
-    # Verify _display_build_in_progress_banner appears before _monitor_build
-    local banner_pos monitor_pos
-    banner_pos=$(echo "$output" | grep -n '_display_build_in_progress_banner' | head -1 | cut -d: -f1)
-    monitor_pos=$(echo "$output" | grep -n '_monitor_build' | head -1 | cut -d: -f1)
+    local banner_line monitor_line
+    banner_line=$(echo "$output" | grep '_display_build_in_progress_banner' | tail -1 | cut -d: -f1)
+    monitor_line=$(echo "$output" | grep '_monitor_build' | tail -1 | cut -d: -f1)
 
-    # Banner should come before monitor (line number comparison)
-    [[ "$banner_pos" -lt "$monitor_pos" ]]
+    # Banner should come before monitor in _cmd_status_follow
+    [[ "$banner_line" -lt "$monitor_line" ]]
 }

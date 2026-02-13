@@ -52,6 +52,7 @@ These files represent completed specifications in the specs/ directory.  This li
 - refactor-shared-failure-diagnostics-spec.md  extract shared `_display_failure_diagnostics()` function so monitoring mode shows same failure output as snapshot mode; adds missing Failed Jobs tree to monitoring mode
 - nested-jobs-display-spec.md  display downstream/nested build stages inline with agent names, `->` nesting notation, real-time monitoring, and recursive support across all output modes
 - feature-status-job-number-spec.md  `buildgit status <build#>` positional argument to query a specific historical build by number
+- bug2026-02-13-build-monitoring-header-spec.md  fix missing Agent/Pipeline/Commit in build monitoring header, remove Elapsed field, add Duration line at completion, add running-time message for `status -f`, fix snapshot console_output passthrough
 
 
 

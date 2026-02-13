@@ -2,6 +2,14 @@
 
 All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are documented in this file.
 
+## 2026-02-13
+
+### Bug Fixes
+- **Build monitoring header cleanup** — Removed misleading `Elapsed:` field from build header; added `Duration:` line after `Finished:` in monitoring mode.
+- **Snapshot mode missing Agent/Pipeline** — Fixed `buildgit status` not passing console output to header, so Build Info section (Agent, Pipeline) now displays in snapshot mode.
+- **Deferred header fields** — When `buildgit build` triggers a new build, fields not yet available (Commit, Build Info, Console URL) are printed as soon as console output arrives instead of showing "unknown".
+- **Running-time message for `status -f`** — When `status -f` joins an already in-progress build, shows "Job X #N has been running for Xm Xs" instead of a misleading elapsed time in the header.
+
 ## 2026-02-12
 
 ### Features
