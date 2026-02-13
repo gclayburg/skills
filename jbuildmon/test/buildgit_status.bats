@@ -373,3 +373,226 @@ WRAPPER
 
 # NOTE: Follow mode tests have been moved to test/buildgit_status_follow.bats
 # as part of Chunk 5 implementation.
+
+# =============================================================================
+# Test Cases: Specific Build Number (positional argument)
+# Spec reference: feature-status-job-number-spec.md
+# =============================================================================
+
+# Helper: Create wrapper that records the build number passed to get_build_info
+create_build_number_test_wrapper() {
+    local expected_build="${1:-42}"
+
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER
+#!/usr/bin/env bash
+set -euo pipefail
+
+export PROJECT_DIR="${PROJECT_DIR}"
+export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
+
+_BUILDGIT_TESTING=1
+source "\${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+verify_jenkins_connection() { return 0; }
+verify_job_exists() {
+    JOB_URL="\${JENKINS_URL}/job/\${1}"
+    return 0
+}
+get_last_build_number() { echo "99"; }
+get_build_info() {
+    local job_name="\$1"
+    local build_num="\$2"
+    echo "REQUESTED_BUILD: \$build_num" >&2
+    echo '{"number":'"${expected_build}"',"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/test-repo/'"${expected_build}"'/"}'
+}
+get_console_output() { echo "Started by user testuser"; }
+
+cmd_status "\$@"
+WRAPPER
+    chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+}
+
+# Helper: Create wrapper where get_build_info returns empty for specific build
+create_build_not_found_wrapper() {
+    local not_found_build="${1:-9999}"
+
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER
+#!/usr/bin/env bash
+set -euo pipefail
+
+export PROJECT_DIR="${PROJECT_DIR}"
+export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
+
+_BUILDGIT_TESTING=1
+source "\${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+verify_jenkins_connection() { return 0; }
+verify_job_exists() {
+    JOB_URL="\${JENKINS_URL}/job/\${1}"
+    return 0
+}
+get_last_build_number() { echo "50"; }
+get_build_info() {
+    # Return empty to simulate build not found
+    echo ""
+}
+get_console_output() { echo ""; }
+
+cmd_status "\$@"
+WRAPPER
+    chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: Status with specific build number
+# Spec: feature-status-job-number-spec.md, Section 1
+# -----------------------------------------------------------------------------
+@test "status_specific_build_number" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_build_number_test_wrapper "31"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 31
+
+    assert_success
+    assert_output --partial "#31"
+    assert_output --partial "BUILD SUCCESSFUL"
+    # Verify it requested build 31, not the latest (99)
+    assert_output --partial "REQUESTED_BUILD: 31"
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: Status with build number and --json
+# Spec: feature-status-job-number-spec.md, Section 6
+# -----------------------------------------------------------------------------
+@test "status_specific_build_number_with_json" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_build_number_test_wrapper "31"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 31 --json
+
+    assert_success
+    assert_output --partial '"job":'
+    assert_output --partial '"build":'
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: Status with --json before build number (order independent)
+# Spec: feature-status-job-number-spec.md, Section 1
+# -----------------------------------------------------------------------------
+@test "status_json_before_build_number" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_build_number_test_wrapper "31"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --json 31
+
+    assert_success
+    assert_output --partial '"job":'
+    assert_output --partial '"build":'
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: Invalid build number (not a positive integer)
+# Spec: feature-status-job-number-spec.md, Section 1
+# -----------------------------------------------------------------------------
+@test "status_invalid_build_number_text" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_build_number_test_wrapper "42"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" abc
+
+    assert_failure
+    assert_output --partial "Invalid build number: abc"
+    assert_output --partial "must be a positive integer"
+}
+
+@test "status_invalid_build_number_zero" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_build_number_test_wrapper "42"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 0
+
+    assert_failure
+    assert_output --partial "Invalid build number: 0"
+}
+
+@test "status_invalid_build_number_negative" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_build_number_test_wrapper "42"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -5
+
+    assert_failure
+    # -5 will be caught as an unknown option
+    assert_output --partial "Unknown option for status command: -5"
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: Follow mode with build number is an error
+# Spec: feature-status-job-number-spec.md, Section 2
+# -----------------------------------------------------------------------------
+@test "status_follow_with_build_number_errors" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_build_number_test_wrapper "31"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 31 -f
+
+    assert_failure
+    assert_output --partial "Cannot use --follow with a specific build number"
+}
+
+@test "status_follow_before_build_number_errors" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_build_number_test_wrapper "31"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -f 31
+
+    assert_failure
+    assert_output --partial "Cannot use --follow with a specific build number"
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: Non-existent build number
+# Spec: feature-status-job-number-spec.md, Section 4
+# -----------------------------------------------------------------------------
+@test "status_nonexistent_build_number" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_build_not_found_wrapper "9999"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 9999
+
+    assert_failure
+    assert_output --partial "Build #9999 not found for job"
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: Without build number still fetches latest
+# Spec: feature-status-job-number-spec.md, Section 3
+# -----------------------------------------------------------------------------
+@test "status_without_build_number_uses_latest" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_build_number_test_wrapper "99"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+
+    assert_success
+    # Should use the latest build (99) from get_last_build_number
+    assert_output --partial "REQUESTED_BUILD: 99"
+}

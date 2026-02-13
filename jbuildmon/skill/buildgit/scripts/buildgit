@@ -14,7 +14,7 @@
 #   --verbose           Enable verbose/debug output
 #
 # Commands:
-#   status              Jenkins build status
+#   status [build#]     Jenkins build status (latest or specific build)
 #   push                Push commits + monitor Jenkins build
 #   build               Trigger + monitor Jenkins build
 #   <any-git-command>   Passed through to git
@@ -78,8 +78,8 @@ Global Options:
   --verbose                      Enable verbose output for debugging
 
 Commands:
-  status [-f|--follow] [--json]
-                      Display Jenkins build status
+  status [build#] [-f|--follow] [--json]
+                      Display Jenkins build status (latest or specific build)
   push [--no-follow] [git-push-options] [remote] [branch]
                       Push commits and monitor Jenkins build
   build [--no-follow] Trigger and monitor Jenkins build
@@ -87,6 +87,7 @@ Commands:
 
 Examples:
   buildgit status              # Jenkins build status snapshot
+  buildgit status 31           # Status of build #31
   buildgit status -f           # Follow builds indefinitely
   buildgit status --json       # JSON format for Jenkins status
   buildgit push                # Push + monitor build
@@ -171,6 +172,7 @@ parse_global_options() {
 _parse_status_options() {
     STATUS_JSON_MODE=false
     STATUS_FOLLOW_MODE=false
+    STATUS_BUILD_NUMBER=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -182,9 +184,22 @@ _parse_status_options() {
                 STATUS_FOLLOW_MODE=true
                 shift
                 ;;
-            *)
+            -*)
                 bg_log_error "Unknown option for status command: $1"
                 return 1
+                ;;
+            *)
+                # Positional argument: build number
+                if [[ -n "$STATUS_BUILD_NUMBER" ]]; then
+                    bg_log_error "Unexpected argument: $1 (build number already set to $STATUS_BUILD_NUMBER)"
+                    return 1
+                fi
+                if ! [[ "$1" =~ ^[1-9][0-9]*$ ]]; then
+                    bg_log_error "Invalid build number: $1 (must be a positive integer)"
+                    return 1
+                fi
+                STATUS_BUILD_NUMBER="$1"
+                shift
                 ;;
         esac
     done
@@ -222,20 +237,24 @@ _extract_build_context() {
 
 # Perform Jenkins status check and display
 # Reuses logic from checkbuild.sh
-# Arguments: job_name, json_mode
+# Arguments: job_name, json_mode [, build_number]
 # Returns: exit code (0=success, 1=failure, 2=building)
 _jenkins_status_check() {
     local job_name="$1"
     local json_mode="$2"
+    local build_number="${3:-}"
 
-    # Get last build number
-    bg_log_info "Fetching last build information..."
-    local build_number
-    build_number=$(get_last_build_number "$job_name")
+    if [[ -n "$build_number" ]]; then
+        bg_log_info "Fetching build #${build_number} information..."
+    else
+        # Get last build number
+        bg_log_info "Fetching last build information..."
+        build_number=$(get_last_build_number "$job_name")
 
-    if [[ "$build_number" == "0" || -z "$build_number" ]]; then
-        bg_log_error "No builds found for job '$job_name'"
-        return 1
+        if [[ "$build_number" == "0" || -z "$build_number" ]]; then
+            bg_log_error "No builds found for job '$job_name'"
+            return 1
+        fi
     fi
 
     # Get build info
@@ -243,7 +262,11 @@ _jenkins_status_check() {
     build_json=$(get_build_info "$job_name" "$build_number")
 
     if [[ -z "$build_json" ]]; then
-        bg_log_error "Failed to fetch build information"
+        if [[ -n "${3:-}" ]]; then
+            bg_log_error "Build #${build_number} not found for job '$job_name'"
+        else
+            bg_log_error "Failed to fetch build information"
+        fi
         return 1
     fi
 
@@ -622,6 +645,14 @@ cmd_status() {
     # Parse status-specific options
     _parse_status_options "$@"
 
+    # Validate incompatible options: follow + build number
+    if [[ "$STATUS_FOLLOW_MODE" == "true" && -n "$STATUS_BUILD_NUMBER" ]]; then
+        bg_log_error "Cannot use --follow with a specific build number"
+        echo ""
+        show_usage
+        return 1
+    fi
+
     # For follow mode, jump straight to Jenkins monitoring
     if [[ "$STATUS_FOLLOW_MODE" == "true" ]]; then
         # Validate and setup Jenkins connection
@@ -642,7 +673,7 @@ cmd_status() {
         return 1
     fi
 
-    _jenkins_status_check "$_VALIDATED_JOB_NAME" "$STATUS_JSON_MODE"
+    _jenkins_status_check "$_VALIDATED_JOB_NAME" "$STATUS_JSON_MODE" "$STATUS_BUILD_NUMBER"
 }
 
 # =============================================================================

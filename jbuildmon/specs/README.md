@@ -51,6 +51,7 @@ These files represent completed specifications in the specs/ directory.  This li
 - bug2026-02-12-phandlemono-no-logs-spec.md  fix NOT_BUILT and other non-SUCCESS results missing error display in monitoring mode; add default error log display to push/build/status -f
 - refactor-shared-failure-diagnostics-spec.md  extract shared `_display_failure_diagnostics()` function so monitoring mode shows same failure output as snapshot mode; adds missing Failed Jobs tree to monitoring mode
 - nested-jobs-display-spec.md  display downstream/nested build stages inline with agent names, `->` nesting notation, real-time monitoring, and recursive support across all output modes
+- feature-status-job-number-spec.md  `buildgit status <build#>` positional argument to query a specific historical build by number
 
 
 

@@ -143,6 +143,12 @@ See the current state of the latest build:
 buildgit status
 ```
 
+Check a specific build by number:
+
+```bash
+buildgit status 31
+```
+
 Follow builds in real-time (stays open and watches for new builds):
 
 ```bash
@@ -199,6 +205,7 @@ This lets both buildgit and your AI agent find the right Jenkins job automatical
 | `buildgit push` | Push + monitor build |
 | `buildgit push --no-follow` | Push only |
 | `buildgit status` | Build status snapshot |
+| `buildgit status 31` | Status of specific build |
 | `buildgit status -f` | Follow builds in real-time |
 | `buildgit status --json` | JSON output |
 | `buildgit build` | Trigger + monitor build |
