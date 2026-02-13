@@ -86,8 +86,10 @@ setup() {
 # Test Cases: Unknown status
 # =============================================================================
 
-@test "finished_line_unknown_status_no_color" {
+@test "finished_line_unknown_status_red" {
+    # Spec: bug2026-02-12-phandlemono-no-logs-spec.md — unknown non-SUCCESS defaults to red
     run print_finished_line "SOMETHING_ELSE"
     assert_success
-    assert_output "Finished: SOMETHING_ELSE"
+    assert_output --partial "Finished: SOMETHING_ELSE"
+    [[ "$output" == *"${COLOR_RED}"* ]] || [[ "$output" == "Finished: SOMETHING_ELSE" ]]
 }

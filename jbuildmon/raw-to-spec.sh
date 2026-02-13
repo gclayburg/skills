@@ -24,7 +24,8 @@ When this interview process is finished you will be eventually asked to produce 
 #CMD="sherlock claude --dangerously-skip-permissions '$PROMPT'"
 #CMD="claude --dangerously-skip-permissions '$PROMPT'"
 #CMD="sherlock claude '$PROMPT'"
-CMD="tokentap claude '$PROMPT'"
+#CMD="tokentap claude '$PROMPT'"
+CMD="claude '$PROMPT'"
 
 echo "$CMD"
 eval "$CMD"

@@ -930,10 +930,11 @@ Line 8 of stack trace"
     export FIXTURES_DIR
 
     # Mock other required functions
+    get_all_stages() { echo '[{"name":"Unit Tests","status":"FAILED","startTimeMillis":0,"durationMillis":5000}]'; }
     get_failed_stage() { echo "Unit Tests"; }
     detect_all_downstream_builds() { echo ""; }
     get_console_output() { echo "Some console output"; }
-    export -f get_failed_stage detect_all_downstream_builds get_console_output
+    export -f get_all_stages get_failed_stage detect_all_downstream_builds get_console_output
 
     # Create minimal build JSON
     local build_json='{"result": "FAILURE", "duration": 60000, "timestamp": 1706400000000, "url": "http://jenkins/job/test/1/"}'

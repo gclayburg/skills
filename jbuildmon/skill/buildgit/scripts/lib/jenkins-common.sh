@@ -209,11 +209,12 @@ print_finished_line() {
     local color=""
 
     case "$result" in
-        SUCCESS)  color="${COLOR_GREEN}" ;;
-        FAILURE)  color="${COLOR_RED}" ;;
-        UNSTABLE) color="${COLOR_YELLOW}" ;;
-        ABORTED)  color="${COLOR_DIM}" ;;
-        *)        color="" ;;
+        SUCCESS)   color="${COLOR_GREEN}" ;;
+        FAILURE)   color="${COLOR_RED}" ;;
+        NOT_BUILT) color="${COLOR_RED}" ;;
+        UNSTABLE)  color="${COLOR_YELLOW}" ;;
+        ABORTED)   color="${COLOR_DIM}" ;;
+        *)         color="${COLOR_RED}" ;;  # Default non-SUCCESS to red
     esac
 
     if [[ -n "$color" ]]; then
@@ -1070,7 +1071,7 @@ check_build_failed() {
     if [[ -n "$build_info" ]]; then
         local result
         result=$(echo "$build_info" | jq -r '.result // empty')
-        if [[ "$result" == "FAILURE" || "$result" == "UNSTABLE" || "$result" == "ABORTED" ]]; then
+        if [[ -n "$result" && "$result" != "SUCCESS" ]]; then
             return 0
         fi
     fi
@@ -1877,41 +1878,9 @@ display_failure_output() {
         display_build_metadata "$console_output"
     fi
 
-    # Display failed jobs tree
-    _display_failed_jobs_tree "$job_name" "$build_number" "$console_output"
-
-    # Display test results (between Failed Jobs and Error Logs per spec section 6)
-    # Spec: test-failure-display-spec.md, Section: Integration Points (5.1)
-    local test_results_json
-    test_results_json=$(fetch_test_results "$job_name" "$build_number")
-    if [[ -n "$test_results_json" ]]; then
-        display_test_results "$test_results_json"
-    fi
-
-    # Display console log output based on CONSOLE_MODE and test failure presence
-    # Spec: console-on-unstable-spec.md, Section 2 (Default Behavior Change)
-    local has_test_failures=false
-    if [[ -n "$test_results_json" ]]; then
-        local fail_count
-        fail_count=$(echo "$test_results_json" | jq -r '.failCount // 0') || fail_count=0
-        if [[ "$fail_count" -gt 0 ]]; then
-            has_test_failures=true
-        fi
-    fi
-
-    if [[ "$has_test_failures" == "true" && -z "${CONSOLE_MODE:-}" ]]; then
-        # Suppress error logs: test results section is sufficient
-        :
-    elif [[ "${CONSOLE_MODE:-}" =~ ^[0-9]+$ ]]; then
-        # Show last N lines of raw console output
-        echo ""
-        echo "${COLOR_YELLOW}=== Console Log (last ${CONSOLE_MODE} lines) ===${COLOR_RESET}"
-        echo "$console_output" | tail -"${CONSOLE_MODE}"
-        echo "${COLOR_YELLOW}================================================${COLOR_RESET}"
-    else
-        # Default for FAILURE without test failures, or --console auto
-        _display_error_logs "$job_name" "$build_number" "$console_output"
-    fi
+    # Failure diagnostics (shared)
+    # Spec: refactor-shared-failure-diagnostics-spec.md
+    _display_failure_diagnostics "$job_name" "$build_number" "$console_output"
 
     echo ""
     echo "Console:    ${url}console"
@@ -2045,6 +2014,41 @@ _display_early_failure_console() {
 STAGE_LOG_MIN_LINES=5        # Minimum lines for extraction to be considered sufficient
 STAGE_LOG_FALLBACK_LINES=50  # Lines to show in fallback mode
 
+# Shared error log display decision logic
+# Decides whether and how to show error logs based on test failure presence and CONSOLE_MODE.
+# Used by both _handle_build_completion (monitoring path) and display_failure_output (snapshot path).
+# Usage: _display_error_log_section "job_name" "build_number" "console_output" "test_results_json"
+# Spec: bug2026-02-12-phandlemono-no-logs-spec.md, Section: Shared error log display logic
+_display_error_log_section() {
+    local job_name="$1"
+    local build_number="$2"
+    local console_output="$3"
+    local test_results_json="${4:-}"
+
+    local has_test_failures=false
+    if [[ -n "$test_results_json" ]]; then
+        local fail_count
+        fail_count=$(echo "$test_results_json" | jq -r '.failCount // 0') || fail_count=0
+        if [[ "$fail_count" -gt 0 ]]; then
+            has_test_failures=true
+        fi
+    fi
+
+    if [[ "$has_test_failures" == "true" && -z "${CONSOLE_MODE:-}" ]]; then
+        # Suppress error logs: test results section is sufficient
+        :
+    elif [[ "${CONSOLE_MODE:-}" =~ ^[0-9]+$ ]]; then
+        # Show last N lines of raw console output
+        echo ""
+        echo "${COLOR_YELLOW}=== Console Log (last ${CONSOLE_MODE} lines) ===${COLOR_RESET}"
+        echo "$console_output" | tail -"${CONSOLE_MODE}"
+        echo "${COLOR_YELLOW}================================================${COLOR_RESET}"
+    else
+        # Default for non-SUCCESS without test failures, or --console auto
+        _display_error_logs "$job_name" "$build_number" "$console_output"
+    fi
+}
+
 # Display error logs section for failure output
 # Usage: _display_error_logs "job_name" "build_number" "console_output"
 #
@@ -2111,6 +2115,35 @@ _display_error_logs() {
     fi
 
     echo "${COLOR_YELLOW}==================${COLOR_RESET}"
+}
+
+# Display all failure diagnostic sections for human-readable output
+# This is the single entry point for failure diagnostics, called by both
+# display_failure_output (snapshot path) and _handle_build_completion (monitoring path).
+# Usage: _display_failure_diagnostics "job_name" "build_number" "console_output"
+# Spec: refactor-shared-failure-diagnostics-spec.md
+_display_failure_diagnostics() {
+    local job_name="$1"
+    local build_number="$2"
+    local console_output="$3"
+
+    # 1. Early failure (no stages ran) → show full console, return
+    if _display_early_failure_console "$job_name" "$build_number" "$console_output"; then
+        return 0
+    fi
+
+    # 2. Failed jobs tree (with downstream detection)
+    _display_failed_jobs_tree "$job_name" "$build_number" "$console_output"
+
+    # 3. Test results
+    local test_results_json
+    test_results_json=$(fetch_test_results "$job_name" "$build_number")
+    if [[ -n "$test_results_json" ]]; then
+        display_test_results "$test_results_json"
+    fi
+
+    # 4. Error log section (respects --console and test failure suppression)
+    _display_error_log_section "$job_name" "$build_number" "$console_output" "$test_results_json"
 }
 
 # Display in-progress build output (unified header format)
@@ -2310,9 +2343,9 @@ output_json() {
         duration_seconds=$((duration / 1000))
     fi
 
-    # Determine if build is failed
+    # Determine if build is failed (any non-SUCCESS completed result)
     local is_failed=false
-    if [[ "$result" == "FAILURE" || "$result" == "UNSTABLE" || "$result" == "ABORTED" ]]; then
+    if [[ "$result" != "SUCCESS" && "$result" != "null" && -n "$result" ]]; then
         is_failed=true
     fi
 

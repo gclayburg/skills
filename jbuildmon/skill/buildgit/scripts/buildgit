@@ -756,43 +756,14 @@ _handle_build_completion() {
     local result
     result=$(echo "$build_json" | jq -r '.result // "UNKNOWN"')
 
-    # Display failure details if applicable (UNSTABLE or FAILURE)
-    if [[ "$result" == "UNSTABLE" || "$result" == "FAILURE" ]]; then
-        # Check for early failure (no stages ran) - show full console
-        # Spec: buildgit-early-build-failure-spec.md
+    # Display failure details if applicable (any non-SUCCESS result)
+    # Spec: refactor-shared-failure-diagnostics-spec.md
+    if [[ "$result" != "SUCCESS" ]]; then
         local console_output
         console_output=$(get_console_output "$job_name" "$build_number" 2>/dev/null) || true
-        if ! _display_early_failure_console "$job_name" "$build_number" "$console_output"; then
-            # Stages exist - use existing test results logic
-            # Spec: unify-follow-log-spec.md, Section 4 (Build Completion) - test failure details
-            local test_results_json
-            test_results_json=$(fetch_test_results "$job_name" "$build_number")
-            if [[ -n "$test_results_json" ]]; then
-                display_test_results "$test_results_json"
-            fi
 
-            # Show console log output when --console is specified
-            # Spec: console-on-unstable-spec.md, Section 3 (Behavior With --console)
-            if [[ -n "${CONSOLE_MODE:-}" ]]; then
-                local has_test_failures=false
-                if [[ -n "$test_results_json" ]]; then
-                    local fail_count
-                    fail_count=$(echo "$test_results_json" | jq -r '.failCount // 0') || fail_count=0
-                    if [[ "$fail_count" -gt 0 ]]; then
-                        has_test_failures=true
-                    fi
-                fi
-
-                if [[ "${CONSOLE_MODE}" =~ ^[0-9]+$ ]]; then
-                    echo ""
-                    echo "=== Console Log (last ${CONSOLE_MODE} lines) ==="
-                    echo "$console_output" | tail -"${CONSOLE_MODE}"
-                    echo "================================================"
-                elif [[ "${CONSOLE_MODE}" == "auto" ]]; then
-                    _display_error_logs "$job_name" "$build_number" "$console_output"
-                fi
-            fi
-        fi
+        # Failure diagnostics (shared)
+        _display_failure_diagnostics "$job_name" "$build_number" "$console_output"
     fi
 
     # Print final status line
