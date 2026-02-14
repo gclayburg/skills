@@ -372,3 +372,51 @@ Building...
     assert_output ""
     # Empty output should trigger fallback in _display_error_logs
 }
+
+# =============================================================================
+# Parallel Branch: prefix Tests
+# Spec: bug-parallel-stages-display-spec.md
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Test Case: Parallel branch logs found via Branch: prefix fallback
+# Jenkins logs parallel branches as [Pipeline] { (Branch: StageName)
+# -----------------------------------------------------------------------------
+@test "extract_stage_logs_parallel_branch_prefix" {
+    local console_output='[Pipeline] { (Trigger Component Builds)
+[Pipeline] parallel
+[Pipeline] { (Branch: Build Handle)
+[Pipeline] sh
++ echo building handle
+building handle
+[Pipeline] }
+[Pipeline] { (Branch: Build SignalBoot)
+[Pipeline] sh
++ echo building signalboot
+building signalboot
+[Pipeline] }
+[Pipeline] }'
+
+    run extract_stage_logs "$console_output" "Build Handle"
+    assert_success
+    assert_output --partial "building handle"
+    refute_output --partial "building signalboot"
+}
+
+@test "extract_stage_logs_parallel_branch_nested_blocks" {
+    local console_output='[Pipeline] { (Wrapper)
+[Pipeline] parallel
+[Pipeline] { (Branch: MyBranch)
+[Pipeline] dir
+[Pipeline] {
+inner content
+[Pipeline] }
+post content
+[Pipeline] }
+[Pipeline] }'
+
+    run extract_stage_logs "$console_output" "MyBranch"
+    assert_success
+    assert_output --partial "inner content"
+    assert_output --partial "post content"
+}

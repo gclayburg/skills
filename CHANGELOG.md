@@ -6,8 +6,12 @@ All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are do
 
 ### Features
 - **Show test results for all builds** — Test results summary (`=== Test Results ===`) now appears for all completed builds including SUCCESS, not just failures. Uses green color for all-pass, yellow for failures. Shows placeholder when no test report is available. JSON output includes `test_results` field for all completed builds.
+- **Parallel stages display** — Parallel pipeline stages (e.g., `parallel { }` blocks) are now visually distinguished with `║` markers, properly tracked in monitoring mode, and show aggregate wrapper duration. JSON output includes `is_parallel_wrapper`, `parallel_branches`, `parallel_branch`, and `parallel_wrapper` fields.
 
 ### Bug Fixes
+- **Parallel stages premature printing** — Fixed monitoring mode printing parallel branch stages before they completed, showing `(unknown)` duration. All parallel branches are now independently tracked through completion.
+- **Missing downstream stages for parallel branches** — Fixed `extract_stage_logs()` not finding parallel branch console logs because Jenkins uses `(Branch: StageName)` prefix. Added fallback to search with `Branch:` prefix.
+- **Parallel wrapper stage duration** — Wrapper stages containing parallel blocks now show aggregate wall-clock duration (wrapper API time + longest branch duration) instead of just the setup time.
 - **Build monitoring header cleanup** — Removed misleading `Elapsed:` field from build header; added `Duration:` line after `Finished:` in monitoring mode.
 - **Snapshot mode missing Agent/Pipeline** — Fixed `buildgit status` not passing console output to header, so Build Info section (Agent, Pipeline) now displays in snapshot mode.
 - **Deferred header fields** — When `buildgit build` triggers a new build, fields not yet available (Commit, Build Info, Console URL) are printed as soon as console output arrives instead of showing "unknown".
