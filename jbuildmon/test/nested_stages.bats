@@ -139,6 +139,30 @@ Starting building: signalboot-job #20
     [[ $(echo "$result" | jq -r '.["Build SignalBoot"].build') == "20" ]]
 }
 
+@test "map_stages_to_downstream_prefers_stage_matching_job_when_multiple_matches_in_stage_logs" {
+    local console='[Pipeline] { (Build Handle)
+Starting building: phandlemono-handle #24
+Starting building: phandlemono-signalboot #25
+[Pipeline] }
+[Pipeline] { (Build SignalBoot)
+Starting building: phandlemono-handle #24
+Starting building: phandlemono-signalboot #25
+[Pipeline] }'
+
+    local stages='[
+        {"name":"Build Handle","status":"FAILED","durationMillis":13000},
+        {"name":"Build SignalBoot","status":"SUCCESS","durationMillis":205000}
+    ]'
+
+    local result
+    result=$(_map_stages_to_downstream "$console" "$stages")
+
+    [[ $(echo "$result" | jq -r '.["Build Handle"].job') == "phandlemono-handle" ]]
+    [[ $(echo "$result" | jq -r '.["Build Handle"].build') == "24" ]]
+    [[ $(echo "$result" | jq -r '.["Build SignalBoot"].job') == "phandlemono-signalboot" ]]
+    [[ $(echo "$result" | jq -r '.["Build SignalBoot"].build') == "25" ]]
+}
+
 # =============================================================================
 # Test Cases: print_stage_line with indent and agent_prefix
 # =============================================================================

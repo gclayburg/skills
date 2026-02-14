@@ -55,6 +55,7 @@ These files represent completed specifications in the specs/ directory.  This li
 - bug2026-02-13-build-monitoring-header-spec.md  fix missing Agent/Pipeline/Commit in build monitoring header, remove Elapsed field, add Duration line at completion, add running-time message for `status -f`, fix snapshot console_output passthrough
 - show-test-results-always-spec.md  display test results summary for all completed builds (SUCCESS, FAILURE, UNSTABLE) across all output modes; green for all-pass, yellow for failures, placeholder when no report
 - bug-parallel-stages-display-spec.md  fix parallel stage tracking in monitoring mode (premature printing, missing nested downstream stages), add visual `║` parallel indicator, and show aggregate wrapper duration
+- bug2026-02-14-parallel-branch-downstream-mapping-spec.md  fix incorrect downstream job association in parallel branch stage mapping so each branch shows its own nested stages across status and monitoring modes
 
 
 

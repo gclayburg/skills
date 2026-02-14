@@ -1106,6 +1106,67 @@ detect_all_downstream_builds() {
         sed -E 's/Starting building: ([^ ]+) #([0-9]+)/\1 \2/' || true
 }
 
+# Select the best downstream build match for a given stage when multiple exist.
+# This avoids mis-association when stage log extraction contains extra branch lines.
+# Usage: _select_downstream_build_for_stage "Stage Name" "$downstream_lines"
+# Returns: "job-name build-number" or empty
+_select_downstream_build_for_stage() {
+    local stage_name="$1"
+    local downstream_lines="$2"
+
+    [[ -z "$downstream_lines" ]] && return
+
+    local line_count
+    line_count=$(echo "$downstream_lines" | sed '/^[[:space:]]*$/d' | wc -l | tr -d '[:space:]')
+    if [[ "$line_count" -le 1 ]]; then
+        echo "$downstream_lines" | sed '/^[[:space:]]*$/d' | head -1
+        return
+    fi
+
+    local stage_tokens
+    stage_tokens=$(echo "$stage_name" | tr '[:upper:]' '[:lower:]' | \
+        sed -E 's/[^a-z0-9]+/ /g; s/\b(build|trigger|stage|component|components)\b/ /g; s/[[:space:]]+/ /g; s/^ //; s/ $//')
+
+    local best_line=""
+    local best_score=-1
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        local job build
+        job=$(echo "$line" | awk '{print $1}')
+        build=$(echo "$line" | awk '{print $2}')
+        [[ -z "$job" || -z "$build" ]] && continue
+
+        local job_lc score
+        job_lc=$(echo "$job" | tr '[:upper:]' '[:lower:]')
+        score=0
+
+        local token
+        for token in $stage_tokens; do
+            [[ ${#token} -lt 3 ]] && continue
+            if [[ "$job_lc" == *"$token"* ]]; then
+                score=$((score + 1))
+            fi
+        done
+
+        if [[ "$score" -gt "$best_score" ]]; then
+            best_score="$score"
+            best_line="$line"
+        elif [[ "$score" -eq "$best_score" && -n "$best_line" ]]; then
+            local best_build
+            best_build=$(echo "$best_line" | awk '{print $2}')
+            if [[ "$build" =~ ^[0-9]+$ && "$best_build" =~ ^[0-9]+$ && "$build" -gt "$best_build" ]]; then
+                best_line="$line"
+            fi
+        fi
+    done <<< "$downstream_lines"
+
+    if [[ -n "$best_line" ]]; then
+        echo "$best_line"
+    else
+        echo "$downstream_lines" | sed '/^[[:space:]]*$/d' | tail -1
+    fi
+}
+
 # Find the failed downstream build from console output
 # For parallel stages, checks each downstream build's status
 # Usage: find_failed_downstream_build "$console_output"
@@ -2004,8 +2065,10 @@ _track_nested_stage_changes() {
 
                     if [[ -n "$downstream" ]]; then
                         local ds_job ds_build
-                        ds_job=$(echo "$downstream" | head -1 | cut -d' ' -f1)
-                        ds_build=$(echo "$downstream" | head -1 | cut -d' ' -f2)
+                        local selected_downstream
+                        selected_downstream=$(_select_downstream_build_for_stage "$stage_name" "$downstream")
+                        ds_job=$(echo "$selected_downstream" | awk '{print $1}')
+                        ds_build=$(echo "$selected_downstream" | awk '{print $2}')
 
                         if [[ -n "$ds_job" && -n "$ds_build" ]]; then
                             stage_downstream_map_state=$(echo "$stage_downstream_map_state" | jq \
@@ -3333,10 +3396,12 @@ _map_stages_to_downstream() {
             downstream=$(detect_all_downstream_builds "$stage_logs")
 
             if [[ -n "$downstream" ]]; then
-                # Take the first downstream build for this stage
+                # Select best downstream match for this stage
                 local ds_job ds_build
-                ds_job=$(echo "$downstream" | head -1 | cut -d' ' -f1)
-                ds_build=$(echo "$downstream" | head -1 | cut -d' ' -f2)
+                local selected_downstream
+                selected_downstream=$(_select_downstream_build_for_stage "$stage_name" "$downstream")
+                ds_job=$(echo "$selected_downstream" | awk '{print $1}')
+                ds_build=$(echo "$selected_downstream" | awk '{print $2}')
 
                 if [[ -n "$ds_job" && -n "$ds_build" ]]; then
                     result=$(echo "$result" | jq \
