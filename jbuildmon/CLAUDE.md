@@ -1,6 +1,7 @@
 ## Testing
 - This project uses bats-core for unit testing
 - IMPORTANT: bats-core is located at <git_repo_root>/jbuildmon/test/bats/bin/bats, do not use any bats command in your $PATH.
+- be aware that 'buildgit status -f' command will never finish running.  after printing output, it will wait for the next build to start
 
 ## Implementation Rules (specs/todo)
 When implementing a spec or bug fix from `specs/todo/`:

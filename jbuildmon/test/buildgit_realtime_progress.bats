@@ -241,7 +241,7 @@ EOF
 # (Updated: three monitor functions consolidated into _monitor_build)
 # -----------------------------------------------------------------------------
 @test "follow_monitor_uses_bg_log_progress_for_elapsed_time" {
-    run grep -A60 "^_monitor_build()" "${PROJECT_DIR}/buildgit"
+    run grep -A100 "^_monitor_build()" "${PROJECT_DIR}/buildgit"
     assert_success
     assert_output --partial "bg_log_progress"
     assert_output --partial "elapsed"

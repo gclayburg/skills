@@ -57,6 +57,7 @@ These files represent completed specifications in the specs/ directory.  This li
 - bug-parallel-stages-display-spec.md  fix parallel stage tracking in monitoring mode (premature printing, missing nested downstream stages), add visual `║` parallel indicator, and show aggregate wrapper duration
 - feature2026-02-14-numbered-parallel-stage-display-spec.md  add numbered parallel branch markers (`║1`, `║2`, `║3.1`), fixed-width agent formatting, wrapper-last ordering, and snapshot/monitoring terminal output consistency rules
 - bug2026-02-14-parallel-branch-downstream-mapping-spec.md  fix incorrect downstream job association in parallel branch stage mapping so each branch shows its own nested stages across status and monitoring modes
+- bug2026-02-14-monitoring-missing-stages-spec.md  fix monitoring mode missing downstream stages and premature wrapper/branch printing by deferring wrapper and downstream parent stages until children are resolved
 
 
 

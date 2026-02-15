@@ -366,3 +366,158 @@ echo two
     assert_success
     assert_output "[12:34:56] ℹ   Stage:   [agent1        ] Deploy (5s)"
 }
+
+# =============================================================================
+# Monitoring mode deferral tests for _track_nested_stage_changes
+# Spec reference: bug2026-02-14-monitoring-missing-stages-spec.md
+# =============================================================================
+
+@test "wrapper_deferred_until_branches_terminal" {
+    # Poll 1: wrapper is SUCCESS but one branch is IN_PROGRESS → wrapper should NOT print
+    # Poll 2: both branches terminal → wrapper prints
+    local poll_count_file="${TEST_TEMP_DIR}/poll_count"
+    echo "0" > "$poll_count_file"
+
+    get_all_stages() {
+        echo '[{"name":"parallel build test","status":"SUCCESS","startTimeMillis":0,"durationMillis":245000}]'
+    }
+    get_console_output() { echo "Running on agent6 in /ws"; }
+
+    _get_nested_stages() {
+        local count
+        count=$(cat "$poll_count_file")
+        count=$((count + 1))
+        echo "$count" > "$poll_count_file"
+
+        if [[ $count -eq 1 ]]; then
+            echo '[
+                {"name":"branch1","status":"SUCCESS","durationMillis":120000,"agent":"agent6","nesting_depth":1,"parallel_path":"1","parallel_branch":"branch1"},
+                {"name":"branch2","status":"IN_PROGRESS","durationMillis":0,"agent":"agent7","nesting_depth":1,"parallel_path":"2","parallel_branch":"branch2"},
+                {"name":"parallel build test","status":"SUCCESS","durationMillis":2000,"agent":"agent6","nesting_depth":0,"is_parallel_wrapper":true,"parallel_branches":["branch1","branch2"]}
+            ]'
+        else
+            echo '[
+                {"name":"branch1","status":"SUCCESS","durationMillis":120000,"agent":"agent6","nesting_depth":1,"parallel_path":"1","parallel_branch":"branch1"},
+                {"name":"branch2","status":"SUCCESS","durationMillis":200000,"agent":"agent7","nesting_depth":1,"parallel_path":"2","parallel_branch":"branch2"},
+                {"name":"parallel build test","status":"SUCCESS","durationMillis":245000,"agent":"agent6","nesting_depth":0,"is_parallel_wrapper":true,"parallel_branches":["branch1","branch2"]}
+            ]'
+        fi
+    }
+
+    # Poll 1 — capture stdout (state) and stderr (printed output) in one call
+    local state1 stderr1_file="${TEST_TEMP_DIR}/stderr1"
+    state1=$(_track_nested_stage_changes "test-job" "42" "[]" "false" 2>"$stderr1_file")
+    local stderr1
+    stderr1=$(cat "$stderr1_file")
+
+    # Wrapper should NOT be printed on poll 1 (branch2 still IN_PROGRESS)
+    [[ "$stderr1" != *"parallel build test"* ]]
+    # branch1 should print (it's terminal and simple)
+    [[ "$stderr1" == *"branch1"* ]]
+
+    # Poll 2 - pass state from poll 1
+    local stderr2_file="${TEST_TEMP_DIR}/stderr2"
+    state2=$(_track_nested_stage_changes "test-job" "42" "$state1" "false" 2>"$stderr2_file")
+    local stderr2
+    stderr2=$(cat "$stderr2_file")
+
+    # Now wrapper should print
+    [[ "$stderr2" == *"parallel build test"* ]]
+}
+
+@test "downstream_stage_deferred_until_children_appear" {
+    # Poll 1: parent has has_downstream=true but no children → defer
+    # Poll 2: children appear → parent prints
+    local poll_count_file="${TEST_TEMP_DIR}/poll_count"
+    echo "0" > "$poll_count_file"
+
+    get_all_stages() {
+        echo '[{"name":"Build Handle","status":"SUCCESS","startTimeMillis":0,"durationMillis":38000}]'
+    }
+    get_console_output() { echo "Running on agent1 in /ws"; }
+
+    _get_nested_stages() {
+        local count
+        count=$(cat "$poll_count_file")
+        count=$((count + 1))
+        echo "$count" > "$poll_count_file"
+
+        if [[ $count -eq 1 ]]; then
+            echo '[
+                {"name":"Build Handle","status":"SUCCESS","durationMillis":38000,"agent":"agent1","nesting_depth":0,"has_downstream":true}
+            ]'
+        else
+            echo '[
+                {"name":"Build Handle->Compile","status":"SUCCESS","durationMillis":10000,"agent":"buildagent9","nesting_depth":1},
+                {"name":"Build Handle","status":"SUCCESS","durationMillis":38000,"agent":"agent1","nesting_depth":0,"has_downstream":true}
+            ]'
+        fi
+    }
+
+    # Poll 1 — capture stdout (state) and stderr (printed output) in one call
+    local state1 stderr1_file="${TEST_TEMP_DIR}/stderr1"
+    state1=$(_track_nested_stage_changes "test-job" "42" "[]" "false" 2>"$stderr1_file")
+    local stderr1
+    stderr1=$(cat "$stderr1_file")
+
+    # Build Handle should NOT print (no children yet)
+    [[ "$stderr1" != *"Build Handle"* ]]
+
+    # Poll 2
+    local stderr2_file="${TEST_TEMP_DIR}/stderr2"
+    local state2
+    state2=$(_track_nested_stage_changes "test-job" "42" "$state1" "false" 2>"$stderr2_file")
+    local stderr2
+    stderr2=$(cat "$stderr2_file")
+
+    # Now Build Handle should print, along with its child
+    [[ "$stderr2" == *"Build Handle->Compile"* ]]
+    [[ "$stderr2" == *"Build Handle (38s)"* ]]
+}
+
+@test "simple_stages_print_immediately" {
+    # Regression: stages without wrapper/downstream flags print on first terminal
+    get_all_stages() {
+        echo '[
+            {"name":"Checkout","status":"SUCCESS","startTimeMillis":0,"durationMillis":3000},
+            {"name":"Build","status":"SUCCESS","startTimeMillis":0,"durationMillis":15000}
+        ]'
+    }
+    get_console_output() { echo "Running on agent1 in /ws"; }
+
+    _get_nested_stages() {
+        echo '[
+            {"name":"Checkout","status":"SUCCESS","durationMillis":3000,"agent":"agent1","nesting_depth":0},
+            {"name":"Build","status":"SUCCESS","durationMillis":15000,"agent":"agent1","nesting_depth":0}
+        ]'
+    }
+
+    local stderr_output
+    stderr_output=$(_track_nested_stage_changes "test-job" "42" "[]" "false" 2>&1 >/dev/null)
+
+    # Both stages should print immediately
+    [[ "$stderr_output" == *"Checkout (3s)"* ]]
+    [[ "$stderr_output" == *"Build (15s)"* ]]
+}
+
+@test "deferred_wrapper_uses_correct_duration" {
+    # Wrapper should print with the aggregate duration, not the premature API duration
+    get_all_stages() {
+        echo '[{"name":"parallel build test","status":"SUCCESS","startTimeMillis":0,"durationMillis":245000}]'
+    }
+    get_console_output() { echo "Running on agent6 in /ws"; }
+
+    _get_nested_stages() {
+        echo '[
+            {"name":"branch1","status":"SUCCESS","durationMillis":120000,"agent":"agent6","nesting_depth":1,"parallel_path":"1","parallel_branch":"branch1"},
+            {"name":"branch2","status":"SUCCESS","durationMillis":200000,"agent":"agent7","nesting_depth":1,"parallel_path":"2","parallel_branch":"branch2"},
+            {"name":"parallel build test","status":"SUCCESS","durationMillis":245000,"agent":"agent6","nesting_depth":0,"is_parallel_wrapper":true,"parallel_branches":["branch1","branch2"]}
+        ]'
+    }
+
+    local stderr_output
+    stderr_output=$(_track_nested_stage_changes "test-job" "42" "[]" "false" 2>&1 >/dev/null)
+
+    # Wrapper should show the aggregate duration (245s = 4m 5s), not 2s
+    [[ "$stderr_output" == *"parallel build test (4m 5s)"* ]]
+}

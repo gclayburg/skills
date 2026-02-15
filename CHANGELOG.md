@@ -2,6 +2,11 @@
 
 All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are documented in this file.
 
+## 2026-02-14
+
+### Bug Fixes
+- **Monitoring mode missing stages** — Fixed monitoring mode (`build`, `push`, `status -f`) missing downstream stages and printing wrapper/parent stages prematurely. Wrapper stages with parallel branches are now deferred until all branches reach terminal status. Downstream parent stages are deferred until at least one child stage appears. Settlement window increased to allow deeply nested builds to fully resolve.
+
 ## 2026-02-13
 
 ### Features

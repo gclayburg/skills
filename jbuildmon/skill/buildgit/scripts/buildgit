@@ -42,6 +42,8 @@ COMMAND_ARGS=()
 # Follow mode configuration (matches pushmon.sh)
 POLL_INTERVAL="${POLL_INTERVAL:-5}"
 MAX_BUILD_TIME="${MAX_BUILD_TIME:-1800}"
+MONITOR_SETTLE_MAX_SECONDS="${MONITOR_SETTLE_MAX_SECONDS:-45}"
+MONITOR_SETTLE_STABLE_POLLS="${MONITOR_SETTLE_STABLE_POLLS:-3}"
 
 # =============================================================================
 # Interrupt Handler for Follow Mode
@@ -454,6 +456,27 @@ _monitor_build() {
 
         # Check completion (after stage tracking so final transitions are caught)
         if [[ "$building" == "false" && -n "$result" ]]; then
+            # Reconcile late-arriving nested stage metadata before exiting monitor.
+            # Jenkins can mark the root build complete slightly before nested
+            # stage details are fully available through API/log parsing.
+            # Keep polling until state stabilizes or max settle window expires.
+            local settle_elapsed=0
+            local stable_polls=0
+            local prev_state_fingerprint
+            prev_state_fingerprint=$(echo "$stage_state" | jq -cS '.' 2>/dev/null || echo "$stage_state")
+            while [[ $settle_elapsed -lt $MONITOR_SETTLE_MAX_SECONDS && $stable_polls -lt $MONITOR_SETTLE_STABLE_POLLS ]]; do
+                sleep 1
+                stage_state=$(_track_nested_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE")
+                local current_state_fingerprint
+                current_state_fingerprint=$(echo "$stage_state" | jq -cS '.' 2>/dev/null || echo "$stage_state")
+                if [[ "$current_state_fingerprint" == "$prev_state_fingerprint" ]]; then
+                    stable_polls=$((stable_polls + 1))
+                else
+                    stable_polls=0
+                    prev_state_fingerprint="$current_state_fingerprint"
+                fi
+                settle_elapsed=$((settle_elapsed + 1))
+            done
             return 0
         fi
 

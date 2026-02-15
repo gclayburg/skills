@@ -2023,13 +2023,35 @@ _track_nested_stage_changes() {
 
     local previous_nested="[]"
     local printed_state="{}"
+    local prev_type=""
     if [[ -n "$previous_composite_state" && "$previous_composite_state" != "[]" && "$previous_composite_state" != "null" ]]; then
-        local is_composite
-        is_composite=$(echo "$previous_composite_state" | jq 'type == "object"' 2>/dev/null) || is_composite="false"
-        if [[ "$is_composite" == "true" ]]; then
+        prev_type=$(echo "$previous_composite_state" | jq -r 'type' 2>/dev/null) || prev_type=""
+        if [[ "$prev_type" == "object" ]]; then
             previous_nested=$(echo "$previous_composite_state" | jq '.nested // []')
             printed_state=$(echo "$previous_composite_state" | jq '.printed // {}')
+        elif [[ "$prev_type" == "array" ]]; then
+            # Backward compatibility: banner snapshot used a flat stage array.
+            previous_nested="$previous_composite_state"
         fi
+    fi
+
+    # Seed printed-state from previously seen statuses so completed stages that
+    # were already shown in the banner are not re-printed during the first poll.
+    # Only seed from flat arrays (banner transition); composite objects already
+    # carry an accurate .printed state that respects deferral decisions.
+    if [[ "$prev_type" != "object" && -n "$previous_nested" && "$previous_nested" != "[]" ]]; then
+        local seeded_printed="{}"
+        seeded_printed=$(echo "$previous_nested" | jq '
+            reduce .[] as $s ({};
+                if ($s.status == "SUCCESS" or $s.status == "FAILED" or $s.status == "UNSTABLE" or $s.status == "ABORTED") then
+                    . + {($s.name): ((.[$s.name] // {}) + {terminal: true})}
+                elif ($s.status == "IN_PROGRESS") then
+                    . + {($s.name): ((.[$s.name] // {}) + {running: true})}
+                else
+                    .
+                end
+            )' 2>/dev/null) || seeded_printed="{}"
+        printed_state=$(echo "$seeded_printed" "$printed_state" | jq -s '.[0] * .[1]' 2>/dev/null) || printed_state="$seeded_printed"
     fi
 
     local current_parent_stages
@@ -2096,6 +2118,38 @@ _track_nested_stage_changes() {
                     if [[ "$verbose" != "true" ]]; then
                         if [[ -z "$duration_ms" || "$duration_ms" == "null" || ! "$duration_ms" =~ ^[0-9]+$ ]]; then
                             allow_print=false
+                        fi
+                    fi
+                    # Defer parallel wrapper until all branches are terminal
+                    if [[ "$allow_print" == "true" ]]; then
+                        local is_pw has_ds
+                        is_pw=$(echo "$current_nested" | jq -r ".[$i].is_parallel_wrapper // false")
+                        has_ds=$(echo "$current_nested" | jq -r ".[$i].has_downstream // false")
+                        if [[ "$is_pw" == "true" ]]; then
+                            local pw_branches pw_all_terminal
+                            pw_branches=$(echo "$current_nested" | jq -r ".[$i].parallel_branches // [] | .[]")
+                            pw_all_terminal="true"
+                            local pw_branch
+                            while IFS= read -r pw_branch; do
+                                [[ -z "$pw_branch" ]] && continue
+                                local pw_branch_status
+                                pw_branch_status=$(echo "$current_nested" | jq -r --arg b "$pw_branch" '.[] | select(.name == $b) | .status // "UNKNOWN"')
+                                case "$pw_branch_status" in
+                                    SUCCESS|FAILED|UNSTABLE|ABORTED) ;;
+                                    *) pw_all_terminal="false"; break ;;
+                                esac
+                            done <<< "$pw_branches"
+                            if [[ "$pw_all_terminal" != "true" ]]; then
+                                allow_print=false
+                            fi
+                        fi
+                        # Defer downstream parent until at least one child stage appears
+                        if [[ "$allow_print" == "true" && "$has_ds" == "true" ]]; then
+                            local ds_child_count
+                            ds_child_count=$(echo "$current_nested" | jq --arg pfx "${stage_name}->" '[.[] | select(.name | startswith($pfx))] | length')
+                            if [[ "$ds_child_count" -eq 0 ]]; then
+                                allow_print=false
+                            fi
                         fi
                     fi
                     if [[ "$allow_print" == "true" ]]; then
