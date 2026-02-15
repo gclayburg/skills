@@ -362,3 +362,50 @@ WRAPPER
     # Should show build number somewhere in output
     [[ "$output" == *"43"* ]] || [[ "$output" == *"#43"* ]] || [[ "$output" == *"Build"* ]]
 }
+
+# =============================================================================
+# Test Cases: Usage Help on Build Subcommand
+# Spec reference: usage-help-spec.md
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Test Case: build -h prints usage to stdout and exits 0
+# Spec: usage-help-spec.md, Acceptance Criteria 3
+# -----------------------------------------------------------------------------
+@test "build_help_short_flag" {
+    cd "${TEST_REPO}"
+
+    run "${PROJECT_DIR}/buildgit" build -h
+
+    assert_success
+    assert_output --partial "Usage: buildgit"
+    assert_output --partial "Commands:"
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: build --help prints usage to stdout and exits 0
+# Spec: usage-help-spec.md, Acceptance Criteria 4
+# -----------------------------------------------------------------------------
+@test "build_help_long_flag" {
+    cd "${TEST_REPO}"
+
+    run "${PROJECT_DIR}/buildgit" build --help
+
+    assert_success
+    assert_output --partial "Usage: buildgit"
+    assert_output --partial "Commands:"
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: build --junk prints error + usage to stderr and exits non-zero
+# Spec: usage-help-spec.md, Acceptance Criteria 9
+# -----------------------------------------------------------------------------
+@test "build_unknown_option_shows_usage" {
+    cd "${TEST_REPO}"
+
+    run "${PROJECT_DIR}/buildgit" build --junk
+
+    assert_failure
+    assert_output --partial "Unknown option for build command: --junk"
+    assert_output --partial "Usage: buildgit"
+}

@@ -105,6 +105,20 @@ EOF
 }
 
 # =============================================================================
+# Usage Error Helper
+# =============================================================================
+
+# Print error message + usage to stderr, then exit
+# Usage: _usage_error "error message"
+_usage_error() {
+    local msg="$1"
+    log_error "$msg"
+    echo "" >&2
+    show_usage >&2
+    exit 1
+}
+
+# =============================================================================
 # Argument Parsing
 # =============================================================================
 
@@ -116,20 +130,17 @@ parse_global_options() {
         case "$1" in
             -j|--job)
                 if [[ -z "${2:-}" ]]; then
-                    log_error "Option $1 requires a job name"
-                    exit 1
+                    _usage_error "Option $1 requires a job name"
                 fi
                 JOB_NAME="$2"
                 shift 2
                 ;;
             -c|--console)
                 if [[ -z "${2:-}" ]]; then
-                    log_error "Option $1 requires a mode (auto or line count)"
-                    exit 1
+                    _usage_error "Option $1 requires a mode (auto or line count)"
                 fi
                 if [[ "$2" != "auto" ]] && ! [[ "$2" =~ ^[0-9]+$ ]]; then
-                    log_error "Invalid console mode: $2 (must be 'auto' or a number)"
-                    exit 1
+                    _usage_error "Invalid console mode: $2 (must be 'auto' or a number)"
                 fi
                 CONSOLE_MODE="$2"
                 shift 2
@@ -144,10 +155,7 @@ parse_global_options() {
                 ;;
             -*)
                 # Unknown option before command - error
-                log_error "Unknown global option: $1"
-                echo ""
-                show_usage
-                exit 1
+                _usage_error "Unknown global option: $1"
                 ;;
             *)
                 # First non-option is the command
@@ -178,6 +186,10 @@ _parse_status_options() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            -h|--help)
+                show_usage
+                exit 0
+                ;;
             --json)
                 STATUS_JSON_MODE=true
                 shift
@@ -187,18 +199,15 @@ _parse_status_options() {
                 shift
                 ;;
             -*)
-                bg_log_error "Unknown option for status command: $1"
-                return 1
+                _usage_error "Unknown option for status command: $1"
                 ;;
             *)
                 # Positional argument: build number
                 if [[ -n "$STATUS_BUILD_NUMBER" ]]; then
-                    bg_log_error "Unexpected argument: $1 (build number already set to $STATUS_BUILD_NUMBER)"
-                    return 1
+                    _usage_error "Unexpected argument: $1 (build number already set to $STATUS_BUILD_NUMBER)"
                 fi
                 if ! [[ "$1" =~ ^[1-9][0-9]*$ ]]; then
-                    bg_log_error "Invalid build number: $1 (must be a positive integer)"
-                    return 1
+                    _usage_error "Invalid build number: $1 (must be a positive integer)"
                 fi
                 STATUS_BUILD_NUMBER="$1"
                 shift
@@ -755,10 +764,7 @@ cmd_status() {
 
     # Validate incompatible options: follow + build number
     if [[ "$STATUS_FOLLOW_MODE" == "true" && -n "$STATUS_BUILD_NUMBER" ]]; then
-        bg_log_error "Cannot use --follow with a specific build number"
-        echo ""
-        show_usage
-        return 1
+        _usage_error "Cannot use --follow with a specific build number"
     fi
 
     # For follow mode, jump straight to Jenkins monitoring
@@ -1029,14 +1035,17 @@ _parse_build_options() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            -h|--help)
+                show_usage
+                exit 0
+                ;;
             --no-follow)
                 BUILD_NO_FOLLOW=true
                 shift
                 ;;
             *)
                 # Unknown option for build command
-                bg_log_error "Unknown option for build command: $1"
-                return 1
+                _usage_error "Unknown option for build command: $1"
                 ;;
         esac
     done
@@ -1053,10 +1062,8 @@ _parse_build_options() {
 # Spec reference: buildgit-spec.md, buildgit build
 # Error handling: buildgit-spec.md, Error Handling section
 cmd_build() {
-    # Parse build-specific options
-    if ! _parse_build_options "$@"; then
-        return 1
-    fi
+    # Parse build-specific options (exits on error or -h/--help)
+    _parse_build_options "$@"
 
     # -------------------------------------------------------------------------
     # Part 1: Validate environment, connection, and resolve job name

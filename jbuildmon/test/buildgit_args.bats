@@ -81,14 +81,22 @@ Commands:
 USAGE_EOF
 }
 
+# Usage error helper
+_usage_error() {
+    local msg="$1"
+    log_error "$msg"
+    echo "" >&2
+    show_usage >&2
+    exit 1
+}
+
 # Extract parse_global_options from buildgit
 parse_global_options() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -j|--job)
                 if [[ -z "${2:-}" ]]; then
-                    log_error "Option $1 requires a job name"
-                    exit 1
+                    _usage_error "Option $1 requires a job name"
                 fi
                 JOB_NAME="$2"
                 shift 2
@@ -102,10 +110,7 @@ parse_global_options() {
                 shift
                 ;;
             -*)
-                log_error "Unknown global option: $1"
-                echo ""
-                show_usage
-                exit 1
+                _usage_error "Unknown global option: $1"
                 ;;
             *)
                 COMMAND="$1"
@@ -299,6 +304,19 @@ EOF
 
     assert_failure
     assert_output --partial "Unknown global option: --unknown-option"
+    assert_output --partial "Usage: buildgit"
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: -garbage prints error + usage to stderr and exits non-zero
+# Spec: usage-help-spec.md, Acceptance Criteria 10
+# -----------------------------------------------------------------------------
+@test "parse_unknown_global_option_shows_usage" {
+    run "${PROJECT_DIR}/buildgit" -garbage
+
+    assert_failure
+    assert_output --partial "Unknown global option: -garbage"
+    assert_output --partial "Usage: buildgit"
 }
 
 # -----------------------------------------------------------------------------

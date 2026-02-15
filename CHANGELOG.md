@@ -2,6 +2,11 @@
 
 All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are documented in this file.
 
+## 2026-02-15
+
+### Features
+- **Usage help on invalid options** — Unknown or invalid options for `status` and `build` subcommands now display the full usage help alongside the error message. `-h`/`--help` is recognized on `status` and `build` subcommands as a valid help request (exit 0, stdout). Error usage output goes to stderr consistently across all commands.
+
 ## 2026-02-14
 
 ### Bug Fixes

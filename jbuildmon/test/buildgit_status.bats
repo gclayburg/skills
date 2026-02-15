@@ -596,3 +596,94 @@ WRAPPER
     # Should use the latest build (99) from get_last_build_number
     assert_output --partial "REQUESTED_BUILD: 99"
 }
+
+# =============================================================================
+# Test Cases: Usage Help on Subcommand Help and Invalid Options
+# Spec reference: usage-help-spec.md
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Test Case: status -h prints usage to stdout and exits 0
+# Spec: usage-help-spec.md, Acceptance Criteria 1
+# -----------------------------------------------------------------------------
+@test "status_help_short_flag" {
+    cd "${TEST_REPO}"
+
+    run "${PROJECT_DIR}/buildgit" status -h
+
+    assert_success
+    assert_output --partial "Usage: buildgit"
+    assert_output --partial "Commands:"
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: status --help prints usage to stdout and exits 0
+# Spec: usage-help-spec.md, Acceptance Criteria 2
+# -----------------------------------------------------------------------------
+@test "status_help_long_flag" {
+    cd "${TEST_REPO}"
+
+    run "${PROJECT_DIR}/buildgit" status --help
+
+    assert_success
+    assert_output --partial "Usage: buildgit"
+    assert_output --partial "Commands:"
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: status -junk prints error + usage to stderr and exits non-zero
+# Spec: usage-help-spec.md, Acceptance Criteria 5
+# -----------------------------------------------------------------------------
+@test "status_unknown_short_option_shows_usage" {
+    cd "${TEST_REPO}"
+
+    run "${PROJECT_DIR}/buildgit" status -junk
+
+    assert_failure
+    assert_output --partial "Unknown option for status command: -junk"
+    assert_output --partial "Usage: buildgit"
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: status --garbage prints error + usage to stderr and exits non-zero
+# Spec: usage-help-spec.md, Acceptance Criteria 6
+# -----------------------------------------------------------------------------
+@test "status_unknown_long_option_shows_usage" {
+    cd "${TEST_REPO}"
+
+    run "${PROJECT_DIR}/buildgit" status --garbage
+
+    assert_failure
+    assert_output --partial "Unknown option for status command: --garbage"
+    assert_output --partial "Usage: buildgit"
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: status abc (invalid build number) prints error + usage
+# Spec: usage-help-spec.md, Acceptance Criteria 7
+# -----------------------------------------------------------------------------
+@test "status_invalid_build_number_shows_usage" {
+    cd "${TEST_REPO}"
+
+    run "${PROJECT_DIR}/buildgit" status abc
+
+    assert_failure
+    assert_output --partial "Invalid build number: abc"
+    assert_output --partial "Usage: buildgit"
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: status 5 10 (unexpected argument) prints error + usage
+# Spec: usage-help-spec.md, Acceptance Criteria 8
+# -----------------------------------------------------------------------------
+@test "status_unexpected_argument_shows_usage" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_build_number_test_wrapper "42"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 5 10
+
+    assert_failure
+    assert_output --partial "Unexpected argument: 10"
+    assert_output --partial "Usage: buildgit"
+}
