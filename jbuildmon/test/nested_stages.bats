@@ -170,38 +170,38 @@ Starting building: phandlemono-signalboot #25
 @test "print_stage_line_with_agent_prefix" {
     run print_stage_line "Checkout" "SUCCESS" 500 "" "[orchestrator1] "
     assert_success
-    assert_output "[18:00:18] ℹ   Stage: [orchestrator1] Checkout (<1s)"
+    assert_output "[18:00:18] ℹ   Stage: [orchestrator1 ] Checkout (<1s)"
 }
 
 @test "print_stage_line_with_indent_and_agent" {
     run print_stage_line "Build Handle->Compile Code" "SUCCESS" 18000 "  " "[buildagent9] "
     assert_success
-    assert_output "[18:00:18] ℹ   Stage:   [buildagent9] Build Handle->Compile Code (18s)"
+    assert_output "[18:00:18] ℹ   Stage:   [buildagent9   ] Build Handle->Compile Code (18s)"
 }
 
 @test "print_stage_line_nested_failed_with_marker" {
     run print_stage_line "Build Handle->Package Zip" "FAILED" 20000 "  " "[buildagent9] "
     assert_success
-    [[ "$output" == *"Stage:   [buildagent9] Build Handle->Package Zip (20s)"* ]]
+    [[ "$output" == *"Stage:   [buildagent9   ] Build Handle->Package Zip (20s)"* ]]
     [[ "$output" == *"← FAILED"* ]]
 }
 
 @test "print_stage_line_double_nested_indent" {
     run print_stage_line "A->B->C" "SUCCESS" 5000 "    " "[agent3] "
     assert_success
-    assert_output "[18:00:18] ℹ   Stage:     [agent3] A->B->C (5s)"
+    assert_output "[18:00:18] ℹ   Stage:     [agent3        ] A->B->C (5s)"
 }
 
 @test "print_stage_line_nested_not_executed" {
     run print_stage_line "Build Handle->Deploy" "NOT_EXECUTED" "" "  " "[buildagent9] "
     assert_success
-    assert_output "[18:00:18] ℹ   Stage:   [buildagent9] Build Handle->Deploy (not executed)"
+    assert_output "[18:00:18] ℹ   Stage:   [buildagent9   ] Build Handle->Deploy (not executed)"
 }
 
 @test "print_stage_line_nested_in_progress" {
     run print_stage_line "Build Handle->Compile" "IN_PROGRESS" "" "  " "[buildagent9] "
     assert_success
-    assert_output "[18:00:18] ℹ   Stage:   [buildagent9] Build Handle->Compile (running)"
+    assert_output "[18:00:18] ℹ   Stage:   [buildagent9   ] Build Handle->Compile (running)"
 }
 
 @test "print_stage_line_backward_compatible_no_indent_no_agent" {
@@ -414,6 +414,59 @@ Starting building: level2-job #1
     [[ $(echo "$result" | jq '.[2].has_downstream') == "true" ]]
 }
 
+@test "get_nested_stages_parallel_wrapper_printed_after_branches" {
+    get_all_stages() {
+        local job="$1"
+        if [[ "$job" == "parent-job" ]]; then
+            echo '[
+                {"name":"Trigger Component Builds","status":"SUCCESS","startTimeMillis":0,"durationMillis":114},
+                {"name":"Build Handle","status":"FAILED","startTimeMillis":1,"durationMillis":13000},
+                {"name":"Build SignalBoot","status":"SUCCESS","startTimeMillis":2,"durationMillis":205000},
+                {"name":"Verify","status":"SUCCESS","startTimeMillis":3,"durationMillis":1000}
+            ]'
+        elif [[ "$job" == "handle-job" ]]; then
+            echo '[{"name":"Compile","status":"FAILED","startTimeMillis":0,"durationMillis":1000}]'
+        elif [[ "$job" == "signalboot-job" ]]; then
+            echo '[{"name":"Compile","status":"SUCCESS","startTimeMillis":0,"durationMillis":1000}]'
+        else
+            echo '[]'
+        fi
+    }
+
+    get_console_output() {
+        local job="$1"
+        if [[ "$job" == "parent-job" ]]; then
+            echo 'Running on orch in /ws
+[Pipeline] { (Trigger Component Builds)
+[Pipeline] parallel
+[Pipeline] { (Branch: Build Handle)
+Starting building: handle-job #1
+[Pipeline] }
+[Pipeline] { (Branch: Build SignalBoot)
+Starting building: signalboot-job #2
+[Pipeline] }
+[Pipeline] }'
+        elif [[ "$job" == "handle-job" ]]; then
+            echo 'Running on h1 in /ws'
+        elif [[ "$job" == "signalboot-job" ]]; then
+            echo 'Running on s2 in /ws'
+        else
+            echo ''
+        fi
+    }
+
+    local result
+    result=$(_get_nested_stages "parent-job" "1")
+
+    local idx_wrapper idx_signal idx_verify
+    idx_wrapper=$(echo "$result" | jq 'to_entries[] | select(.value.name == "Trigger Component Builds") | .key')
+    idx_signal=$(echo "$result" | jq 'to_entries[] | select(.value.name == "Build SignalBoot") | .key')
+    idx_verify=$(echo "$result" | jq 'to_entries[] | select(.value.name == "Verify") | .key')
+
+    [[ "$idx_wrapper" -gt "$idx_signal" ]]
+    [[ "$idx_verify" -gt "$idx_wrapper" ]]
+}
+
 # =============================================================================
 # Test Cases: _display_nested_stages_json
 # =============================================================================
@@ -430,11 +483,11 @@ Starting building: level2-job #1
     assert_success
 
     # Check that all stages are displayed
-    [[ "$output" == *"[orchestrator1] Checkout (<1s)"* ]]
-    [[ "$output" == *"  [buildagent9] Build Handle->Compile Code (18s)"* ]]
-    [[ "$output" == *"  [buildagent9] Build Handle->Package Zip (20s)"* ]]
+    [[ "$output" == *"[orchestrator1 ] Checkout (<1s)"* ]]
+    [[ "$output" == *"  [buildagent9   ] Build Handle->Compile Code (18s)"* ]]
+    [[ "$output" == *"  [buildagent9   ] Build Handle->Package Zip (20s)"* ]]
     [[ "$output" == *"← FAILED"* ]]
-    [[ "$output" == *"[orchestrator1] Build Handle (38s)"* ]]
+    [[ "$output" == *"[orchestrator1 ] Build Handle (38s)"* ]]
 }
 
 @test "display_nested_stages_completed_only" {
@@ -534,7 +587,7 @@ Starting building: downstream-job #10
 
     # Should print the downstream stage completion
     [[ "$stderr_output" == *"Build Handle->Compile"* ]]
-    [[ "$stderr_output" == *"[buildagent9]"* ]]
+    [[ "$stderr_output" == *"[buildagent9   ]"* ]]
 }
 
 @test "track_nested_preserves_composite_state" {

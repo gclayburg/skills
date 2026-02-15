@@ -1298,31 +1298,85 @@ _detect_parallel_branches() {
     local console_output="$1"
     local wrapper_stage="$2"
 
-    # Extract the wrapper stage's console logs
-    local stage_logs
-    stage_logs=$(extract_stage_logs "$console_output" "$wrapper_stage")
-
-    if [[ -z "$stage_logs" ]]; then
-        echo ""
-        return
-    fi
-
-    # Check for [Pipeline] parallel marker
-    if ! echo "$stage_logs" | grep -q '^\[Pipeline\] parallel$'; then
-        echo ""
-        return
-    fi
-
-    # Extract branch names from (Branch: <name>) patterns
+    # Scan ALL matching stage blocks in console output.
+    # Some pipelines reuse stage names in nested/downstream logs; the first match
+    # may be a non-parallel block. We only collect branches from blocks that
+    # explicitly contain "[Pipeline] parallel".
     local branches
-    branches=$(echo "$stage_logs" | grep -o '(Branch: [^)]*)'  | sed 's/(Branch: //;s/)//' | sort -u)
+    branches=$(echo "$console_output" | awk -v stage="$wrapper_stage" '
+        BEGIN {
+            in_stage=0
+            depth=0
+            has_parallel=0
+            branch_count=0
+        }
+
+        function flush_block(   i) {
+            if (has_parallel) {
+                for (i = 1; i <= branch_count; i++) {
+                    print branch_order[i]
+                }
+            }
+            delete branch_seen
+            delete branch_order
+            branch_count=0
+            has_parallel=0
+        }
+
+        # Start a new matching stage block when not already inside one
+        /\[Pipeline\] \{ \(/ && index($0, "(" stage ")") && in_stage == 0 {
+            in_stage=1
+            depth=1
+            has_parallel=0
+            branch_count=0
+            delete branch_seen
+            delete branch_order
+            next
+        }
+
+        in_stage == 1 {
+            if ($0 ~ /^\[Pipeline\] parallel$/) {
+                has_parallel=1
+            }
+
+            if (match($0, /\(Branch: [^)]+\)/)) {
+                branch = substr($0, RSTART + 9, RLENGTH - 10)
+                if (!(branch in branch_seen)) {
+                    branch_seen[branch]=1
+                    branch_order[++branch_count]=branch
+                }
+            }
+
+            if ($0 ~ /\[Pipeline\] \{/) {
+                depth++
+                next
+            }
+
+            if ($0 ~ /\[Pipeline\] \}/) {
+                depth--
+                if (depth == 0) {
+                    flush_block()
+                    in_stage=0
+                }
+                next
+            }
+        }
+
+        END {
+            # Monitoring mode often reads console output before the wrapper
+            # closes. Flush any in-progress matching block so branch numbering
+            # is available during live display, not only after completion.
+            if (in_stage == 1) {
+                flush_block()
+            }
+        }
+    ' | awk '!seen[$0]++')
 
     if [[ -z "$branches" ]]; then
         echo ""
         return
     fi
 
-    # Build JSON array
     local json_array="[]"
     while IFS= read -r branch; do
         [[ -z "$branch" ]] && continue
@@ -1657,6 +1711,26 @@ format_stage_duration() {
 # Spec: full-stage-print-spec.md, Section: Stage Display Format
 # Spec: nested-jobs-display-spec.md, Section: Nested Stage Line Format
 # Spec: bug-parallel-stages-display-spec.md, Section: Visual Parallel Stage Indication
+_format_agent_prefix() {
+    local agent_prefix="${1:-}"
+    local agent_name=""
+
+    if [[ "$agent_prefix" =~ ^\[(.*)\][[:space:]]*$ ]]; then
+        agent_name="${BASH_REMATCH[1]}"
+    elif [[ "$agent_prefix" =~ ^\[(.*)\][[:space:]] ]]; then
+        agent_name="${BASH_REMATCH[1]}"
+    else
+        echo "$agent_prefix"
+        return
+    fi
+
+    if [[ ${#agent_name} -gt 14 ]]; then
+        agent_name="${agent_name:0:14}"
+    fi
+
+    printf "[%-14s] " "$agent_name"
+}
+
 print_stage_line() {
     local stage_name="$1"
     local status="$2"
@@ -1671,6 +1745,8 @@ print_stage_line() {
     local color=""
     local suffix=""
     local marker=""
+    local formatted_agent_prefix
+    formatted_agent_prefix=$(_format_agent_prefix "$agent_prefix")
 
     case "$status" in
         SUCCESS)
@@ -1707,7 +1783,7 @@ print_stage_line() {
 
     # Build and output the stage line
     # Format: [HH:MM:SS] ℹ   Stage: <indent><parallel_marker>[agent] <name> (<suffix>)
-    echo "${color}[${timestamp}] ℹ   Stage: ${indent}${parallel_marker}${agent_prefix}${stage_name} (${suffix})${COLOR_RESET}${marker}"
+    echo "${color}[${timestamp}] ℹ   Stage: ${indent}${parallel_marker}${formatted_agent_prefix}${stage_name} (${suffix})${COLOR_RESET}${marker}"
 }
 
 # Display stages from a build (with nested downstream stage expansion)
@@ -1796,11 +1872,11 @@ _display_nested_stages_json() {
         agent=$(echo "$nested_stages_json" | jq -r ".[$i].agent // empty")
         nesting_depth=$(echo "$nested_stages_json" | jq -r ".[$i].nesting_depth // 0")
 
-        # Check for parallel branch annotation
+        # Check for parallel branch/path annotations
         local parallel_branch
         parallel_branch=$(echo "$nested_stages_json" | jq -r ".[$i].parallel_branch // empty")
-        local is_parallel_wrapper
-        is_parallel_wrapper=$(echo "$nested_stages_json" | jq -r ".[$i].is_parallel_wrapper // false")
+        local parallel_path
+        parallel_path=$(echo "$nested_stages_json" | jq -r ".[$i].parallel_path // empty")
 
         # Build indentation (2 spaces per nesting level)
         local indent=""
@@ -1812,9 +1888,14 @@ _display_nested_stages_json() {
 
         # Determine parallel marker
         local parallel_marker=""
-        if [[ -n "$parallel_branch" ]]; then
-            parallel_marker="║ "
+        if [[ -n "$parallel_path" ]]; then
+            parallel_marker="║${parallel_path} "
             # For parallel branches at depth 0, add indent
+            if [[ $nesting_depth -eq 0 ]]; then
+                indent="  "
+            fi
+        elif [[ -n "$parallel_branch" ]]; then
+            parallel_marker="║ "
             if [[ $nesting_depth -eq 0 ]]; then
                 indent="  "
             fi
@@ -1940,303 +2021,93 @@ _track_nested_stage_changes() {
     local previous_composite_state="${3:-}"
     local verbose="${4:-false}"
 
-    # Parse composite state (or initialize)
-    local parent_stages_json="[]"
-    local downstream_state="{}"
-    local stage_downstream_map_state="{}"
-    local parallel_info="{}"
-
+    local previous_nested="[]"
+    local printed_state="{}"
     if [[ -n "$previous_composite_state" && "$previous_composite_state" != "[]" && "$previous_composite_state" != "null" ]]; then
-        # Check if it's a composite state object or just a flat stages array
         local is_composite
-        is_composite=$(echo "$previous_composite_state" | jq 'has("parent")' 2>/dev/null) || is_composite="false"
-
+        is_composite=$(echo "$previous_composite_state" | jq 'type == "object"' 2>/dev/null) || is_composite="false"
         if [[ "$is_composite" == "true" ]]; then
-            parent_stages_json=$(echo "$previous_composite_state" | jq '.parent // []')
-            downstream_state=$(echo "$previous_composite_state" | jq '.downstream // {}')
-            stage_downstream_map_state=$(echo "$previous_composite_state" | jq '.stage_downstream_map // {}')
-            parallel_info=$(echo "$previous_composite_state" | jq '.parallel_info // {}')
-        else
-            # Backward compatible: treat as flat parent stages
-            parent_stages_json="$previous_composite_state"
+            previous_nested=$(echo "$previous_composite_state" | jq '.nested // []')
+            printed_state=$(echo "$previous_composite_state" | jq '.printed // {}')
         fi
     fi
 
-    # Track parent build stages (existing behavior)
     local current_parent_stages
-    current_parent_stages=$(get_all_stages "$job_name" "$build_number")
+    current_parent_stages=$(get_all_stages "$job_name" "$build_number" 2>/dev/null) || current_parent_stages="[]"
 
-    if [[ -z "$current_parent_stages" || "$current_parent_stages" == "[]" ]]; then
-        current_parent_stages="$parent_stages_json"
+    local current_nested
+    current_nested=$(_get_nested_stages "$job_name" "$build_number" 2>/dev/null) || current_nested="[]"
+    if [[ -z "$current_nested" || "$current_nested" == "null" ]]; then
+        current_nested="[]"
     fi
 
-    # Get console output for downstream detection
-    local console_output
-    console_output=$(get_console_output "$job_name" "$build_number" 2>/dev/null) || true
-
-    # Get agent name for parent build
-    local parent_agent=""
-    if [[ -n "$console_output" ]]; then
-        parent_agent=$(_extract_agent_name "$console_output")
-    fi
-
-    # Detect parallel structures (only detect once per stage)
-    # Spec: bug-parallel-stages-display-spec.md, Section: Parallel Detection Function
     local stage_count
-    stage_count=$(echo "$current_parent_stages" | jq 'length')
-
-    if [[ -n "$console_output" ]]; then
-        # Get the set of already-checked stage names from parallel_info._checked
-        local i=0
-        while [[ $i -lt $stage_count ]]; do
-            local stage_name current_status
-            stage_name=$(echo "$current_parent_stages" | jq -r ".[$i].name")
-            current_status=$(echo "$current_parent_stages" | jq -r ".[$i].status")
-
-            # Only check for parallel branches if we haven't already checked this stage
-            local already_checked
-            already_checked=$(echo "$parallel_info" | jq -r --arg s "$stage_name" '._checked[$s] // false') || already_checked="false"
-
-            if [[ "$already_checked" != "true" ]] && \
-               [[ "$current_status" == "IN_PROGRESS" || "$current_status" == "SUCCESS" || "$current_status" == "FAILED" || "$current_status" == "UNSTABLE" ]]; then
-                local branches
-                branches=$(_detect_parallel_branches "$console_output" "$stage_name")
-
-                if [[ -n "$branches" && "$branches" != "[]" ]]; then
-                    parallel_info=$(echo "$parallel_info" | jq \
-                        --arg stage "$stage_name" \
-                        --argjson branches "$branches" \
-                        '. + {($stage): {"branches": $branches}}')
-                fi
-
-                # Mark as checked regardless of whether parallel was found
-                parallel_info=$(echo "$parallel_info" | jq \
-                    --arg s "$stage_name" \
-                    '._checked = (._checked // {} | . + {($s): true})')
-            fi
-
-            i=$((i + 1))
-        done
-    fi
-
-    # Build a lookup: which stages are parallel branches and their wrapper
-    local _parallel_branch_to_wrapper="{}"
-    local wrapper_names
-    wrapper_names=$(echo "$parallel_info" | jq -r 'keys[] | select(startswith("_") | not)' 2>/dev/null) || true
-    while IFS= read -r wrapper; do
-        [[ -z "$wrapper" ]] && continue
-        local branch_list
-        branch_list=$(echo "$parallel_info" | jq -r --arg w "$wrapper" '.[$w].branches // [] | .[]' 2>/dev/null) || true
-        while IFS= read -r branch; do
-            [[ -z "$branch" ]] && continue
-            _parallel_branch_to_wrapper=$(echo "$_parallel_branch_to_wrapper" | jq \
-                --arg b "$branch" --arg w "$wrapper" '. + {($b): $w}')
-        done <<< "$branch_list"
-    done <<< "$wrapper_names"
-
-    # Detect downstream builds for IN_PROGRESS parent stages
-    # Skip parallel wrapper stages — their console logs include branch content
-    # which would cause false downstream detection
+    stage_count=$(echo "$current_nested" | jq 'length' 2>/dev/null) || stage_count=0
     local i=0
     while [[ $i -lt $stage_count ]]; do
-        local stage_name current_status
-        stage_name=$(echo "$current_parent_stages" | jq -r ".[$i].name")
-        current_status=$(echo "$current_parent_stages" | jq -r ".[$i].status")
-
-        # Skip downstream detection for parallel wrapper stages
-        local is_wrapper_for_ds
-        is_wrapper_for_ds=$(echo "$parallel_info" | jq -r --arg s "$stage_name" '(.[$s].branches // null) != null') || is_wrapper_for_ds="false"
-
-        # For IN_PROGRESS or completed stages, check for downstream builds
-        if [[ "$is_wrapper_for_ds" != "true" ]] && \
-           [[ "$current_status" == "IN_PROGRESS" || "$current_status" == "SUCCESS" || "$current_status" == "FAILED" || "$current_status" == "UNSTABLE" ]]; then
-            # Check if we already know about this stage's downstream build
-            local known_ds
-            known_ds=$(echo "$stage_downstream_map_state" | jq -r --arg s "$stage_name" '.[$s] // empty')
-
-            if [[ -z "$known_ds" || "$known_ds" == "null" ]] && [[ -n "$console_output" ]]; then
-                # Try to detect downstream build from stage logs
-                local stage_logs
-                stage_logs=$(extract_stage_logs "$console_output" "$stage_name")
-
-                if [[ -n "$stage_logs" ]]; then
-                    local downstream
-                    downstream=$(detect_all_downstream_builds "$stage_logs")
-
-                    if [[ -n "$downstream" ]]; then
-                        local ds_job ds_build
-                        local selected_downstream
-                        selected_downstream=$(_select_downstream_build_for_stage "$stage_name" "$downstream")
-                        ds_job=$(echo "$selected_downstream" | awk '{print $1}')
-                        ds_build=$(echo "$selected_downstream" | awk '{print $2}')
-
-                        if [[ -n "$ds_job" && -n "$ds_build" ]]; then
-                            stage_downstream_map_state=$(echo "$stage_downstream_map_state" | jq \
-                                --arg stage "$stage_name" \
-                                --arg job "$ds_job" \
-                                --argjson build "$ds_build" \
-                                '. + {($stage): {"job": $job, "build": $build}}')
-                        fi
-                    fi
-                fi
-            fi
-        fi
-
-        i=$((i + 1))
-    done
-
-    # Track each known downstream build
-    local ds_stage_names
-    ds_stage_names=$(echo "$stage_downstream_map_state" | jq -r 'keys[]' 2>/dev/null) || true
-
-    while IFS= read -r ds_parent_stage; do
-        [[ -z "$ds_parent_stage" ]] && continue
-
-        local ds_info
-        ds_info=$(echo "$stage_downstream_map_state" | jq -r --arg s "$ds_parent_stage" '.[$s]')
-        local ds_job ds_build
-        ds_job=$(echo "$ds_info" | jq -r '.job')
-        ds_build=$(echo "$ds_info" | jq -r '.build')
-
-        local ds_key="${ds_job}:${ds_build}"
-
-        # Get previous downstream state
-        local prev_ds_stages
-        prev_ds_stages=$(echo "$downstream_state" | jq -r --arg k "$ds_key" '.[$k].stages // []')
-        local ds_agent
-        ds_agent=$(echo "$downstream_state" | jq -r --arg k "$ds_key" '.[$k].agent // empty')
-
-        # Fetch downstream agent if not known
-        if [[ -z "$ds_agent" || "$ds_agent" == "null" ]]; then
-            local ds_console
-            ds_console=$(get_console_output "$ds_job" "$ds_build" 2>/dev/null) || true
-            if [[ -n "$ds_console" ]]; then
-                ds_agent=$(_extract_agent_name "$ds_console")
-            fi
-        fi
-
-        # Determine if this downstream stage's parent is a parallel branch
-        local ds_parallel_marker=""
-        local ds_nested_indent="  "
-        local ds_wrapper
-        ds_wrapper=$(echo "$_parallel_branch_to_wrapper" | jq -r --arg b "$ds_parent_stage" '.[$b] // empty')
-        if [[ -n "$ds_wrapper" && "$ds_wrapper" != "null" ]]; then
-            ds_parallel_marker="║ "
-            ds_nested_indent="  "
-        fi
-
-        # Track downstream stage changes
-        local current_ds_stages
-        current_ds_stages=$(get_all_stages "$ds_job" "$ds_build" 2>/dev/null) || current_ds_stages="[]"
-
-        if [[ "$current_ds_stages" != "[]" ]]; then
-            # Process downstream stage transitions
-            local ds_stage_count
-            ds_stage_count=$(echo "$current_ds_stages" | jq 'length')
-
-            local j=0
-            while [[ $j -lt $ds_stage_count ]]; do
-                local ds_stage_name ds_current_status ds_duration_ms
-                ds_stage_name=$(echo "$current_ds_stages" | jq -r ".[$j].name")
-                ds_current_status=$(echo "$current_ds_stages" | jq -r ".[$j].status")
-                ds_duration_ms=$(echo "$current_ds_stages" | jq -r ".[$j].durationMillis")
-
-                # Get previous status for this downstream stage
-                local ds_previous_status
-                ds_previous_status=$(echo "$prev_ds_stages" | jq -r --arg name "$ds_stage_name" \
-                    '.[] | select(.name == $name) | .status // "NOT_EXECUTED"' 2>/dev/null)
-                if [[ -z "$ds_previous_status" ]]; then
-                    ds_previous_status="NOT_EXECUTED"
-                fi
-
-                # Build display name and indentation for nested stage
-                local nested_display_name="${ds_parent_stage}->${ds_stage_name}"
-                local nested_agent_prefix=""
-                if [[ -n "$ds_agent" ]]; then
-                    nested_agent_prefix="[${ds_agent}] "
-                fi
-
-                # Detect transitions
-                case "$ds_current_status" in
-                    SUCCESS|FAILED|UNSTABLE|ABORTED)
-                        if [[ "$ds_previous_status" == "IN_PROGRESS" || "$ds_previous_status" == "NOT_EXECUTED" ]]; then
-                            print_stage_line "$nested_display_name" "$ds_current_status" "$ds_duration_ms" "$ds_nested_indent" "$nested_agent_prefix" "$ds_parallel_marker" >&2
-                        fi
-                        ;;
-                    IN_PROGRESS)
-                        if [[ "$verbose" == "true" && "$ds_previous_status" == "NOT_EXECUTED" ]]; then
-                            print_stage_line "$nested_display_name" "IN_PROGRESS" "" "$ds_nested_indent" "$nested_agent_prefix" "$ds_parallel_marker" >&2
-                        fi
-                        ;;
-                esac
-
-                j=$((j + 1))
-            done
-        fi
-
-        # Update downstream state
-        downstream_state=$(echo "$downstream_state" | jq \
-            --arg key "$ds_key" \
-            --argjson stages "$current_ds_stages" \
-            --arg agent "${ds_agent:-}" \
-            --arg parent_stage "$ds_parent_stage" \
-            '.[$key] = {"stages": $stages, "agent": $agent, "parent_stage": $parent_stage}')
-    done <<< "$ds_stage_names"
-
-    # Now process parent stage transitions (after downstream, so nested appear before parent)
-    # Skip parallel wrappers here — they are handled in a separate deferred pass below
-    local prev_count
-    prev_count=$(echo "$parent_stages_json" | jq 'length')
-
-    i=0
-    while [[ $i -lt $stage_count ]]; do
-        local stage_name current_status duration_ms
-        stage_name=$(echo "$current_parent_stages" | jq -r ".[$i].name")
-        current_status=$(echo "$current_parent_stages" | jq -r ".[$i].status")
-        duration_ms=$(echo "$current_parent_stages" | jq -r ".[$i].durationMillis")
+        local stage_name current_status duration_ms agent nesting_depth parallel_path parallel_branch
+        stage_name=$(echo "$current_nested" | jq -r ".[$i].name")
+        current_status=$(echo "$current_nested" | jq -r ".[$i].status")
+        duration_ms=$(echo "$current_nested" | jq -r ".[$i].durationMillis")
+        agent=$(echo "$current_nested" | jq -r ".[$i].agent // empty")
+        nesting_depth=$(echo "$current_nested" | jq -r ".[$i].nesting_depth // 0")
+        parallel_path=$(echo "$current_nested" | jq -r ".[$i].parallel_path // empty")
+        parallel_branch=$(echo "$current_nested" | jq -r ".[$i].parallel_branch // empty")
 
         local previous_status
-        previous_status=$(echo "$parent_stages_json" | jq -r --arg name "$stage_name" \
-            '.[] | select(.name == $name) | .status // "NOT_EXECUTED"')
-        if [[ -z "$previous_status" ]]; then
-            previous_status="NOT_EXECUTED"
+        previous_status=$(echo "$previous_nested" | jq -r --arg n "$stage_name" '.[] | select(.name == $n) | .status // "NOT_EXECUTED"' 2>/dev/null)
+        [[ -z "$previous_status" ]] && previous_status="NOT_EXECUTED"
+
+        local indent=""
+        local d=0
+        while [[ $d -lt $nesting_depth ]]; do
+            indent="${indent}  "
+            d=$((d + 1))
+        done
+
+        local parallel_marker=""
+        if [[ -n "$parallel_path" ]]; then
+            parallel_marker="║${parallel_path} "
+            if [[ $nesting_depth -eq 0 ]]; then
+                indent="  "
+            fi
+        elif [[ -n "$parallel_branch" ]]; then
+            parallel_marker="║ "
+            if [[ $nesting_depth -eq 0 ]]; then
+                indent="  "
+            fi
         fi
 
-        # Build agent prefix for parent stages
-        local parent_agent_prefix=""
-        if [[ -n "$parent_agent" ]]; then
-            parent_agent_prefix="[${parent_agent}] "
+        local agent_prefix=""
+        if [[ -n "$agent" ]]; then
+            agent_prefix="[${agent}] "
         fi
 
-        # Determine if this stage is a parallel wrapper — skip here, handled below
-        local is_wrapper
-        is_wrapper=$(echo "$parallel_info" | jq -r --arg s "$stage_name" '(.[$s].branches // null) != null') || is_wrapper="false"
-
-        if [[ "$is_wrapper" == "true" ]]; then
-            i=$((i + 1))
-            continue
-        fi
-
-        # Determine if this stage is a parallel branch
-        local branch_wrapper
-        branch_wrapper=$(echo "$_parallel_branch_to_wrapper" | jq -r --arg b "$stage_name" '.[$b] // empty')
-
-        local stage_parallel_marker=""
-        local stage_indent=""
-        if [[ -n "$branch_wrapper" && "$branch_wrapper" != "null" ]]; then
-            stage_parallel_marker="║ "
-            stage_indent="  "
-        fi
+        local printed_terminal printed_running
+        printed_terminal=$(echo "$printed_state" | jq -r --arg s "$stage_name" '.[$s].terminal // false' 2>/dev/null)
+        printed_running=$(echo "$printed_state" | jq -r --arg s "$stage_name" '.[$s].running // false' 2>/dev/null)
+        [[ -z "$printed_terminal" ]] && printed_terminal="false"
+        [[ -z "$printed_running" ]] && printed_running="false"
 
         case "$current_status" in
             SUCCESS|FAILED|UNSTABLE|ABORTED)
-                if [[ "$previous_status" == "IN_PROGRESS" || "$previous_status" == "NOT_EXECUTED" ]]; then
-                    print_stage_line "$stage_name" "$current_status" "$duration_ms" "$stage_indent" "$parent_agent_prefix" "$stage_parallel_marker" >&2
+                if [[ "$printed_terminal" != "true" ]]; then
+                    local allow_print=true
+                    if [[ "$verbose" != "true" ]]; then
+                        if [[ -z "$duration_ms" || "$duration_ms" == "null" || ! "$duration_ms" =~ ^[0-9]+$ ]]; then
+                            allow_print=false
+                        fi
+                    fi
+                    if [[ "$allow_print" == "true" ]]; then
+                        print_stage_line "$stage_name" "$current_status" "$duration_ms" "$indent" "$agent_prefix" "$parallel_marker" >&2
+                        printed_state=$(echo "$printed_state" | jq --arg s "$stage_name" '.[$s] = ((.[$s] // {}) + {terminal: true})')
+                    fi
                 fi
                 ;;
             IN_PROGRESS)
-                if [[ "$verbose" == "true" && "$previous_status" == "NOT_EXECUTED" ]]; then
-                    print_stage_line "$stage_name" "IN_PROGRESS" "" "$stage_indent" "$parent_agent_prefix" "$stage_parallel_marker" >&2
+                if [[ "$verbose" == "true" && "$printed_running" != "true" && "$previous_status" == "NOT_EXECUTED" ]]; then
+                    print_stage_line "$stage_name" "IN_PROGRESS" "" "$indent" "$agent_prefix" "$parallel_marker" >&2
+                    printed_state=$(echo "$printed_state" | jq --arg s "$stage_name" '.[$s] = ((.[$s] // {}) + {running: true})')
                 fi
                 ;;
         esac
@@ -2244,85 +2115,15 @@ _track_nested_stage_changes() {
         i=$((i + 1))
     done
 
-    # Deferred wrapper printing: check each parallel wrapper on every poll
-    # The wrapper is printed only when ALL branches reach terminal status
-    # Uses parallel_info[wrapper].printed to track whether we've already printed it
-    while IFS= read -r wrapper_stage; do
-        [[ -z "$wrapper_stage" ]] && continue
-
-        # Check if already printed
-        local already_printed
-        already_printed=$(echo "$parallel_info" | jq -r --arg w "$wrapper_stage" '.[$w].printed // false')
-        if [[ "$already_printed" == "true" ]]; then
-            continue
-        fi
-
-        # Check if wrapper itself is in terminal state
-        local wrapper_status
-        wrapper_status=$(echo "$current_parent_stages" | jq -r --arg n "$wrapper_stage" \
-            '.[] | select(.name == $n) | .status // "NOT_EXECUTED"')
-        if [[ "$wrapper_status" != "SUCCESS" && "$wrapper_status" != "FAILED" && \
-              "$wrapper_status" != "UNSTABLE" && "$wrapper_status" != "ABORTED" ]]; then
-            continue
-        fi
-
-        # Check if ALL branches are in terminal status
-        local all_branches_done=true
-        local max_branch_duration=0
-        local wrapper_branches
-        wrapper_branches=$(echo "$parallel_info" | jq -r --arg s "$wrapper_stage" '.[$s].branches[]')
-        while IFS= read -r branch; do
-            [[ -z "$branch" ]] && continue
-            local branch_status branch_duration
-            branch_status=$(echo "$current_parent_stages" | jq -r --arg n "$branch" \
-                '.[] | select(.name == $n) | .status // "NOT_EXECUTED"')
-            branch_duration=$(echo "$current_parent_stages" | jq -r --arg n "$branch" \
-                '.[] | select(.name == $n) | .durationMillis // 0')
-
-            if [[ "$branch_status" != "SUCCESS" && "$branch_status" != "FAILED" && \
-                  "$branch_status" != "UNSTABLE" && "$branch_status" != "ABORTED" ]]; then
-                all_branches_done=false
-            fi
-
-            if [[ "$branch_duration" =~ ^[0-9]+$ && "$branch_duration" -gt "$max_branch_duration" ]]; then
-                max_branch_duration="$branch_duration"
-            fi
-        done <<< "$wrapper_branches"
-
-        if [[ "$all_branches_done" == "true" ]]; then
-            # Calculate aggregate duration: wrapper API + max(branch durations)
-            local wrapper_api_duration
-            wrapper_api_duration=$(echo "$current_parent_stages" | jq -r --arg n "$wrapper_stage" \
-                '.[] | select(.name == $n) | .durationMillis // 0')
-            local aggregate_duration
-            if [[ "$wrapper_api_duration" =~ ^[0-9]+$ ]]; then
-                aggregate_duration=$((wrapper_api_duration + max_branch_duration))
-            else
-                aggregate_duration="$max_branch_duration"
-            fi
-
-            # Determine wrapper status (FAILED if any branch failed)
-            local parent_agent_prefix=""
-            if [[ -n "$parent_agent" ]]; then
-                parent_agent_prefix="[${parent_agent}] "
-            fi
-
-            print_stage_line "$wrapper_stage" "$wrapper_status" "$aggregate_duration" "" "$parent_agent_prefix" "" >&2
-
-            # Mark wrapper as printed
-            parallel_info=$(echo "$parallel_info" | jq \
-                --arg w "$wrapper_stage" \
-                '.[$w].printed = true')
-        fi
-    done <<< "$wrapper_names"
-
-    # Return composite state (including parallel_info)
+    # Return composite state with legacy keys retained for test/backward compatibility
     jq -n \
         --argjson parent "$current_parent_stages" \
-        --argjson downstream "$downstream_state" \
-        --argjson stage_downstream_map "$stage_downstream_map_state" \
-        --argjson parallel_info "$parallel_info" \
-        '{parent: $parent, downstream: $downstream, stage_downstream_map: $stage_downstream_map, parallel_info: $parallel_info}'
+        --argjson downstream "{}" \
+        --argjson stage_downstream_map "{}" \
+        --argjson parallel_info "{}" \
+        --argjson nested "$current_nested" \
+        --argjson printed "$printed_state" \
+        '{parent: $parent, downstream: $downstream, stage_downstream_map: $stage_downstream_map, parallel_info: $parallel_info, nested: $nested, printed: $printed}'
 }
 
 # Format epoch timestamp (milliseconds) to human-readable date
@@ -3420,41 +3221,36 @@ _map_stages_to_downstream() {
 }
 
 # Get nested stages for a build, recursively expanding downstream builds
-# Usage: _get_nested_stages "job-name" "build-number" [prefix] [nesting_depth] [parent_stage]
+# Usage: _get_nested_stages "job-name" "build-number" [prefix] [nesting_depth] [parent_stage] [parallel_path]
 # Returns: JSON array of stage objects with nested stage metadata
-# Each object has: name, status, durationMillis, agent, nesting_depth,
-#   and optionally: downstream_job, downstream_build, parent_stage, has_downstream
 _get_nested_stages() {
     local job_name="$1"
     local build_number="$2"
     local prefix="${3:-}"
     local nesting_depth="${4:-0}"
     local parent_stage_name="${5:-}"
+    local inherited_parallel_path="${6:-}"
 
-    # Fetch stages for this build
     local stages_json
     stages_json=$(get_all_stages "$job_name" "$build_number")
-
     if [[ -z "$stages_json" || "$stages_json" == "[]" ]]; then
         echo "[]"
         return 0
     fi
 
-    # Fetch console output for agent name and downstream mapping
     local console_output
     console_output=$(get_console_output "$job_name" "$build_number" 2>/dev/null) || true
 
-    # Extract agent name for this build
     local agent=""
     if [[ -n "$console_output" ]]; then
         agent=$(_extract_agent_name "$console_output")
     fi
 
-    # Detect parallel structures BEFORE downstream mapping (so we can skip wrappers)
-    # Spec: bug-parallel-stages-display-spec.md, Section: Parallel Detection Function
     local parallel_info="{}"
     local _branch_to_wrapper="{}"
-    if [[ $nesting_depth -eq 0 && -n "$console_output" ]]; then
+    local _branch_to_path="{}"
+    local _wrapper_last_branch_index="{}"
+    if [[ -n "$console_output" ]]; then
         local stage_count_for_parallel
         stage_count_for_parallel=$(echo "$stages_json" | jq 'length')
         local pi=0
@@ -3465,26 +3261,40 @@ _get_nested_stages() {
             branches=$(_detect_parallel_branches "$console_output" "$pi_stage_name")
             if [[ -n "$branches" && "$branches" != "[]" ]]; then
                 parallel_info=$(echo "$parallel_info" | jq \
-                    --arg s "$pi_stage_name" --argjson b "$branches" \
-                    '. + {($s): {"branches": $b}}')
-                # Map each branch to its wrapper
+                    --arg s "$pi_stage_name" --argjson b "$branches" '. + {($s): {"branches": $b}}')
+
+                local branch_index=1
+                local max_branch_idx=-1
                 local branch_name
                 while IFS= read -r branch_name; do
                     [[ -z "$branch_name" ]] && continue
                     _branch_to_wrapper=$(echo "$_branch_to_wrapper" | jq \
                         --arg b "$branch_name" --arg w "$pi_stage_name" '. + {($b): $w}')
+                    local branch_path="$branch_index"
+                    if [[ -n "$inherited_parallel_path" ]]; then
+                        branch_path="${inherited_parallel_path}.${branch_index}"
+                    fi
+                    _branch_to_path=$(echo "$_branch_to_path" | jq \
+                        --arg b "$branch_name" --arg p "$branch_path" '. + {($b): $p}')
+
+                    local branch_pos
+                    branch_pos=$(echo "$stages_json" | jq -r --arg n "$branch_name" 'to_entries[] | select(.value.name == $n) | .key' | head -1)
+                    if [[ "$branch_pos" =~ ^[0-9]+$ && "$branch_pos" -gt "$max_branch_idx" ]]; then
+                        max_branch_idx="$branch_pos"
+                    fi
+                    branch_index=$((branch_index + 1))
                 done <<< "$(echo "$branches" | jq -r '.[]')"
+                if [[ "$max_branch_idx" -ge 0 ]]; then
+                    _wrapper_last_branch_index=$(echo "$_wrapper_last_branch_index" | jq \
+                        --arg w "$pi_stage_name" --argjson idx "$max_branch_idx" '. + {($w): $idx}')
+                fi
             fi
             pi=$((pi + 1))
         done
     fi
 
-    # Map stages to downstream builds
-    # Skip parallel wrapper stages — their console logs include all branch content
-    # which would cause false downstream detection
     local stage_downstream_map="{}"
     if [[ -n "$console_output" ]]; then
-        # Filter out wrapper stages before mapping
         local filtered_stages_json
         if [[ "$parallel_info" != "{}" ]]; then
             filtered_stages_json=$(echo "$stages_json" | jq --argjson pi "$parallel_info" \
@@ -3495,8 +3305,8 @@ _get_nested_stages() {
         stage_downstream_map=$(_map_stages_to_downstream "$console_output" "$filtered_stages_json")
     fi
 
-    # Build the result array
     local result="[]"
+    local deferred_wrappers="{}"
     local stage_count
     stage_count=$(echo "$stages_json" | jq 'length')
 
@@ -3507,19 +3317,18 @@ _get_nested_stages() {
         status=$(echo "$stages_json" | jq -r ".[$i].status")
         duration_ms=$(echo "$stages_json" | jq -r ".[$i].durationMillis")
 
-        # Determine parallel annotations for this stage
         local is_parallel_wrapper="false"
         local parallel_branches_json="null"
         local parallel_branch=""
         local parallel_wrapper=""
+        local stage_parallel_path="$inherited_parallel_path"
 
-        # Check if this is a wrapper stage
         local wrapper_check
         wrapper_check=$(echo "$parallel_info" | jq -r --arg s "$stage_name" 'has($s)') || wrapper_check="false"
         if [[ "$wrapper_check" == "true" ]]; then
             is_parallel_wrapper="true"
+            stage_parallel_path=""
             parallel_branches_json=$(echo "$parallel_info" | jq --arg s "$stage_name" '.[$s].branches')
-            # Override duration with aggregate: wrapper API + max(branch durations)
             local max_branch_dur=0
             local branch_name
             while IFS= read -r branch_name; do
@@ -3535,55 +3344,74 @@ _get_nested_stages() {
             fi
         fi
 
-        # Check if this is a parallel branch
         local bw_check
         bw_check=$(echo "$_branch_to_wrapper" | jq -r --arg b "$stage_name" '.[$b] // empty')
         if [[ -n "$bw_check" && "$bw_check" != "null" ]]; then
             parallel_branch="$stage_name"
             parallel_wrapper="$bw_check"
+            stage_parallel_path=$(echo "$_branch_to_path" | jq -r --arg b "$stage_name" '.[$b] // empty')
         fi
 
-        # Check if this stage has a downstream build
         local ds_info
         ds_info=$(echo "$stage_downstream_map" | jq -r --arg s "$stage_name" '.[$s] // empty')
 
+        local display_name
+        if [[ -n "$prefix" ]]; then
+            display_name="${prefix}->${stage_name}"
+        else
+            display_name="${stage_name}"
+        fi
+
+        local nested_stages="[]"
         if [[ -n "$ds_info" && "$ds_info" != "null" ]]; then
             local ds_job ds_build
             ds_job=$(echo "$ds_info" | jq -r '.job')
             ds_build=$(echo "$ds_info" | jq -r '.build')
+            nested_stages=$(_get_nested_stages "$ds_job" "$ds_build" "$display_name" "$((nesting_depth + 1))" "$stage_name" "$stage_parallel_path" 2>/dev/null) || nested_stages="[]"
 
-            # Build the display name prefix for nested stages
-            local nested_prefix
-            if [[ -n "$prefix" ]]; then
-                nested_prefix="${prefix}->${stage_name}"
-            else
-                nested_prefix="${stage_name}"
-            fi
-
-            # Recursively get nested stages (graceful degradation on failure)
-            local nested_stages="[]"
-            nested_stages=$(_get_nested_stages "$ds_job" "$ds_build" "$nested_prefix" "$((nesting_depth + 1))" "$stage_name" 2>/dev/null) || nested_stages="[]"
-
-            # If parent is a parallel branch, annotate nested stages
             if [[ -n "$parallel_branch" ]]; then
-                nested_stages=$(echo "$nested_stages" | jq --arg pb "$parallel_branch" \
-                    '[.[] | . + {parallel_branch: $pb}]')
+                nested_stages=$(echo "$nested_stages" | jq --arg pb "$parallel_branch" --arg pp "$stage_parallel_path" \
+                    '[.[] |
+                        . + (if ((.parallel_branch // "") == "") then {parallel_branch: $pb} else {} end)
+                          + (if $pp != "" and ((.parallel_path // "") == "") then {parallel_path: $pp} else {} end)
+                    ]')
             fi
 
-            # Insert nested stages before the parent stage
             if [[ "$nested_stages" != "[]" ]]; then
                 result=$(echo "$result" "$nested_stages" | jq -s '.[0] + .[1]')
             fi
+        fi
 
-            # Add the parent stage with has_downstream flag
-            local display_name
-            if [[ -n "$prefix" ]]; then
-                display_name="${prefix}->${stage_name}"
-            else
-                display_name="${stage_name}"
-            fi
-
-            local stage_entry
+        local stage_entry
+        if [[ $nesting_depth -gt 0 ]]; then
+            stage_entry=$(jq -n \
+                --arg name "$display_name" \
+                --arg status "$status" \
+                --argjson duration_ms "$duration_ms" \
+                --arg agent "$agent" \
+                --argjson nesting_depth "$nesting_depth" \
+                --arg downstream_job "$job_name" \
+                --argjson downstream_build "$build_number" \
+                --arg parent_stage "$parent_stage_name" \
+                --arg parallel_branch "${parallel_branch:-}" \
+                --arg parallel_wrapper "${parallel_wrapper:-}" \
+                --arg parallel_path "${stage_parallel_path:-}" \
+                --argjson has_downstream "$(if [[ "$ds_info" != "" && "$ds_info" != "null" ]]; then echo true; else echo false; fi)" \
+                '{
+                    name: $name,
+                    status: $status,
+                    durationMillis: $duration_ms,
+                    agent: $agent,
+                    nesting_depth: $nesting_depth,
+                    downstream_job: $downstream_job,
+                    downstream_build: $downstream_build,
+                    parent_stage: $parent_stage,
+                    has_downstream: $has_downstream
+                }
+                + (if $parallel_branch != "" then {parallel_branch: $parallel_branch} else {} end)
+                + (if $parallel_wrapper != "" then {parallel_wrapper: $parallel_wrapper} else {} end)
+                + (if $parallel_path != "" then {parallel_path: $parallel_path} else {} end)')
+        else
             stage_entry=$(jq -n \
                 --arg name "$display_name" \
                 --arg status "$status" \
@@ -3594,78 +3422,53 @@ _get_nested_stages() {
                 --argjson parallel_branches "${parallel_branches_json:-null}" \
                 --arg parallel_branch "$parallel_branch" \
                 --arg parallel_wrapper "$parallel_wrapper" \
+                --arg parallel_path "${stage_parallel_path:-}" \
+                --argjson has_downstream "$(if [[ "$ds_info" != "" && "$ds_info" != "null" ]]; then echo true; else echo false; fi)" \
                 '{
                     name: $name,
                     status: $status,
                     durationMillis: $duration_ms,
                     agent: $agent,
                     nesting_depth: $nesting_depth,
-                    has_downstream: true
+                    has_downstream: $has_downstream
                 }
                 + (if $is_parallel_wrapper == true then {is_parallel_wrapper: true, parallel_branches: $parallel_branches} else {} end)
-                + (if $parallel_branch != "" then {parallel_branch: $parallel_branch, parallel_wrapper: $parallel_wrapper} else {} end)')
+                + (if $parallel_branch != "" then {parallel_branch: $parallel_branch, parallel_wrapper: $parallel_wrapper} else {} end)
+                + (if $parallel_path != "" then {parallel_path: $parallel_path} else {} end)')
+        fi
 
-            result=$(echo "$result" | jq --argjson entry "$stage_entry" '. + [$entry]')
+        if [[ "$is_parallel_wrapper" == "true" ]]; then
+            deferred_wrappers=$(echo "$deferred_wrappers" | jq --arg w "$stage_name" --argjson e "$stage_entry" '. + {($w): $e}')
         else
-            # Regular stage (no downstream)
-            local display_name
-            if [[ -n "$prefix" ]]; then
-                display_name="${prefix}->${stage_name}"
-            else
-                display_name="${stage_name}"
-            fi
-
-            # Build stage entry
-            local stage_entry
-            if [[ $nesting_depth -gt 0 ]]; then
-                stage_entry=$(jq -n \
-                    --arg name "$display_name" \
-                    --arg status "$status" \
-                    --argjson duration_ms "$duration_ms" \
-                    --arg agent "$agent" \
-                    --argjson nesting_depth "$nesting_depth" \
-                    --arg downstream_job "$job_name" \
-                    --argjson downstream_build "$build_number" \
-                    --arg parent_stage "$parent_stage_name" \
-                    --arg parallel_branch "${parallel_branch:-}" \
-                    '{
-                        name: $name,
-                        status: $status,
-                        durationMillis: $duration_ms,
-                        agent: $agent,
-                        nesting_depth: $nesting_depth,
-                        downstream_job: $downstream_job,
-                        downstream_build: $downstream_build,
-                        parent_stage: $parent_stage
-                    }
-                    + (if $parallel_branch != "" then {parallel_branch: $parallel_branch} else {} end)')
-            else
-                stage_entry=$(jq -n \
-                    --arg name "$display_name" \
-                    --arg status "$status" \
-                    --argjson duration_ms "$duration_ms" \
-                    --arg agent "$agent" \
-                    --argjson nesting_depth "$nesting_depth" \
-                    --argjson is_parallel_wrapper "$is_parallel_wrapper" \
-                    --argjson parallel_branches "${parallel_branches_json:-null}" \
-                    --arg parallel_branch "$parallel_branch" \
-                    --arg parallel_wrapper "$parallel_wrapper" \
-                    '{
-                        name: $name,
-                        status: $status,
-                        durationMillis: $duration_ms,
-                        agent: $agent,
-                        nesting_depth: $nesting_depth
-                    }
-                    + (if $is_parallel_wrapper == true then {is_parallel_wrapper: true, parallel_branches: $parallel_branches} else {} end)
-                    + (if $parallel_branch != "" then {parallel_branch: $parallel_branch, parallel_wrapper: $parallel_wrapper} else {} end)')
-            fi
-
             result=$(echo "$result" | jq --argjson entry "$stage_entry" '. + [$entry]')
         fi
 
+        local wrappers_to_emit
+        wrappers_to_emit=$(echo "$_wrapper_last_branch_index" | jq -r --argjson idx "$i" \
+            'to_entries[] | select(.value == $idx) | .key' 2>/dev/null) || true
+        while IFS= read -r emit_wrapper; do
+            [[ -z "$emit_wrapper" ]] && continue
+            local wrapper_entry
+            wrapper_entry=$(echo "$deferred_wrappers" | jq -c --arg w "$emit_wrapper" '.[$w] // empty')
+            if [[ -n "$wrapper_entry" && "$wrapper_entry" != "null" ]]; then
+                result=$(echo "$result" | jq --argjson entry "$wrapper_entry" '. + [$entry]')
+                deferred_wrappers=$(echo "$deferred_wrappers" | jq --arg w "$emit_wrapper" 'del(.[$w])')
+            fi
+        done <<< "$wrappers_to_emit"
+
         i=$((i + 1))
     done
+
+    local remaining_wrappers
+    remaining_wrappers=$(echo "$deferred_wrappers" | jq -r 'keys[]?' 2>/dev/null) || true
+    while IFS= read -r rw; do
+        [[ -z "$rw" ]] && continue
+        local rw_entry
+        rw_entry=$(echo "$deferred_wrappers" | jq -c --arg w "$rw" '.[$w] // empty')
+        if [[ -n "$rw_entry" && "$rw_entry" != "null" ]]; then
+            result=$(echo "$result" | jq --argjson entry "$rw_entry" '. + [$entry]')
+        fi
+    done <<< "$remaining_wrappers"
 
     echo "$result"
 }

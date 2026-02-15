@@ -1,0 +1,109 @@
+/*
+ * VisualSync - a tool to visualize user data synchronization
+ * Copyright (c) 2016 Gary Clayburg
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
+/*
+times shown were taken from build server with each task running essentially by themselves
+                                      visualsync quick(1:52)
+                                   /                           \
+                 synconsole compile & bundle(2:45)                visualsync test(3:51)
+              /              |                   \                       |
+backendTests(1:30)    frontendbounce(0:11)    panorama IT(2:58)   dsltestharness(1:46)
+        |
+frontendTests(2:39)
+
+
+
+jenkins build agent labels:
+agent1   patonlabel  any dockernode agent1 agent1paton
+agent2   coreosnode      dockernode agent2 agent2paton
+agent3   nodejs4 agent3  agent3paton nodejs12
+agent4   agent4  agent4paton dind
+agent5   agent5 bayard
+agent6   agent6 guthrie dockernode
+agent7   agent7 guthrie nodejs12 dockernode
+
+build timing:
+./gradlew clean build buildImage -x test --info   0:19 on laptop using gradle daemon, 2nd run
+
+artifactory repos
+garyrepo-libs-release    - virtual repo consists of:
+  garyrepo-libs-release-local
+  garyrepo-libs-snapshot-local
+  garyrepo-maven-jcenter
+garyrepo-libs-snapshot
+  garyrepo-libs-snapshot-local
+
+
+ */
+pipeline {
+    agent {
+        label 'dockernode'
+    }
+    options {
+        timestamps()
+        disableConcurrentBuilds()  //our build server is already maxed out running this in parallel
+        ansiColor('xterm')
+        // And we'd really like to be sure that this build doesn't hang forever, so
+        // let's time it out after an hour.
+        timeout(time: 60, unit: 'MINUTES')
+    }
+    triggers {
+        //Minute Hour Dom Month Dow
+        //cron('*/35 * * * *') //every 35 minutes (stress test)
+        cron('0 7 * * *') //7:00AM
+    }
+    environment {
+        TZ='America/Denver'
+        ARTIFACTORY = credentials('frogbuilder-artifactory')
+    }
+    stages {
+        stage('Quick build') {
+            steps {
+                sh './java8sdk.sh 8.0.402-tem ./gradlew -PskipRegularUnitTests=true clean build buildImage pushLatest pushVersion artifactoryPublish --info'
+            }
+        }
+        stage ('parallel build test') {
+            parallel {
+                stage ('synconsole build') {
+                    steps {
+                        build 'synconsole'
+                    }
+                }
+                stage('visualsync track') {
+                    stages {
+                        stage('visualsync test') {
+                            steps {
+                                sh 'env'
+                                sh "./java8sdk.sh 8.0.402-tem ./gradlew -PskipRestDocsUnitTests=true build --info"
+                            }
+                        }
+                    }
+                }
+                stage('dsltestharness') {
+                    steps {
+                        build 'dsltestharness'
+                    }
+                }
+            }
+        }
+    }
+    post {
+        always {
+            junit '**/build/**/TEST-*.xml'
+        }
+    }
+}

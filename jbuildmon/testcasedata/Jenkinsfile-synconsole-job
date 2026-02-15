@@ -1,0 +1,70 @@
+pipeline {
+    agent {
+        label 'nodejs12'
+    }
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+        ansiColor('xterm')
+    }
+//    triggers {
+//        upstream(upstreamProjects: 'visualsync', threshold: hudson.model.Result.SUCCESS)
+//    }
+    environment {
+        TZ='America/Denver'
+        ARTIFACTORY = credentials('frogbuilder-artifactory')
+    }
+    stages {
+        stage('checkout') {
+            steps {
+                sh 'env'
+//                checkout scm
+            }
+        }
+        stage('clean') {
+            steps {
+                sh './java8sdk.sh 8.0.402-tem ./gradlew clean'
+            }
+        }
+        stage('install tools') {
+            steps {
+                sh './java8sdk.sh 8.0.402-tem ./gradlew yarn_install -PnodeInstall'
+            }
+        }
+        stage('compile & bundle') {
+            steps {
+                sh './java8sdk.sh 8.0.402-tem ./gradlew buildImage pushLatest pushVersion artifactoryPublish -x test -Pprod -PnodeInstall'
+            }
+        }
+        stage('tests') {
+            parallel {
+                stage('back front tests') {
+                    stages {
+                        stage('backend tests') {
+                            steps {
+                                sh './java8sdk.sh 8.0.402-tem ./gradlew test -PnodeInstall'
+                            }
+                        }
+                        stage('frontend tests') {
+                            steps {
+                                sh './java8sdk.sh 8.0.402-tem ./gradlew yarn_test -PnodeInstall'
+                            }
+                        }
+                    }
+                }
+                stage('panorama') {
+                    steps {
+                        build 'panorama_integration_tests'
+                    }
+                }
+            }
+        }
+    }
+    post {
+        always {
+            junit '**/build/**/TEST-*.xml'
+            junit '**/build/test-results/karma/TESTS-*.xml'
+        }
+    }
+
+}

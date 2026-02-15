@@ -104,6 +104,55 @@ gamma...
     echo "$output" | jq -r '.[]' | grep -q "Gamma"
 }
 
+@test "detect_parallel_branches_in_progress_wrapper_without_closing_brace" {
+    # Simulates monitoring mode where wrapper block is still open and console
+    # output ends before the final [Pipeline] } for the wrapper stage.
+    local console_output='[Pipeline] { (parallel build test)
+[Pipeline] parallel
+[Pipeline] { (Branch: synconsole build)
+[Pipeline] stage
+[Pipeline] { (compile & bundle)
+...still running...
+[Pipeline] }
+[Pipeline] { (Branch: visualsync track)
+[Pipeline] stage
+[Pipeline] { (compile & bundle)
+...still running...'
+
+    run _detect_parallel_branches "$console_output" "parallel build test"
+    assert_success
+    local parsed
+    parsed=$(echo "$output" | jq -r '.[]')
+    echo "$parsed" | grep -q "synconsole build"
+    echo "$parsed" | grep -q "visualsync track"
+}
+
+@test "detect_parallel_branches_uses_matching_parallel_block_when_stage_name_repeats" {
+    local console_output='[Pipeline] { (parallel build test)
+not a parallel wrapper here
+[Pipeline] }
+[Pipeline] { (parallel build test)
+[Pipeline] parallel
+[Pipeline] { (Branch: synconsole build)
+...
+[Pipeline] }
+[Pipeline] { (Branch: visualsync track)
+...
+[Pipeline] }
+[Pipeline] { (Branch: dsltestharness)
+...
+[Pipeline] }
+[Pipeline] }'
+
+    run _detect_parallel_branches "$console_output" "parallel build test"
+    assert_success
+    local parsed
+    parsed=$(echo "$output" | jq -r '.[]')
+    echo "$parsed" | grep -q "synconsole build"
+    echo "$parsed" | grep -q "visualsync track"
+    echo "$parsed" | grep -q "dsltestharness"
+}
+
 # =============================================================================
 # extract_stage_logs with Branch: prefix tests
 # =============================================================================
@@ -168,7 +217,7 @@ direct match content
 
     run print_stage_line "Build Handle->Checkout" "SUCCESS" 500 "  " "[buildagent9] " "║ "
     assert_success
-    assert_output "[18:00:20] ℹ   Stage:   ║ [buildagent9] Build Handle->Checkout (<1s)"
+    assert_output "[18:00:20] ℹ   Stage:   ║ [buildagent9   ] Build Handle->Checkout (<1s)"
 }
 
 @test "print_stage_line_parallel_branch_itself" {
@@ -177,7 +226,7 @@ direct match content
 
     run print_stage_line "Build Handle" "SUCCESS" 21000 "  " "[orchestrator1] " "║ "
     assert_success
-    assert_output "[18:00:41] ℹ   Stage:   ║ [orchestrator1] Build Handle (21s)"
+    assert_output "[18:00:41] ℹ   Stage:   ║ [orchestrator1 ] Build Handle (21s)"
 }
 
 @test "print_stage_line_wrapper_no_marker" {
@@ -186,7 +235,7 @@ direct match content
 
     run print_stage_line "Trigger Component Builds" "SUCCESS" 21000 "" "[orchestrator1] " ""
     assert_success
-    assert_output "[18:00:42] ℹ   Stage: [orchestrator1] Trigger Component Builds (21s)"
+    assert_output "[18:00:42] ℹ   Stage: [orchestrator1 ] Trigger Component Builds (21s)"
 }
 
 @test "print_stage_line_no_parallel_marker_by_default" {
@@ -219,21 +268,89 @@ direct match content
 
     local stages_json='[
         {"name": "Checkout", "status": "SUCCESS", "durationMillis": 500, "agent": "orch1", "nesting_depth": 0},
-        {"name": "Build Handle->Compile", "status": "SUCCESS", "durationMillis": 10000, "agent": "agent9", "nesting_depth": 1, "parallel_branch": "Build Handle"},
-        {"name": "Build Handle", "status": "SUCCESS", "durationMillis": 21000, "agent": "orch1", "nesting_depth": 0, "parallel_branch": "Build Handle", "parallel_wrapper": "Trigger Component Builds", "has_downstream": true},
+        {"name": "Build Handle->Compile", "status": "SUCCESS", "durationMillis": 10000, "agent": "agent9", "nesting_depth": 1, "parallel_branch": "Build Handle", "parallel_path": "1"},
+        {"name": "Build Handle", "status": "SUCCESS", "durationMillis": 21000, "agent": "orch1", "nesting_depth": 0, "parallel_branch": "Build Handle", "parallel_wrapper": "Trigger Component Builds", "parallel_path": "1", "has_downstream": true},
         {"name": "Trigger Component Builds", "status": "SUCCESS", "durationMillis": 21114, "agent": "orch1", "nesting_depth": 0, "is_parallel_wrapper": true, "parallel_branches": ["Build Handle"]}
     ]'
 
     run _display_nested_stages_json "$stages_json" "false"
     assert_success
     # Checkout should NOT have parallel marker
-    assert_output --partial "Stage: [orch1] Checkout (<1s)"
-    # Nested stage of parallel branch should have ║
-    assert_output --partial "║ [agent9] Build Handle->Compile"
-    # Parallel branch itself should have ║
-    assert_output --partial "║ [orch1] Build Handle (21s)"
+    assert_output --partial "Stage: [orch1         ] Checkout (<1s)"
+    # Nested stage of parallel branch should have numbered marker
+    assert_output --partial "║1 [agent9        ] Build Handle->Compile"
+    # Parallel branch itself should have numbered marker
+    assert_output --partial "║1 [orch1         ] Build Handle (21s)"
     # Wrapper stage should NOT have ║
-    assert_output --partial "Stage: [orch1] Trigger Component Builds (21s)"
+    assert_output --partial "Stage: [orch1         ] Trigger Component Builds (21s)"
+}
+
+@test "display_nested_stages_json_nested_parallel_path_marker" {
+    NO_COLOR=1 source "${PROJECT_DIR}/lib/jenkins-common.sh"
+    _timestamp() { echo "18:00:20"; }
+
+    local stages_json='[
+        {"name": "Nested Branch Stage", "status": "SUCCESS", "durationMillis": 500, "agent": "agent14", "nesting_depth": 1, "parallel_path": "3.1"}
+    ]'
+
+    run _display_nested_stages_json "$stages_json" "false"
+    assert_success
+    assert_output --partial "║3.1 [agent14       ] Nested Branch Stage (<1s)"
+}
+
+@test "get_nested_stages_preserves_nested_parallel_paths_under_parent_parallel_branch" {
+    get_all_stages() {
+        local job="$1"
+        if [[ "$job" == "parent-job" ]]; then
+            echo '[
+                {"name":"parallel build test","status":"SUCCESS","startTimeMillis":0,"durationMillis":1000},
+                {"name":"synconsole build","status":"SUCCESS","startTimeMillis":0,"durationMillis":900}
+            ]'
+        elif [[ "$job" == "synconsole" ]]; then
+            echo '[
+                {"name":"tests","status":"SUCCESS","startTimeMillis":0,"durationMillis":600},
+                {"name":"back front tests","status":"SUCCESS","startTimeMillis":0,"durationMillis":500},
+                {"name":"panorama","status":"SUCCESS","startTimeMillis":0,"durationMillis":500}
+            ]'
+        else
+            echo '[]'
+        fi
+    }
+
+    get_console_output() {
+        local job="$1"
+        if [[ "$job" == "parent-job" ]]; then
+            echo 'Running on orchestrator1 in /workspace
+[Pipeline] { (parallel build test)
+[Pipeline] parallel
+[Pipeline] { (Branch: synconsole build)
+Starting building: synconsole #12
+[Pipeline] }
+[Pipeline] }'
+        elif [[ "$job" == "synconsole" ]]; then
+            echo 'Running on agent7 in /workspace
+[Pipeline] { (tests)
+[Pipeline] parallel
+[Pipeline] { (Branch: back front tests)
+echo one
+[Pipeline] }
+[Pipeline] { (Branch: panorama)
+echo two
+[Pipeline] }
+[Pipeline] }'
+        else
+            echo ''
+        fi
+    }
+
+    local result
+    result=$(_get_nested_stages "parent-job" "1")
+
+    # Parent parallel branch path should be 1
+    [[ "$(echo "$result" | jq -r '.[] | select(.name == "synconsole build") | .parallel_path')" == "1" ]]
+    # Nested parallel branches should keep nested numbering, not collapse to parent path
+    [[ "$(echo "$result" | jq -r '.[] | select(.name == "synconsole build->back front tests") | .parallel_path')" == "1.1" ]]
+    [[ "$(echo "$result" | jq -r '.[] | select(.name == "synconsole build->panorama") | .parallel_path')" == "1.2" ]]
 }
 
 # =============================================================================
@@ -247,5 +364,5 @@ direct match content
     # Existing callers that pass only 5 args should still work
     run print_stage_line "Deploy" "SUCCESS" 5000 "  " "[agent1] "
     assert_success
-    assert_output "[12:34:56] ℹ   Stage:   [agent1] Deploy (5s)"
+    assert_output "[12:34:56] ℹ   Stage:   [agent1        ] Deploy (5s)"
 }
