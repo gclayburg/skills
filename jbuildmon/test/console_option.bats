@@ -63,7 +63,8 @@ COMMAND=""
 COMMAND_ARGS=()
 EOF
 
-    # Extract parse_global_options and show_usage from buildgit
+    # Extract _usage_error, parse_global_options and show_usage from buildgit
+    sed -n '/^_usage_error()/,/^}/p' "${PROJECT_DIR}/buildgit" >> "${TEST_TEMP_DIR}/buildgit_test.sh"
     sed -n '/^parse_global_options()/,/^}/p' "${PROJECT_DIR}/buildgit" >> "${TEST_TEMP_DIR}/buildgit_test.sh"
     sed -n '/^show_usage()/,/^}/p' "${PROJECT_DIR}/buildgit" >> "${TEST_TEMP_DIR}/buildgit_test.sh"
 

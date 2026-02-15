@@ -6,6 +6,7 @@ All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are do
 
 ### Features
 - **Usage help on invalid options** — Unknown or invalid options for `status` and `build` subcommands now display the full usage help alongside the error message. `-h`/`--help` is recognized on `status` and `build` subcommands as a valid help request (exit 0, stdout). Error usage output goes to stderr consistently across all commands.
+- **Quick status line mode** — Added `buildgit status --line` with optional count (`--line=N`) for compact one-line summaries. Added `--all` to force full status output. Default snapshot behavior is now TTY-aware (`status` shows full output on TTY and one-line output when piped/redirected).
 
 ## 2026-02-14
 

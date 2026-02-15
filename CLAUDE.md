@@ -52,6 +52,9 @@ Environment Variables:
 - see jbuildmon/specs/CLAUDE.md for comprehensinve spec creating, migrating rules and conventions
 - all specs use this naming pattern: `jbuildmon/specs/*-spec.md`
 
+## buildgit
+- see jbuildmon/CLAUDE.md for buildgit testing, changes, AI Agent skill
+
 ## Building on Jenkins CI server
 
 - Jenkins build server will build automatically on a git push to origin main

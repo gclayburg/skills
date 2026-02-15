@@ -80,13 +80,11 @@ source "\${TEST_TEMP_DIR}/buildgit_no_main.sh"
 
 # Override Jenkins API functions with mocks
 verify_jenkins_connection() {
-    log_success "Connected to Jenkins"
     return 0
 }
 
 verify_job_exists() {
     local job_name="\$1"
-    log_success "Job '\$job_name' found"
     JOB_URL="\${JENKINS_URL}/job/\${job_name}"
     return 0
 }
@@ -96,7 +94,11 @@ get_last_build_number() {
 }
 
 get_build_info() {
-    echo '{"number":42,"result":"${build_result}","building":${is_building},"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/test-repo/42/"}'
+    local build_num="\$2"
+    if [[ -z "\$build_num" ]]; then
+        build_num="42"
+    fi
+    echo '{"number":'"\$build_num"',"result":"${build_result}","building":${is_building},"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/test-repo/'"\$build_num"'/"}'
 }
 
 get_console_output() {
@@ -109,6 +111,46 @@ get_current_stage() {
 }
 
 # Call the status command
+cmd_status "\$@"
+WRAPPER_START
+
+    chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+}
+
+# Helper for --line=N tests with multiple build outcomes
+create_status_line_count_wrapper() {
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER_START
+#!/usr/bin/env bash
+set -euo pipefail
+
+export PROJECT_DIR="${PROJECT_DIR}"
+export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
+
+_BUILDGIT_TESTING=1
+source "\${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+verify_jenkins_connection() { return 0; }
+verify_job_exists() {
+    local job_name="\$1"
+    JOB_URL="\${JENKINS_URL}/job/\${job_name}"
+    return 0
+}
+get_last_build_number() { echo "42"; }
+get_build_info() {
+    local build_num="\$2"
+    case "\$build_num" in
+        42) echo '{"number":42,"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/test-repo/42/"}' ;;
+        41) echo '{"number":41,"result":"FAILURE","building":false,"timestamp":1706699700000,"duration":90000,"url":"http://jenkins.example.com/job/test-repo/41/"}' ;;
+        40) echo '{"number":40,"result":"SUCCESS","building":false,"timestamp":1706699400000,"duration":80000,"url":"http://jenkins.example.com/job/test-repo/40/"}' ;;
+        *) echo "" ;;
+    esac
+}
+get_console_output() { echo "Started by user testuser"; }
+
 cmd_status "\$@"
 WRAPPER_START
 
@@ -162,7 +204,7 @@ WRAPPER
     export PROJECT_DIR
     create_status_test_wrapper "SUCCESS" "false"
 
-    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --all
 
     # Should show Jenkins build information
     assert_output --partial "BUILD SUCCESSFUL"
@@ -310,7 +352,7 @@ WRAPPER
     export PROJECT_DIR
     create_status_test_wrapper "SUCCESS" "false"
 
-    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --all
 
     assert_success  # exit code 0
     assert_output --partial "BUILD SUCCESSFUL"
@@ -326,7 +368,7 @@ WRAPPER
     export PROJECT_DIR
     create_status_test_wrapper "FAILURE" "false"
 
-    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --all
 
     assert_failure  # exit code non-zero (1)
     assert_output --partial "BUILD FAILED"
@@ -342,7 +384,7 @@ WRAPPER
     export PROJECT_DIR
     create_status_test_wrapper "null" "true"
 
-    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --all
 
     # Exit code 2 for building
     [ "$status" -eq 2 ]
@@ -460,7 +502,7 @@ WRAPPER
     export PROJECT_DIR
     create_build_number_test_wrapper "31"
 
-    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 31
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 31 --all
 
     assert_success
     assert_output --partial "#31"
@@ -575,7 +617,7 @@ WRAPPER
     export PROJECT_DIR
     create_build_not_found_wrapper "9999"
 
-    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 9999
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 9999 --all
 
     assert_failure
     assert_output --partial "Build #9999 not found for job"
@@ -590,7 +632,7 @@ WRAPPER
     export PROJECT_DIR
     create_build_number_test_wrapper "99"
 
-    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --all
 
     assert_success
     # Should use the latest build (99) from get_last_build_number
@@ -686,4 +728,193 @@ WRAPPER
     assert_failure
     assert_output --partial "Unexpected argument: 10"
     assert_output --partial "Usage: buildgit"
+}
+
+# =============================================================================
+# Test Cases: Quick One-Line Status
+# Spec reference: 2026-02-15_quick-status-line-spec.md
+# =============================================================================
+
+@test "status_line_completed" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_test_wrapper "SUCCESS" "false"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line
+
+    assert_success
+    assert_output --regexp "^SUCCESS Job test-repo #42 completed in 2m 0s on [0-9]{4}-[0-9]{2}-[0-9]{2} \\(.*\\)$"
+    line_count="$(printf "%s\n" "$output" | wc -l | tr -d ' ')"
+    [ "$line_count" -eq 1 ]
+}
+
+@test "status_line_in_progress" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_test_wrapper "null" "true"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line
+
+    assert_failure
+    assert_output --regexp "^IN_PROGRESS Job test-repo #42 running for .* \\(started [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}\\)$"
+    line_count="$(printf "%s\n" "$output" | wc -l | tr -d ' ')"
+    [ "$line_count" -eq 1 ]
+}
+
+@test "status_line_short_flag" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_test_wrapper "SUCCESS" "false"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -l
+
+    assert_success
+    assert_output --partial "SUCCESS Job test-repo #42 completed in 2m 0s"
+}
+
+@test "status_all_short_flag_forces_full_output" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_test_wrapper "SUCCESS" "false"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -a
+
+    assert_success
+    assert_output --partial "BUILD SUCCESSFUL"
+}
+
+@test "status_default_non_tty_is_line" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_test_wrapper "SUCCESS" "false"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+
+    assert_success
+    assert_output --regexp "^SUCCESS Job test-repo #42 completed in 2m 0s on [0-9]{4}-[0-9]{2}-[0-9]{2} \\(.*\\)$"
+}
+
+@test "status_line_with_specific_build_number" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_test_wrapper "SUCCESS" "false"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 31 --line
+
+    assert_success
+    assert_output --partial "SUCCESS Job test-repo #31 completed in 2m 0s"
+}
+
+@test "status_line_rejects_all" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_test_wrapper "SUCCESS" "false"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line --all
+
+    assert_failure
+    assert_output --partial "Cannot use --line with --all"
+    assert_output --partial "Usage: buildgit"
+}
+
+@test "status_line_rejects_json" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_test_wrapper "SUCCESS" "false"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line --json
+
+    assert_failure
+    assert_output --partial "Cannot use --line with --json"
+    assert_output --partial "Usage: buildgit"
+}
+
+@test "status_line_rejects_follow" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_test_wrapper "SUCCESS" "false"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line --follow
+
+    assert_failure
+    assert_output --partial "Cannot use --line with --follow"
+    assert_output --partial "Usage: buildgit"
+}
+
+@test "status_line_count_2" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_line_count_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line=2
+
+    assert_success
+    assert_output --partial "SUCCESS Job test-repo #42"
+    assert_output --partial "FAILURE Job test-repo #41"
+    line_count="$(printf "%s\n" "$output" | wc -l | tr -d ' ')"
+    [ "$line_count" -eq 2 ]
+}
+
+@test "status_line_count_10_prints_available_history" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_line_count_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line=10
+
+    assert_success
+    assert_output --partial "SUCCESS Job test-repo #42"
+    assert_output --partial "FAILURE Job test-repo #41"
+    assert_output --partial "SUCCESS Job test-repo #40"
+    line_count="$(printf "%s\n" "$output" | wc -l | tr -d ' ')"
+    [ "$line_count" -eq 3 ]
+}
+
+@test "status_line_with_build_number_and_count" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_line_count_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 41 --line=2
+
+    assert_failure
+    first_line="$(printf "%s\n" "$output" | sed -n '1p')"
+    [ "${first_line#FAILURE Job test-repo #41}" != "$first_line" ]
+    assert_output --partial "SUCCESS Job test-repo #40"
+}
+
+@test "status_line_invalid_count_zero" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_test_wrapper "SUCCESS" "false"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line=0
+
+    assert_failure
+    assert_output --partial "Invalid --line value: 0"
+    assert_output --partial "Usage: buildgit"
+}
+
+@test "status_line_invalid_count_text" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_test_wrapper "SUCCESS" "false"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line=abc
+
+    assert_failure
+    assert_output --partial "Invalid --line value: abc"
+    assert_output --partial "Usage: buildgit"
+}
+
+@test "status_line_count_exit_code_uses_first_line_only" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_line_count_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line=3
+
+    # First line is SUCCESS (#42), so overall exit should be success
+    assert_success
+    assert_output --partial "FAILURE Job test-repo #41"
 }

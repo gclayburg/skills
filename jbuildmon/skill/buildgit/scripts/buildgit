@@ -80,8 +80,9 @@ Global Options:
   --verbose                      Enable verbose output for debugging
 
 Commands:
-  status [build#] [-f|--follow] [--json]
+  status [build#] [-f|--follow] [--json] [--line[=N]] [--all]
                       Display Jenkins build status (latest or specific build)
+                      Default: full output on TTY, one-line on pipe/redirect
   push [--no-follow] [git-push-options] [remote] [branch]
                       Push commits and monitor Jenkins build
   build [--no-follow] Trigger and monitor Jenkins build
@@ -92,6 +93,9 @@ Examples:
   buildgit status 31           # Status of build #31
   buildgit status -f           # Follow builds indefinitely
   buildgit status --json       # JSON format for Jenkins status
+  buildgit status --line       # One-line status of latest build
+  buildgit status --line=10    # One-line status for last 10 builds
+  buildgit status --all | less # Full status piped to pager
   buildgit push                # Push + monitor build
   buildgit push --no-follow    # Push only, no monitoring
   buildgit --job myjob build   # Trigger build for specific job
@@ -178,10 +182,13 @@ parse_global_options() {
 # =============================================================================
 
 # Parse status command options
-# Sets: STATUS_JSON_MODE, STATUS_FOLLOW_MODE
+# Sets: STATUS_JSON_MODE, STATUS_FOLLOW_MODE, STATUS_LINE_MODE, STATUS_LINE_COUNT, STATUS_ALL_MODE
 _parse_status_options() {
     STATUS_JSON_MODE=false
     STATUS_FOLLOW_MODE=false
+    STATUS_LINE_MODE=false
+    STATUS_LINE_COUNT="1"
+    STATUS_ALL_MODE=false
     STATUS_BUILD_NUMBER=""
 
     while [[ $# -gt 0 ]]; do
@@ -196,6 +203,23 @@ _parse_status_options() {
                 ;;
             -f|--follow)
                 STATUS_FOLLOW_MODE=true
+                shift
+                ;;
+            -l|--line)
+                STATUS_LINE_MODE=true
+                STATUS_LINE_COUNT="1"
+                shift
+                ;;
+            --line=*)
+                STATUS_LINE_MODE=true
+                STATUS_LINE_COUNT="${1#--line=}"
+                if ! [[ "$STATUS_LINE_COUNT" =~ ^[1-9][0-9]*$ ]]; then
+                    _usage_error "Invalid --line value: $STATUS_LINE_COUNT (must be a positive integer)"
+                fi
+                shift
+                ;;
+            -a|--all)
+                STATUS_ALL_MODE=true
                 shift
                 ;;
             -*)
@@ -214,6 +238,196 @@ _parse_status_options() {
                 ;;
         esac
     done
+}
+
+# Format epoch milliseconds as local YYYY-MM-DD
+_format_local_date() {
+    local epoch_ms="$1"
+    if [[ -z "$epoch_ms" || "$epoch_ms" == "null" || ! "$epoch_ms" =~ ^[0-9]+$ ]]; then
+        echo "unknown"
+        return
+    fi
+
+    local epoch_seconds=$((epoch_ms / 1000))
+    if [[ "$(uname)" == "Darwin" ]]; then
+        date -r "$epoch_seconds" "+%Y-%m-%d" 2>/dev/null || echo "unknown"
+    else
+        date -d "@$epoch_seconds" "+%Y-%m-%d" 2>/dev/null || echo "unknown"
+    fi
+}
+
+# Format epoch milliseconds as local YYYY-MM-DD HH:MM
+_format_local_datetime_minute() {
+    local epoch_ms="$1"
+    if [[ -z "$epoch_ms" || "$epoch_ms" == "null" || ! "$epoch_ms" =~ ^[0-9]+$ ]]; then
+        echo "unknown"
+        return
+    fi
+
+    local epoch_seconds=$((epoch_ms / 1000))
+    if [[ "$(uname)" == "Darwin" ]]; then
+        date -r "$epoch_seconds" "+%Y-%m-%d %H:%M" 2>/dev/null || echo "unknown"
+    else
+        date -d "@$epoch_seconds" "+%Y-%m-%d %H:%M" 2>/dev/null || echo "unknown"
+    fi
+}
+
+# Format relative age for an epoch seconds timestamp.
+# Returns: just now, N minutes ago, N hours ago, N days ago, N weeks ago, or N months ago
+_format_relative_time() {
+    local epoch_seconds="$1"
+    if [[ -z "$epoch_seconds" || ! "$epoch_seconds" =~ ^[0-9]+$ ]]; then
+        echo "unknown"
+        return
+    fi
+
+    local now age
+    now=$(date +%s)
+    age=$((now - epoch_seconds))
+    if [[ "$age" -lt 0 ]]; then
+        age=0
+    fi
+
+    if [[ "$age" -lt 60 ]]; then
+        echo "just now"
+    elif [[ "$age" -lt 3600 ]]; then
+        local minutes=$((age / 60))
+        if [[ "$minutes" -eq 1 ]]; then
+            echo "1 minute ago"
+        else
+            echo "${minutes} minutes ago"
+        fi
+    elif [[ "$age" -lt 86400 ]]; then
+        local hours=$((age / 3600))
+        if [[ "$hours" -eq 1 ]]; then
+            echo "1 hour ago"
+        else
+            echo "${hours} hours ago"
+        fi
+    elif [[ "$age" -lt 2592000 ]]; then
+        local days=$((age / 86400))
+        if [[ "$days" -eq 1 ]]; then
+            echo "1 day ago"
+        else
+            echo "${days} days ago"
+        fi
+    elif [[ "$age" -lt 7776000 ]]; then
+        local weeks=$((age / 604800))
+        if [[ "$weeks" -eq 1 ]]; then
+            echo "1 week ago"
+        else
+            echo "${weeks} weeks ago"
+        fi
+    else
+        local months=$((age / 2592000))
+        if [[ "$months" -eq 1 ]]; then
+            echo "1 month ago"
+        else
+            echo "${months} months ago"
+        fi
+    fi
+}
+
+# Fast one-line status output for snapshot mode.
+# Returns: 0 for SUCCESS, 1 for non-SUCCESS or in-progress.
+_status_line_for_build_json() {
+    local job_name="$1"
+    local build_number="$2"
+    local build_json="$3"
+
+    local json_build_number
+    json_build_number=$(echo "$build_json" | jq -r '.number // empty')
+    if [[ -n "$json_build_number" ]]; then
+        build_number="$json_build_number"
+    fi
+
+    local result building timestamp_ms duration_ms
+    result=$(echo "$build_json" | jq -r '.result // empty')
+    building=$(echo "$build_json" | jq -r '.building // false')
+    timestamp_ms=$(echo "$build_json" | jq -r '.timestamp // 0')
+    duration_ms=$(echo "$build_json" | jq -r '.duration // 0')
+
+    if [[ "$building" == "true" || -z "$result" ]]; then
+        local now_ms elapsed_ms elapsed_display start_display
+        now_ms=$(($(date +%s) * 1000))
+        elapsed_ms=0
+        if [[ "$timestamp_ms" =~ ^[0-9]+$ && "$timestamp_ms" -gt 0 ]]; then
+            elapsed_ms=$((now_ms - timestamp_ms))
+            if [[ "$elapsed_ms" -lt 0 ]]; then
+                elapsed_ms=0
+            fi
+        fi
+
+        elapsed_display=$(format_duration "$elapsed_ms")
+        start_display=$(_format_local_datetime_minute "$timestamp_ms")
+        echo "IN_PROGRESS Job ${job_name} #${build_number} running for ${elapsed_display} (started ${start_display})"
+        return 1
+    fi
+
+    local completion_ms completion_seconds duration_display date_display relative_display
+    completion_ms="$timestamp_ms"
+    if [[ "$timestamp_ms" =~ ^[0-9]+$ && "$duration_ms" =~ ^[0-9]+$ ]]; then
+        completion_ms=$((timestamp_ms + duration_ms))
+    fi
+    completion_seconds=$((completion_ms / 1000))
+    duration_display=$(format_duration "$duration_ms")
+    date_display=$(_format_local_date "$completion_ms")
+    relative_display=$(_format_relative_time "$completion_seconds")
+
+    echo "${result} Job ${job_name} #${build_number} completed in ${duration_display} on ${date_display} (${relative_display})"
+    if [[ "$result" == "SUCCESS" ]]; then
+        return 0
+    fi
+    return 1
+}
+
+# Fast one-line status output for snapshot mode.
+# Arguments: job_name [start_build_number] [line_count]
+# Returns: exit code based only on the first printed line.
+_status_line_check() {
+    local job_name="$1"
+    local start_build_number="${2:-}"
+    local line_count="${3:-1}"
+    local first_build_number="$start_build_number"
+
+    if [[ -z "$first_build_number" ]]; then
+        first_build_number=$(get_last_build_number "$job_name")
+        if [[ "$first_build_number" == "0" || -z "$first_build_number" ]]; then
+            echo "Error: No builds found for job '${job_name}'" >&2
+            return 1
+        fi
+    fi
+
+    local first_exit_code=1
+    local i=0
+    while [[ "$i" -lt "$line_count" ]]; do
+        local current_build_number=$((first_build_number - i))
+        if [[ "$current_build_number" -lt 1 ]]; then
+            break
+        fi
+
+        local build_json
+        build_json=$(get_build_info "$job_name" "$current_build_number")
+        if [[ -z "$build_json" ]]; then
+            if [[ "$i" -eq 0 ]]; then
+                echo "Error: Failed to fetch build information" >&2
+                return 1
+            fi
+            break
+        fi
+
+        local line_exit=1
+        if _status_line_for_build_json "$job_name" "$current_build_number" "$build_json"; then
+            line_exit=0
+        fi
+        if [[ "$i" -eq 0 ]]; then
+            first_exit_code="$line_exit"
+        fi
+
+        i=$((i + 1))
+    done
+
+    return "$first_exit_code"
 }
 
 # Extract trigger, commit, and correlation info from a build
@@ -762,6 +976,17 @@ cmd_status() {
     # Parse status-specific options
     _parse_status_options "$@"
 
+    # Validate incompatible option combinations for --line mode
+    if [[ "$STATUS_LINE_MODE" == "true" && "$STATUS_ALL_MODE" == "true" ]]; then
+        _usage_error "Cannot use --line with --all"
+    fi
+    if [[ "$STATUS_LINE_MODE" == "true" && "$STATUS_JSON_MODE" == "true" ]]; then
+        _usage_error "Cannot use --line with --json"
+    fi
+    if [[ "$STATUS_LINE_MODE" == "true" && "$STATUS_FOLLOW_MODE" == "true" ]]; then
+        _usage_error "Cannot use --line with --follow"
+    fi
+
     # Validate incompatible options: follow + build number
     if [[ "$STATUS_FOLLOW_MODE" == "true" && -n "$STATUS_BUILD_NUMBER" ]]; then
         _usage_error "Cannot use --follow with a specific build number"
@@ -785,6 +1010,30 @@ cmd_status() {
     # -------------------------------------------------------------------------
     if ! _validate_jenkins_setup "check Jenkins status"; then
         return 1
+    fi
+
+    # JSON mode always uses structured output path
+    if [[ "$STATUS_JSON_MODE" == "true" ]]; then
+        _jenkins_status_check "$_VALIDATED_JOB_NAME" "$STATUS_JSON_MODE" "$STATUS_BUILD_NUMBER"
+        return $?
+    fi
+
+    # Determine output mode for status snapshots.
+    # Default: full output on TTY, one-line output when stdout is not a TTY.
+    local use_line_mode="$STATUS_LINE_MODE"
+    local line_count="$STATUS_LINE_COUNT"
+    if [[ "$STATUS_LINE_MODE" != "true" && "$STATUS_ALL_MODE" != "true" ]]; then
+        if [[ -t 1 ]]; then
+            use_line_mode=false
+        else
+            use_line_mode=true
+            line_count="1"
+        fi
+    fi
+
+    if [[ "$use_line_mode" == "true" ]]; then
+        _status_line_check "$_VALIDATED_JOB_NAME" "$STATUS_BUILD_NUMBER" "$line_count"
+        return $?
     fi
 
     _jenkins_status_check "$_VALIDATED_JOB_NAME" "$STATUS_JSON_MODE" "$STATUS_BUILD_NUMBER"

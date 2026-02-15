@@ -143,6 +143,8 @@ See the current state of the latest build:
 buildgit status
 ```
 
+`buildgit status` defaults to full output in an interactive terminal, and one-line output when piped/redirected (non-TTY stdout).
+
 Check a specific build by number:
 
 ```bash
@@ -159,6 +161,14 @@ Get machine-readable output for scripting or agent consumption:
 
 ```bash
 buildgit status --json
+```
+
+Get one-line status output:
+
+```bash
+buildgit status --line       # latest build only
+buildgit status --line=10    # latest 10 builds, newest to oldest
+buildgit status --all        # force full output even when piped
 ```
 
 ### Trigger a build
@@ -206,6 +216,9 @@ This lets both buildgit and your AI agent find the right Jenkins job automatical
 | `buildgit push --no-follow` | Push only |
 | `buildgit status` | Build status snapshot |
 | `buildgit status 31` | Status of specific build |
+| `buildgit status --line` | One-line status for latest build |
+| `buildgit status --line=10` | One-line status for latest 10 builds |
+| `buildgit status --all` | Force full status output |
 | `buildgit status -f` | Follow builds in real-time |
 | `buildgit status --json` | JSON output |
 | `buildgit build` | Trigger + monitor build |

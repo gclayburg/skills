@@ -23,6 +23,9 @@ The `buildgit` script is bundled at `scripts/buildgit` within this skill package
 |---------|---------|
 | `scripts/buildgit status` | Jenkins build status snapshot |
 | `scripts/buildgit status <build#>` | Status of a specific build number |
+| `scripts/buildgit status --line` | One-line status for latest build |
+| `scripts/buildgit status --line=<N>` | One-line status for latest N builds |
+| `scripts/buildgit status --all` | Force full snapshot output |
 | `scripts/buildgit status -f` | Follow builds in real-time (Ctrl+C to stop) |
 | `scripts/buildgit status --json` | Machine-readable Jenkins build status |
 | `scripts/buildgit push` | Push + monitor Jenkins build until complete |
@@ -48,6 +51,10 @@ The `buildgit` script is bundled at `scripts/buildgit` within this skill package
 - `ABORTED` — build was manually cancelled
 
 For failures, summarize the failed stage name, error logs, and test failure details for the user.
+
+For snapshot mode defaults, `scripts/buildgit status` is TTY-aware:
+- TTY stdout: full output
+- non-TTY stdout (pipe/redirect): one-line output
 
 ## Dynamic Context
 
