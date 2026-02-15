@@ -1,30 +1,8 @@
 # Specs/ directory: Specifications, Implementation Plans, and Bug fixes workflow
 
-## Project Specs
-
-Individual `*-spec.md` files are treated as the specification for each feature—they define what the feature is and what it must do. These specification files are the authoritative ("canonical") source of requirements for their parts of the application.
-
-- If there are conflicting specifications, newer ones are always more important than older ones
-- All spec files that are created from other raw report documents should reference those documents in the title header of the spec
-- When writing a new spec, review the existing specs in the specs/ directory and identify any that are clearly superseded by your new specification. List only the directly superseded (first-level) specs.
-
-## Creating a new spec
-
-**Specification template (include at top of each spec):**
-```
-# Title
-Date: <ISO 8601 format with seconds, America/Denver timezone>
-References: list of <other-raw-report-path.md> or <none>
-Supersedes: list of <other-spec-file.md>
-```
-
-## Spec rules
-- any changes to the 'buildgit status' command must ensure that 'buildgit status', 'buildgit status -f', and 'buildgit status --json' are always consistent with each other.  If you change one of these, they all should be changed to match.
-
 ### Todo directory
 The specs/todo directory contains specs or plans for new features and/or bug fixes.  
-- files in this directory represent items that need to be done in the future, but have not been implemented yet.
-- IMPORTANT: when these items are completed, the file should be moved to the specs/directory
+- files in this directory represent raw ideas that might need to be done in the future, but have not been spec'd, planned or implemented yet.
 - see specs/todo/README.md for an index of all the todo items in the folder
 
 
@@ -58,51 +36,6 @@ These files represent completed specifications in the specs/ directory.  This li
 - feature2026-02-14-numbered-parallel-stage-display-spec.md  add numbered parallel branch markers (`║1`, `║2`, `║3.1`), fixed-width agent formatting, wrapper-last ordering, and snapshot/monitoring terminal output consistency rules
 - bug2026-02-14-parallel-branch-downstream-mapping-spec.md  fix incorrect downstream job association in parallel branch stage mapping so each branch shows its own nested stages across status and monitoring modes
 - bug2026-02-14-monitoring-missing-stages-spec.md  fix monitoring mode missing downstream stages and premature wrapper/branch printing by deferring wrapper and downstream parent stages until children are resolved
+- usage-help-spec.md  display full usage help on unknown/invalid options for `status` and `build` subcommands; recognize `-h`/`--help` as valid help request on subcommands
 
 
-
-## Helper Prompts
-Helper prompts are used by AI to automatically generate other documents
-- taskcreator.md  instructions to create individual chunks (implementation tasks) from a spec file
-- chunk_template.md template of sample chunk of implementation plan
-
-## implementation plan
-- Any file named *-plan.md or *_plan.md is an implementation plan that have rules for how they are updated
-- These files are created from a spec file using taskcreator.md
-- Each chunk has a brief description, which has backing documentation in the referenced spec section
-- Each chunk starts as an un marked checkbox, meaning the task has not been completed.
-- When a task or 'chunk' in the plan has been implemented, it is marked as completed.
-- Once a plan is implemented, the corresponding plan.md file is not useful and can be considered archival status
-
-### Chunk Execution Rules
-- **All chunks are designed to be executed by an AI agent.** There are no "manual-only" or "investigation-only" chunks that should be skipped.
-- Agents must attempt each chunk before concluding it cannot be done. If a chunk requires data gathering (API calls, file reads, etc.), the agent should execute those operations.
-- Chunks must be completed in dependency order. Do not skip a prerequisite chunk and substitute assumptions for its outputs.
-- See AGENTS.md for detailed execution guidance.
-
-
-## Bug reports
-### Bug Report File Naming Conventions
-Bug reports go through these phases
-
-raw bug report -> root cause analysis spec -> implementation plan -> code fix
-Each arrow here goes through a documented process to create the next phase
-
-- **Raw bug reports:**  
-  Use the following naming pattern for raw, unprocessed bug reports:  
-  ```
-  specs/bug<YYYY-MM-DD>-<title>-raw-bugreport.md
-  ```
-  Example: `specs/bug2026-01-28-stage-log-truncated-raw-bugreport.md`
-- **Analyzed bug reports:**  
-  Once a bug report has been analyzed for its root cause, name the file as:  
-  ```
-  specs/bug<YYYY-MM-DD>-<title>-spec.md
-  ```
-  Example: `specs/bug2026-01-28-stage-log-truncated-spec.md`
-- **Implementation plans for bug fixes:**  
-  After a bug spec has been broken down into an implementation plan, use the following naming pattern:  
-  ```
-  specs/bug<YYYY-MM-DD>-<title>-plan.md
-  ```
-  Example: `specs/bug2026-01-28-stage-log-truncated-plan.md`

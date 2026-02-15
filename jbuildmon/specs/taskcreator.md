@@ -1,6 +1,14 @@
-Use these instructions for breaking down a large specification.  The main objective is to create an implementation plan markdown file that can be used later by the implementer to build the software.  
+# taskcreator
 
-You are a software architect. Decompose the feature specification into LLM-sized implementation chunks.
+Use these instructions for breaking down a large specification.  The main objective is to create an implementation plan markdown file that can be used later by the implementer to build the software.  You are a software architect. Decompose the feature specification into LLM-sized implementation chunks.
+
+## implementation plan
+- Any file named `*-plan.md` or `*_plan.md` is an implementation plan that have rules for how they are updated
+- us `chunk_template.md` for template of sample chunk of implementation plan
+- Each chunk has a brief description, which has backing documentation in the referenced spec section
+- Each chunk starts as an un marked checkbox, meaning the task has not been completed.
+- When a task or 'chunk' in the plan has been implemented, it is marked as completed.
+- Once all chunks in a plan have been implemented, the corresponding plan.md file is not useful and can be considered archival status
 
 ## Goals
 - Break down a large spec into smaller, independently runnable chunks or tasks of work.  Chunk and task terms are used interchangeably.
@@ -57,3 +65,6 @@ You are a software architect. Decompose the feature specification into LLM-sized
 - The plan will not specify an order as to which chunks should be built first.  
 - The dependencies are documented so this decision of which chunk to build next can be deferred to implementation time.
 
+### Chunk Execution Rules
+- **All chunks are designed to be executed by an AI agent.** There are no "manual-only" or "investigation-only" chunks that should be skipped.
+- Agents must attempt each chunk before concluding it cannot be done. If a chunk requires data gathering (API calls, file reads, etc.), the agent should execute those operations.
