@@ -1138,12 +1138,25 @@ _select_downstream_build_for_stage() {
 
         local job_lc score
         job_lc=$(echo "$job" | tr '[:upper:]' '[:lower:]')
+        # Split job name into segments for word-level matching
+        local job_segments
+        job_segments=$(echo "$job_lc" | tr '-' ' ')
         score=0
 
         local token
         for token in $stage_tokens; do
             [[ ${#token} -lt 3 ]] && continue
-            if [[ "$job_lc" == *"$token"* ]]; then
+            # Prefer exact segment match (score 2) over substring match (score 1)
+            local seg matched_segment=false
+            for seg in $job_segments; do
+                if [[ "$seg" == "$token" ]]; then
+                    matched_segment=true
+                    break
+                fi
+            done
+            if [[ "$matched_segment" == "true" ]]; then
+                score=$((score + 2))
+            elif [[ "$job_lc" == *"$token"* ]]; then
                 score=$((score + 1))
             fi
         done

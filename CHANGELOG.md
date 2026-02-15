@@ -6,6 +6,7 @@ All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are do
 
 ### Bug Fixes
 - **Monitoring mode missing stages** — Fixed monitoring mode (`build`, `push`, `status -f`) missing downstream stages and printing wrapper/parent stages prematurely. Wrapper stages with parallel branches are now deferred until all branches reach terminal status. Downstream parent stages are deferred until at least one child stage appears. Settlement window increased to allow deeply nested builds to fully resolve.
+- **Downstream job matching for shared-prefix job names** — Fixed `_select_downstream_build_for_stage` matching the wrong downstream job when multiple job names share a common prefix (e.g., `phandlemono-handle` vs `phandlemono-signalboot`). Segment-level matches now score higher than substring matches.
 
 ## 2026-02-13
 
