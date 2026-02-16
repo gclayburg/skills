@@ -38,4 +38,4 @@ These files represent completed specifications in the specs/ directory.  This li
 - bug2026-02-14-monitoring-missing-stages-spec.md  fix monitoring mode missing downstream stages and premature wrapper/branch printing by deferring wrapper and downstream parent stages until children are resolved
 - usage-help-spec.md  display full usage help on unknown/invalid options for `status` and `build` subcommands; recognize `-h`/`--help` as valid help request on subcommands
 - 2026-02-15_quick-status-line-spec.md  add TTY-aware one-line snapshot mode (`--line`/`--line=N`) and full-output override (`--all`) for `buildgit status`
-
+- 2026-02-15_line-jobs-enhance-spec.md  align `status --line` result field to fixed width and colorize status tokens with existing TTY-aware color rules

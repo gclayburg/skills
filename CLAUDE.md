@@ -49,7 +49,7 @@ Environment Variables:
 
 ## Detailed Specifications
 - see jbuildmon/specs/README.md for an overview of all existing specs
-- see jbuildmon/specs/CLAUDE.md for comprehensinve spec creating, migrating rules and conventions
+- see jbuildmon/specs/CLAUDE.md for comprehensinve spec creating, implement, state migrating rules and conventions
 - all specs use this naming pattern: `jbuildmon/specs/*-spec.md`
 
 ## buildgit

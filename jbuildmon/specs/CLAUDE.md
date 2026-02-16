@@ -25,18 +25,32 @@ Individual `*-spec.md` files are treated as the specification for each featureâ€
 - before creating a DRAFT spec, you must read all the relevant background material and then ask questions about anything that needs clarification
 - if the raw issue is a bug or something broken, perform a root cause analysis and include that in the spec
 
-## Implementation Workflow for Specs and Bug Fixes
+## Implementation Workflow for DRAFT->IMPLEMENTED
+## Mandatory trigger: "implement DRAFT spec"
 
-When working on a DRAFT spec or bug fix from the `specs/` directory, follow these steps:
+When implementing a DRAFT spec or bug fix, follow these steps in order.
+If user asks to implement a DRAFT spec:
 
-- **Confirm all unit tests are currently passing** before starting any implementation work.
-- **Update the `CHANGELOG.md` (at the repository root):** If your change introduces new features, alters existing functionality, deprecates or removes features, fixes bugs, or addresses security vulnerabilities, document it here.
-- **Update the root `README.md`:** Reflect any changes to CLI options or usage as needed.
-- **Update `skill/buildgit/SKILL.md`** if your changes affect the buildgit skill.
-- **Ensure all unit tests pass** before declaring the implementation complete.
-- **Update the spec file:** Change its `State:` field to `IMPLEMENTED` and add it to the spec and bug index in `specs/README.md`.
-- **Handle referenced files:** If the spec lists files in its `References:` header, move those files to `specs/done-reports` and update the reference paths in the spec accordingly.
+### Before writing code
+- [ ] **Run all unit tests** and confirm they pass. Do not proceed if tests are failing.
+  - Test runner: `jbuildmon/test/bats/bin/bats jbuildmon/test/` (do NOT use any bats from `$PATH`)
 
+### Implement the feature or fix
+- [ ] **Write the code** as described in the spec's Specification section.
+- [ ] **Write or update unit tests** as described in the spec's Test Strategy section.
+- [ ] **Run all unit tests** and confirm they pass (both new and existing).
+
+### Update documentation and metadata
+- [ ] **Update `CHANGELOG.md`** (at the repository root): document new features, changed behavior, deprecations, removals, bug fixes, or security fixes.
+- [ ] **Update `README.md`** (at the repository root): reflect any changes to CLI options or usage.
+- [ ] **Update `jbuildmon/skill/buildgit/SKILL.md`** if the changes affect the buildgit skill.
+- [ ] **Update the spec file:** Change its `State:` field to `IMPLEMENTED` and add it to the spec index in `specs/README.md`.
+- [ ] **Handle referenced files:** If the spec lists files in its `References:` header, move those files to `specs/done-reports/` and update the reference paths in the spec accordingly.
+
+## Workflow for IMPLEMENTED->VALIDATED
+
+- perform all manual testing to make sure the change does what it claims (human does this)
+- mark the State: of the spec to `VALIDATED`
 
 ## Implementation plan files `*-plan.md`
 - implementation plan files are optional and only used do break down large specs into manageable chunks for independent execution

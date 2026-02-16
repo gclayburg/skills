@@ -157,6 +157,86 @@ WRAPPER_START
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 }
 
+# Helper for --line alignment tests with mixed status lengths
+create_status_line_alignment_wrapper() {
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER_START
+#!/usr/bin/env bash
+set -euo pipefail
+
+export PROJECT_DIR="${PROJECT_DIR}"
+export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
+
+_BUILDGIT_TESTING=1
+source "\${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+verify_jenkins_connection() { return 0; }
+verify_job_exists() {
+    local job_name="\$1"
+    JOB_URL="\${JENKINS_URL}/job/\${job_name}"
+    return 0
+}
+get_last_build_number() { echo "42"; }
+get_build_info() {
+    local build_num="\$2"
+    case "\$build_num" in
+        42) echo '{"number":42,"result":"UNSTABLE","building":false,"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/test-repo/42/"}' ;;
+        41) echo '{"number":41,"result":"SUCCESS","building":false,"timestamp":1706699700000,"duration":90000,"url":"http://jenkins.example.com/job/test-repo/41/"}' ;;
+        *) echo "" ;;
+    esac
+}
+get_console_output() { echo "Started by user testuser"; }
+
+cmd_status "\$@"
+WRAPPER_START
+
+    chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+}
+
+# Helper to force color variables in non-TTY tests
+create_status_forced_color_wrapper() {
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER_START
+#!/usr/bin/env bash
+set -euo pipefail
+
+export PROJECT_DIR="${PROJECT_DIR}"
+export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
+
+_BUILDGIT_TESTING=1
+source "\${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+COLOR_GREEN=$'\033[32m'
+COLOR_RED=$'\033[31m'
+COLOR_YELLOW=$'\033[33m'
+COLOR_BLUE=$'\033[34m'
+COLOR_DIM=$'\033[2m'
+COLOR_RESET=$'\033[0m'
+
+verify_jenkins_connection() { return 0; }
+verify_job_exists() {
+    local job_name="\$1"
+    JOB_URL="\${JENKINS_URL}/job/\${job_name}"
+    return 0
+}
+get_last_build_number() { echo "42"; }
+get_build_info() {
+    echo '{"number":42,"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/test-repo/42/"}'
+}
+get_console_output() { echo "Started by user testuser"; }
+
+cmd_status "\$@"
+WRAPPER_START
+
+    chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+}
+
 # Helper for Jenkins unavailable scenario
 create_jenkins_unavailable_wrapper() {
     # Create a modified copy of buildgit:
@@ -743,7 +823,7 @@ WRAPPER
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line
 
     assert_success
-    assert_output --regexp "^SUCCESS Job test-repo #42 completed in 2m 0s on [0-9]{4}-[0-9]{2}-[0-9]{2} \\(.*\\)$"
+    assert_output --regexp "^SUCCESS[[:space:]]+Job test-repo #42 completed in 2m 0s on [0-9]{4}-[0-9]{2}-[0-9]{2} \\(.*\\)$"
     line_count="$(printf "%s\n" "$output" | wc -l | tr -d ' ')"
     [ "$line_count" -eq 1 ]
 }
@@ -769,7 +849,7 @@ WRAPPER
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -l
 
     assert_success
-    assert_output --partial "SUCCESS Job test-repo #42 completed in 2m 0s"
+    assert_output --partial "SUCCESS     Job test-repo #42 completed in 2m 0s"
 }
 
 @test "status_all_short_flag_forces_full_output" {
@@ -791,7 +871,7 @@ WRAPPER
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
     assert_success
-    assert_output --regexp "^SUCCESS Job test-repo #42 completed in 2m 0s on [0-9]{4}-[0-9]{2}-[0-9]{2} \\(.*\\)$"
+    assert_output --regexp "^SUCCESS[[:space:]]+Job test-repo #42 completed in 2m 0s on [0-9]{4}-[0-9]{2}-[0-9]{2} \\(.*\\)$"
 }
 
 @test "status_line_with_specific_build_number" {
@@ -802,7 +882,7 @@ WRAPPER
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 31 --line
 
     assert_success
-    assert_output --partial "SUCCESS Job test-repo #31 completed in 2m 0s"
+    assert_output --partial "SUCCESS     Job test-repo #31 completed in 2m 0s"
 }
 
 @test "status_line_rejects_all" {
@@ -849,8 +929,8 @@ WRAPPER
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line=2
 
     assert_success
-    assert_output --partial "SUCCESS Job test-repo #42"
-    assert_output --partial "FAILURE Job test-repo #41"
+    assert_output --partial "SUCCESS     Job test-repo #42"
+    assert_output --partial "FAILURE     Job test-repo #41"
     line_count="$(printf "%s\n" "$output" | wc -l | tr -d ' ')"
     [ "$line_count" -eq 2 ]
 }
@@ -863,9 +943,9 @@ WRAPPER
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line=10
 
     assert_success
-    assert_output --partial "SUCCESS Job test-repo #42"
-    assert_output --partial "FAILURE Job test-repo #41"
-    assert_output --partial "SUCCESS Job test-repo #40"
+    assert_output --partial "SUCCESS     Job test-repo #42"
+    assert_output --partial "FAILURE     Job test-repo #41"
+    assert_output --partial "SUCCESS     Job test-repo #40"
     line_count="$(printf "%s\n" "$output" | wc -l | tr -d ' ')"
     [ "$line_count" -eq 3 ]
 }
@@ -879,8 +959,8 @@ WRAPPER
 
     assert_failure
     first_line="$(printf "%s\n" "$output" | sed -n '1p')"
-    [ "${first_line#FAILURE Job test-repo #41}" != "$first_line" ]
-    assert_output --partial "SUCCESS Job test-repo #40"
+    [ "${first_line#FAILURE     Job test-repo #41}" != "$first_line" ]
+    assert_output --partial "SUCCESS     Job test-repo #40"
 }
 
 @test "status_line_invalid_count_zero" {
@@ -916,5 +996,61 @@ WRAPPER
 
     # First line is SUCCESS (#42), so overall exit should be success
     assert_success
-    assert_output --partial "FAILURE Job test-repo #41"
+    assert_output --partial "FAILURE     Job test-repo #41"
+}
+
+@test "status_line_result_padded" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_test_wrapper "SUCCESS" "false"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line
+
+    assert_success
+    status_field="$(printf "%s\n" "$output" | awk -F' Job ' '{print $1}')"
+    [ "$status_field" = "SUCCESS    " ]
+    [ "${#status_field}" -eq 11 ]
+}
+
+@test "status_line_aligned_output" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_line_alignment_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line=2
+
+    assert_failure
+    line1="$(printf "%s\n" "$output" | sed -n '1p')"
+    line2="$(printf "%s\n" "$output" | sed -n '2p')"
+    prefix1="${line1%%Job*}"
+    prefix2="${line2%%Job*}"
+    col1=$(( ${#prefix1} + 1 ))
+    col2=$(( ${#prefix2} + 1 ))
+    [ "$col1" -eq "$col2" ]
+}
+
+@test "status_line_no_color_in_pipe" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_test_wrapper "SUCCESS" "false"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line
+
+    assert_success
+    if printf "%s" "$output" | grep -q $'\033\['; then
+        fail "Expected no ANSI color codes in non-TTY output"
+    fi
+}
+
+@test "status_line_color_when_color_vars_set" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_forced_color_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line
+
+    assert_success
+    if ! printf "%s" "$output" | grep -Fq $'\033[32mSUCCESS    \033[0m Job test-repo #42'; then
+        fail "Expected SUCCESS status field to be colored and padded"
+    fi
 }

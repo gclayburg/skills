@@ -330,10 +330,34 @@ _format_relative_time() {
 
 # Fast one-line status output for snapshot mode.
 # Returns: 0 for SUCCESS, 1 for non-SUCCESS or in-progress.
+_format_status_line_field() {
+    local status="$1"
+    local status_color=""
+    local status_field
+    status_field=$(printf "%-11.11s" "$status")
+
+    case "$status" in
+        SUCCESS)     status_color="${COLOR_GREEN}" ;;
+        FAILURE)     status_color="${COLOR_RED}" ;;
+        NOT_BUILT)   status_color="${COLOR_RED}" ;;
+        UNSTABLE)    status_color="${COLOR_YELLOW}" ;;
+        ABORTED)     status_color="${COLOR_DIM}" ;;
+        IN_PROGRESS) status_color="${COLOR_BLUE}" ;;
+        *)           status_color="${COLOR_RED}" ;;
+    esac
+
+    if [[ -n "$status_color" ]]; then
+        echo "${status_color}${status_field}${COLOR_RESET}"
+    else
+        echo "${status_field}"
+    fi
+}
+
 _status_line_for_build_json() {
     local job_name="$1"
     local build_number="$2"
     local build_json="$3"
+    local status_raw status_display
 
     local json_build_number
     json_build_number=$(echo "$build_json" | jq -r '.number // empty')
@@ -360,7 +384,9 @@ _status_line_for_build_json() {
 
         elapsed_display=$(format_duration "$elapsed_ms")
         start_display=$(_format_local_datetime_minute "$timestamp_ms")
-        echo "IN_PROGRESS Job ${job_name} #${build_number} running for ${elapsed_display} (started ${start_display})"
+        status_raw="IN_PROGRESS"
+        status_display=$(_format_status_line_field "$status_raw")
+        echo "${status_display} Job ${job_name} #${build_number} running for ${elapsed_display} (started ${start_display})"
         return 1
     fi
 
@@ -374,7 +400,9 @@ _status_line_for_build_json() {
     date_display=$(_format_local_date "$completion_ms")
     relative_display=$(_format_relative_time "$completion_seconds")
 
-    echo "${result} Job ${job_name} #${build_number} completed in ${duration_display} on ${date_display} (${relative_display})"
+    status_raw="$result"
+    status_display=$(_format_status_line_field "$status_raw")
+    echo "${status_display} Job ${job_name} #${build_number} completed in ${duration_display} on ${date_display} (${relative_display})"
     if [[ "$result" == "SUCCESS" ]]; then
         return 0
     fi
