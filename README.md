@@ -168,6 +168,7 @@ Get one-line status output:
 ```bash
 buildgit status --line       # latest build only
 buildgit status --line=10    # latest 10 builds, newest to oldest
+buildgit status --line=10 --no-tests   # skip test report fetch for speed
 buildgit status --all        # force full output even when piped
 ```
 
@@ -218,6 +219,7 @@ This lets both buildgit and your AI agent find the right Jenkins job automatical
 | `buildgit status 31` | Status of specific build |
 | `buildgit status --line` | One-line status for latest build |
 | `buildgit status --line=10` | One-line status for latest 10 builds |
+| `buildgit status --line=10 --no-tests` | One-line status without test-report API calls |
 | `buildgit status --all` | Force full status output |
 | `buildgit status -f` | Follow builds in real-time |
 | `buildgit status --json` | JSON output |

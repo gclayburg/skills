@@ -39,3 +39,4 @@ These files represent completed specifications in the specs/ directory.  This li
 - usage-help-spec.md  display full usage help on unknown/invalid options for `status` and `build` subcommands; recognize `-h`/`--help` as valid help request on subcommands
 - 2026-02-15_quick-status-line-spec.md  add TTY-aware one-line snapshot mode (`--line`/`--line=N`) and full-output override (`--all`) for `buildgit status`
 - 2026-02-15_line-jobs-enhance-spec.md  align `status --line` result field to fixed width and colorize status tokens with existing TTY-aware color rules
+- 2026-02-16_single-line-with-tests-spec.md  add `Tests=pass/fail/skip` to `status --line` output, replace `completed in` with `Took`, and add `--no-tests` to skip line-mode test report fetches

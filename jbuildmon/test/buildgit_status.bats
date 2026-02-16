@@ -110,6 +110,10 @@ get_current_stage() {
     echo "Build"
 }
 
+fetch_test_results() {
+    echo '{"passCount":120,"failCount":0,"skipCount":0}'
+}
+
 # Call the status command
 cmd_status "\$@"
 WRAPPER_START
@@ -150,6 +154,15 @@ get_build_info() {
     esac
 }
 get_console_output() { echo "Started by user testuser"; }
+fetch_test_results() {
+    local build_num="\$2"
+    case "\$build_num" in
+        42) echo '{"passCount":100,"failCount":0,"skipCount":2}' ;;
+        41) echo '{"passCount":90,"failCount":1,"skipCount":3}' ;;
+        40) echo '{"passCount":80,"failCount":0,"skipCount":0}' ;;
+        *) echo "" ;;
+    esac
+}
 
 cmd_status "\$@"
 WRAPPER_START
@@ -189,6 +202,14 @@ get_build_info() {
     esac
 }
 get_console_output() { echo "Started by user testuser"; }
+fetch_test_results() {
+    local build_num="\$2"
+    case "\$build_num" in
+        42) echo '{"passCount":10,"failCount":2,"skipCount":0}' ;;
+        41) echo '{"passCount":12,"failCount":0,"skipCount":0}' ;;
+        *) echo "" ;;
+    esac
+}
 
 cmd_status "\$@"
 WRAPPER_START
@@ -230,6 +251,134 @@ get_build_info() {
     echo '{"number":42,"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/test-repo/42/"}'
 }
 get_console_output() { echo "Started by user testuser"; }
+fetch_test_results() {
+    echo '{"passCount":120,"failCount":0,"skipCount":0}'
+}
+
+cmd_status "\$@"
+WRAPPER_START
+
+    chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+}
+
+# Helper to force color variables with failing tests in line mode
+create_status_forced_color_fail_wrapper() {
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER_START
+#!/usr/bin/env bash
+set -euo pipefail
+
+export PROJECT_DIR="${PROJECT_DIR}"
+export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
+
+_BUILDGIT_TESTING=1
+source "\${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+COLOR_GREEN=$'\033[32m'
+COLOR_RED=$'\033[31m'
+COLOR_YELLOW=$'\033[33m'
+COLOR_BLUE=$'\033[34m'
+COLOR_DIM=$'\033[2m'
+COLOR_RESET=$'\033[0m'
+
+verify_jenkins_connection() { return 0; }
+verify_job_exists() {
+    local job_name="\$1"
+    JOB_URL="\${JENKINS_URL}/job/\${job_name}"
+    return 0
+}
+get_last_build_number() { echo "42"; }
+get_build_info() {
+    echo '{"number":42,"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/test-repo/42/"}'
+}
+get_console_output() { echo "Started by user testuser"; }
+fetch_test_results() {
+    echo '{"passCount":95,"failCount":2,"skipCount":3}'
+}
+
+cmd_status "\$@"
+WRAPPER_START
+
+    chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+}
+
+# Helper for unknown test report in line mode
+create_status_tests_unknown_wrapper() {
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER_START
+#!/usr/bin/env bash
+set -euo pipefail
+
+export PROJECT_DIR="${PROJECT_DIR}"
+export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
+
+_BUILDGIT_TESTING=1
+source "\${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+verify_jenkins_connection() { return 0; }
+verify_job_exists() {
+    local job_name="\$1"
+    JOB_URL="\${JENKINS_URL}/job/\${job_name}"
+    return 0
+}
+get_last_build_number() { echo "42"; }
+get_build_info() {
+    echo '{"number":42,"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/test-repo/42/"}'
+}
+get_console_output() { echo "Started by user testuser"; }
+fetch_test_results() {
+    echo ""
+}
+
+cmd_status "\$@"
+WRAPPER_START
+
+    chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+}
+
+# Helper for --no-tests checks: if fetch_test_results is called, fail fast
+create_status_no_tests_guard_wrapper() {
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER_START
+#!/usr/bin/env bash
+set -euo pipefail
+
+export PROJECT_DIR="${PROJECT_DIR}"
+export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
+
+_BUILDGIT_TESTING=1
+source "\${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+verify_jenkins_connection() { return 0; }
+verify_job_exists() {
+    local job_name="\$1"
+    JOB_URL="\${JENKINS_URL}/job/\${job_name}"
+    return 0
+}
+get_last_build_number() { echo "42"; }
+get_build_info() {
+    local build_num="\$2"
+    case "\$build_num" in
+        42) echo '{"number":42,"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/test-repo/42/"}' ;;
+        41) echo '{"number":41,"result":"FAILURE","building":false,"timestamp":1706699700000,"duration":90000,"url":"http://jenkins.example.com/job/test-repo/41/"}' ;;
+        40) echo '{"number":40,"result":"SUCCESS","building":false,"timestamp":1706699400000,"duration":80000,"url":"http://jenkins.example.com/job/test-repo/40/"}' ;;
+        *) echo "" ;;
+    esac
+}
+get_console_output() { echo "Started by user testuser"; }
+fetch_test_results() {
+    echo "fetch_test_results should not be called with --no-tests" >&2
+    return 99
+}
 
 cmd_status "\$@"
 WRAPPER_START
@@ -823,7 +972,7 @@ WRAPPER
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line
 
     assert_success
-    assert_output --regexp "^SUCCESS[[:space:]]+Job test-repo #42 completed in 2m 0s on [0-9]{4}-[0-9]{2}-[0-9]{2} \\(.*\\)$"
+    assert_output --regexp "^SUCCESS[[:space:]]+Job test-repo #42 Tests=120/0/0 Took 2m 0s on [0-9]{4}-[0-9]{2}-[0-9]{2} \\(.*\\)$"
     line_count="$(printf "%s\n" "$output" | wc -l | tr -d ' ')"
     [ "$line_count" -eq 1 ]
 }
@@ -836,7 +985,7 @@ WRAPPER
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line
 
     assert_failure
-    assert_output --regexp "^IN_PROGRESS Job test-repo #42 running for .* \\(started [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}\\)$"
+    assert_output --regexp "^IN_PROGRESS Job test-repo #42 Tests=\\?/\\?/\\? running for .* \\(started [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}\\)$"
     line_count="$(printf "%s\n" "$output" | wc -l | tr -d ' ')"
     [ "$line_count" -eq 1 ]
 }
@@ -849,7 +998,7 @@ WRAPPER
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -l
 
     assert_success
-    assert_output --partial "SUCCESS     Job test-repo #42 completed in 2m 0s"
+    assert_output --partial "SUCCESS     Job test-repo #42 Tests=120/0/0 Took 2m 0s"
 }
 
 @test "status_all_short_flag_forces_full_output" {
@@ -871,7 +1020,7 @@ WRAPPER
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
     assert_success
-    assert_output --regexp "^SUCCESS[[:space:]]+Job test-repo #42 completed in 2m 0s on [0-9]{4}-[0-9]{2}-[0-9]{2} \\(.*\\)$"
+    assert_output --regexp "^SUCCESS[[:space:]]+Job test-repo #42 Tests=120/0/0 Took 2m 0s on [0-9]{4}-[0-9]{2}-[0-9]{2} \\(.*\\)$"
 }
 
 @test "status_line_with_specific_build_number" {
@@ -882,7 +1031,7 @@ WRAPPER
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 31 --line
 
     assert_success
-    assert_output --partial "SUCCESS     Job test-repo #31 completed in 2m 0s"
+    assert_output --partial "SUCCESS     Job test-repo #31 Tests=120/0/0 Took 2m 0s"
 }
 
 @test "status_line_rejects_all" {
@@ -1053,4 +1202,82 @@ WRAPPER
     if ! printf "%s" "$output" | grep -Fq $'\033[32mSUCCESS    \033[0m Job test-repo #42'; then
         fail "Expected SUCCESS status field to be colored and padded"
     fi
+    if ! printf "%s" "$output" | grep -Fq $' \033[32mTests=120/0/0\033[0m Took '; then
+        fail "Expected Tests field to be green when failCount=0"
+    fi
+}
+
+@test "status_line_tests_unknown" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_tests_unknown_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line
+
+    assert_success
+    assert_output --partial "SUCCESS     Job test-repo #42 Tests=?/?/? Took 2m 0s"
+}
+
+@test "status_line_took_wording" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_test_wrapper "SUCCESS" "false"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line
+
+    assert_success
+    assert_output --partial " Took 2m 0s"
+    refute_output --partial "completed in"
+}
+
+@test "status_line_tests_yellow_when_failures" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_forced_color_fail_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line
+
+    assert_success
+    if ! printf "%s" "$output" | grep -Fq $' \033[33mTests=95/2/3\033[0m Took '; then
+        fail "Expected Tests field to be yellow when failCount>0"
+    fi
+}
+
+@test "status_line_tests_unknown_no_color" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_tests_unknown_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line
+
+    assert_success
+    assert_output --partial "Tests=?/?/?"
+    if printf "%s" "$output" | grep -Eq $'\\033\\[[0-9;]*mTests=\\?/\\?/\\?'; then
+        fail "Expected unknown Tests field to be uncolored"
+    fi
+}
+
+@test "status_line_no_tests_flag" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_no_tests_guard_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line --no-tests
+
+    assert_success
+    assert_output --partial "SUCCESS     Job test-repo #42 Tests=?/?/? Took 2m 0s"
+}
+
+@test "status_line_no_tests_with_count" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_no_tests_guard_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line=3 --no-tests
+
+    assert_success
+    line_count="$(printf "%s\n" "$output" | wc -l | tr -d ' ')"
+    [ "$line_count" -eq 3 ]
+    tests_unknown_count="$(printf "%s\n" "$output" | grep -Ec 'Tests=\?/\?/\?' || true)"
+    [ "$tests_unknown_count" -eq 3 ]
 }

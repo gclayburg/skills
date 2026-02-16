@@ -1,9 +1,9 @@
 # Feature: Test Results in Line Mode Output
 
 - **Date:** `2026-02-16T08:56:32-07:00`
-- **References:** `specs/todo/single-line-with-tests.md`
+- **References:** `specs/done-reports/single-line-with-tests.md`
 - **Supersedes:** none
-- **State:** `DRAFT`
+- **State:** `VALIDATED`
 
 ## Overview
 

@@ -25,6 +25,7 @@ The `buildgit` script is bundled at `scripts/buildgit` within this skill package
 | `scripts/buildgit status <build#>` | Status of a specific build number |
 | `scripts/buildgit status --line` | One-line status for latest build |
 | `scripts/buildgit status --line=<N>` | One-line status for latest N builds |
+| `scripts/buildgit status --line=<N> --no-tests` | One-line status while skipping test-report API calls |
 | `scripts/buildgit status --all` | Force full snapshot output |
 | `scripts/buildgit status -f` | Follow builds in real-time (Ctrl+C to stop) |
 | `scripts/buildgit status --json` | Machine-readable Jenkins build status |

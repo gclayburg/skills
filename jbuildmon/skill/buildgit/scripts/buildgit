@@ -80,7 +80,7 @@ Global Options:
   --verbose                      Enable verbose output for debugging
 
 Commands:
-  status [build#] [-f|--follow] [--json] [--line[=N]] [--all]
+  status [build#] [-f|--follow] [--json] [--line[=N]] [--all] [--no-tests]
                       Display Jenkins build status (latest or specific build)
                       Default: full output on TTY, one-line on pipe/redirect
   push [--no-follow] [git-push-options] [remote] [branch]
@@ -93,8 +93,8 @@ Examples:
   buildgit status 31           # Status of build #31
   buildgit status -f           # Follow builds indefinitely
   buildgit status --json       # JSON format for Jenkins status
-  buildgit status --line       # One-line status of latest build
-  buildgit status --line=10    # One-line status for last 10 builds
+  buildgit status --line       # One-line status with test results
+  buildgit status --line=10 --no-tests  # Last 10 builds, skip test fetch
   buildgit status --all | less # Full status piped to pager
   buildgit push                # Push + monitor build
   buildgit push --no-follow    # Push only, no monitoring
@@ -182,13 +182,14 @@ parse_global_options() {
 # =============================================================================
 
 # Parse status command options
-# Sets: STATUS_JSON_MODE, STATUS_FOLLOW_MODE, STATUS_LINE_MODE, STATUS_LINE_COUNT, STATUS_ALL_MODE
+# Sets: STATUS_JSON_MODE, STATUS_FOLLOW_MODE, STATUS_LINE_MODE, STATUS_LINE_COUNT, STATUS_ALL_MODE, STATUS_NO_TESTS
 _parse_status_options() {
     STATUS_JSON_MODE=false
     STATUS_FOLLOW_MODE=false
     STATUS_LINE_MODE=false
     STATUS_LINE_COUNT="1"
     STATUS_ALL_MODE=false
+    STATUS_NO_TESTS=false
     STATUS_BUILD_NUMBER=""
 
     while [[ $# -gt 0 ]]; do
@@ -220,6 +221,10 @@ _parse_status_options() {
                 ;;
             -a|--all)
                 STATUS_ALL_MODE=true
+                shift
+                ;;
+            --no-tests)
+                STATUS_NO_TESTS=true
                 shift
                 ;;
             -*)
@@ -357,6 +362,7 @@ _status_line_for_build_json() {
     local job_name="$1"
     local build_number="$2"
     local build_json="$3"
+    local no_tests="${4:-false}"
     local status_raw status_display
 
     local json_build_number
@@ -386,8 +392,36 @@ _status_line_for_build_json() {
         start_display=$(_format_local_datetime_minute "$timestamp_ms")
         status_raw="IN_PROGRESS"
         status_display=$(_format_status_line_field "$status_raw")
-        echo "${status_display} Job ${job_name} #${build_number} running for ${elapsed_display} (started ${start_display})"
+        echo "${status_display} Job ${job_name} #${build_number} Tests=?/?/? running for ${elapsed_display} (started ${start_display})"
         return 1
+    fi
+
+    local tests_display tests_fail_count tests_color tests_field
+    tests_display="?/?/?"
+    tests_fail_count=""
+    if [[ "$no_tests" != "true" ]]; then
+        local test_results_json passed failed skipped
+        test_results_json=$(fetch_test_results "$job_name" "$build_number")
+        if [[ -n "$test_results_json" ]]; then
+            passed=$(echo "$test_results_json" | jq -r '.passCount // 0')
+            failed=$(echo "$test_results_json" | jq -r '.failCount // 0')
+            skipped=$(echo "$test_results_json" | jq -r '.skipCount // 0')
+            if [[ "$passed" =~ ^[0-9]+$ && "$failed" =~ ^[0-9]+$ && "$skipped" =~ ^[0-9]+$ ]]; then
+                tests_display="${passed}/${failed}/${skipped}"
+                tests_fail_count="$failed"
+            fi
+        fi
+    fi
+
+    tests_field="Tests=${tests_display}"
+    if [[ "$tests_display" != "?/?/?" ]]; then
+        tests_color="${COLOR_GREEN}"
+        if [[ "$tests_fail_count" =~ ^[0-9]+$ && "$tests_fail_count" -gt 0 ]]; then
+            tests_color="${COLOR_YELLOW}"
+        fi
+        if [[ -n "$tests_color" ]]; then
+            tests_field="${tests_color}${tests_field}${COLOR_RESET}"
+        fi
     fi
 
     local completion_ms completion_seconds duration_display date_display relative_display
@@ -402,7 +436,7 @@ _status_line_for_build_json() {
 
     status_raw="$result"
     status_display=$(_format_status_line_field "$status_raw")
-    echo "${status_display} Job ${job_name} #${build_number} completed in ${duration_display} on ${date_display} (${relative_display})"
+    echo "${status_display} Job ${job_name} #${build_number} ${tests_field} Took ${duration_display} on ${date_display} (${relative_display})"
     if [[ "$result" == "SUCCESS" ]]; then
         return 0
     fi
@@ -416,6 +450,7 @@ _status_line_check() {
     local job_name="$1"
     local start_build_number="${2:-}"
     local line_count="${3:-1}"
+    local no_tests="${4:-false}"
     local first_build_number="$start_build_number"
 
     if [[ -z "$first_build_number" ]]; then
@@ -445,7 +480,7 @@ _status_line_check() {
         fi
 
         local line_exit=1
-        if _status_line_for_build_json "$job_name" "$current_build_number" "$build_json"; then
+        if _status_line_for_build_json "$job_name" "$current_build_number" "$build_json" "$no_tests"; then
             line_exit=0
         fi
         if [[ "$i" -eq 0 ]]; then
@@ -1060,7 +1095,7 @@ cmd_status() {
     fi
 
     if [[ "$use_line_mode" == "true" ]]; then
-        _status_line_check "$_VALIDATED_JOB_NAME" "$STATUS_BUILD_NUMBER" "$line_count"
+        _status_line_check "$_VALIDATED_JOB_NAME" "$STATUS_BUILD_NUMBER" "$line_count" "$STATUS_NO_TESTS"
         return $?
     fi
 

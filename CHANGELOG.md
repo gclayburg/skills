@@ -2,6 +2,15 @@
 
 All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are documented in this file.
 
+## 2026-02-16
+
+### Features
+- **`line status test summary`** - Added `Tests=<passed>/<failed>/<skipped>` to `buildgit status --line` and `--line=N` output
+- **`line status no-tests flag`** - Added `buildgit status --no-tests` to skip `testReport/api/json` calls in line mode and render `Tests=?/?/?`
+
+### Changed
+- **`line status completion wording`** - Replaced `completed in` with `Took` for completed one-line status output
+
 ## 2026-02-15
 
 ### Features
