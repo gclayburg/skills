@@ -162,6 +162,95 @@ WRAPPER_END
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 }
 
+# Create wrapper for -n with follow mode tests
+# Supports builds 40-43: latest can be 42 (completed) or 43 (in-progress)
+# Arguments:
+#   $1 - latest_build_number (42 or 43)
+#   $2 - latest_building: whether latest build is in-progress (true/false)
+create_follow_n_prior_wrapper() {
+    local latest_build="${1:-42}"
+    local latest_building="${2:-false}"
+
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    # Counter for latest build polling (file-based for cross-subshell persistence)
+    echo "0" > "${TEST_TEMP_DIR}/build_latest_calls"
+
+    cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << 'WRAPPER_END'
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Safety: self-destruct after 8 seconds to prevent hanging in CI
+( sleep 8 && kill -9 $$ 2>/dev/null ) &
+
+_BUILDGIT_TESTING=1
+source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+POLL_INTERVAL=1
+MAX_BUILD_TIME=30
+
+verify_jenkins_connection() { return 0; }
+verify_job_exists() {
+    JOB_URL="${JENKINS_URL}/job/$1"
+    return 0
+}
+
+get_last_build_number() {
+    echo "__LATEST_BUILD__"
+}
+
+get_build_info() {
+    local build_num="${2:-__LATEST_BUILD__}"
+    case "$build_num" in
+        __LATEST_BUILD__)
+            local calls
+            calls=$(cat "${TEST_TEMP_DIR}/build_latest_calls")
+            calls=$((calls + 1))
+            echo "$calls" > "${TEST_TEMP_DIR}/build_latest_calls"
+            if [[ "__LATEST_BUILDING__" == "true" && $calls -le 2 ]]; then
+                echo '{"number":__LATEST_BUILD__,"result":"null","building":true,"timestamp":1706700000000,"duration":0,"url":"http://jenkins.example.com/job/test-repo/__LATEST_BUILD__/"}'
+            else
+                echo '{"number":__LATEST_BUILD__,"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":60000,"url":"http://jenkins.example.com/job/test-repo/__LATEST_BUILD__/"}'
+            fi
+            ;;
+        42)
+            echo '{"number":42,"result":"SUCCESS","building":false,"timestamp":1706699700000,"duration":120000,"url":"http://jenkins.example.com/job/test-repo/42/"}'
+            ;;
+        41)
+            echo '{"number":41,"result":"FAILURE","building":false,"timestamp":1706699400000,"duration":90000,"url":"http://jenkins.example.com/job/test-repo/41/"}'
+            ;;
+        40)
+            echo '{"number":40,"result":"SUCCESS","building":false,"timestamp":1706699100000,"duration":80000,"url":"http://jenkins.example.com/job/test-repo/40/"}'
+            ;;
+        *)
+            echo ""
+            ;;
+    esac
+}
+
+get_console_output() {
+    echo "Started by user testuser"
+    echo "Checking out Revision abc1234567890"
+}
+
+get_current_stage() {
+    echo "Build"
+}
+
+JOB_NAME="test-repo"
+cmd_status -f "$@"
+WRAPPER_END
+
+    sed -e "s|__LATEST_BUILD__|${latest_build}|g" \
+        -e "s|__LATEST_BUILDING__|${latest_building}|g" \
+        "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/buildgit_wrapper.sh.tmp" \
+        && mv "${TEST_TEMP_DIR}/buildgit_wrapper.sh.tmp" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+
+    chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+}
+
 # Create wrapper that simulates detecting a new build
 create_new_build_detection_wrapper() {
     sed -e '/^main "\$@"$/d' \
@@ -252,41 +341,8 @@ WRAPPER
     export PROJECT_DIR
     export TEST_TEMP_DIR
 
-    # Create wrapper with simple SUCCESS response
-    sed -e '/^main "\$@"$/d' \
-        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
-        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
-
-    cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << 'WRAPPER_END'
-#!/usr/bin/env bash
-set -euo pipefail
-
-# Safety: self-destruct after 8 seconds to prevent hanging in CI
-( sleep 8 && kill -9 $$ 2>/dev/null ) &
-
-_BUILDGIT_TESTING=1
-source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
-
-POLL_INTERVAL=1
-MAX_BUILD_TIME=30
-
-verify_jenkins_connection() { return 0; }
-verify_job_exists() {
-    JOB_URL="${JENKINS_URL}/job/$1"
-    return 0
-}
-get_last_build_number() { echo "42"; }
-get_build_info() {
-    echo '{"number":42,"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/test-repo/42/"}'
-}
-get_console_output() { echo "Started by user testuser"; }
-get_current_stage() { echo "Build"; }
-
-JOB_NAME="test-repo"
-cmd_status -f "$@"
-WRAPPER_END
-
-    chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+    # Build in-progress: follow mode should monitor it and show result when done
+    create_follow_test_wrapper "true" "SUCCESS" "2"
 
     # Run in background
     bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
@@ -302,8 +358,9 @@ WRAPPER_END
     local output
     output=$(cat "${TEST_TEMP_DIR}/output.txt")
 
-    # Should show build result
-    [[ "$output" == *"BUILD SUCCESSFUL"* ]] || [[ "$output" == *"SUCCESS"* ]]
+    # Should show follow mode entered the monitoring path for an in-progress build.
+    # "BUILD IN PROGRESS" banner appears immediately when monitoring starts.
+    [[ "$output" == *"BUILD IN PROGRESS"* ]] || [[ "$output" == *"BUILDING"* ]]
 }
 
 # -----------------------------------------------------------------------------
@@ -437,8 +494,8 @@ WRAPPER_END
 
     export PROJECT_DIR
     export TEST_TEMP_DIR
-    # Build completes quickly
-    create_follow_test_wrapper "false" "SUCCESS" "1"
+    # Build in-progress: completes after 2 polls
+    create_follow_test_wrapper "true" "SUCCESS" "2"
 
     # Run in background with short timeout
     bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
@@ -564,9 +621,9 @@ WRAPPER
 
     export PROJECT_DIR
     export TEST_TEMP_DIR
-    # Build already completed (building=false), result=SUCCESS, poll_cycles=0
-    # poll_cycles=0 ensures first get_build_info call returns the final result
-    create_follow_test_wrapper "false" "SUCCESS" "0"
+    # Build in-progress (building=true), result=SUCCESS, completes after 2 polls
+    # Tests that follow mode shows header after monitoring an in-progress build
+    create_follow_test_wrapper "true" "SUCCESS" "2"
 
     bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
     FOLLOW_PID=$!
@@ -599,8 +656,8 @@ WRAPPER
 
     export PROJECT_DIR
     export TEST_TEMP_DIR
-    # Build already completed (building=false), result=FAILURE, poll_cycles=0
-    create_follow_test_wrapper "false" "FAILURE" "0"
+    # Build in-progress (building=true), result=FAILURE, completes after 2 polls
+    create_follow_test_wrapper "true" "FAILURE" "2"
 
     bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
     FOLLOW_PID=$!
@@ -633,7 +690,7 @@ WRAPPER
 
     export PROJECT_DIR
     export TEST_TEMP_DIR
-    create_follow_test_wrapper "false" "SUCCESS" "0"
+    create_follow_test_wrapper "true" "SUCCESS" "2"
 
     bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
     FOLLOW_PID=$!
@@ -659,7 +716,7 @@ WRAPPER
 
     export PROJECT_DIR
     export TEST_TEMP_DIR
-    create_follow_test_wrapper "false" "SUCCESS" "0"
+    create_follow_test_wrapper "true" "SUCCESS" "2"
 
     bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
     FOLLOW_PID=$!
@@ -683,14 +740,15 @@ WRAPPER
 
     export PROJECT_DIR
     export TEST_TEMP_DIR
-    create_follow_test_wrapper "false" "SUCCESS" "0"
+    # Build in-progress: --once monitors it and exits when done (no indefinite wait)
+    create_follow_test_wrapper "true" "SUCCESS" "2"
 
     run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 2>&1"
 
     assert_success
     refute_output --partial "Waiting for next build"
     refute_output --partial "Press Ctrl+C to stop monitoring"
-    assert_output --partial "BUILD SUCCESSFUL"
+    assert_output --partial "Finished: SUCCESS"
 }
 
 # -----------------------------------------------------------------------------
@@ -715,12 +773,12 @@ WRAPPER
 
     export PROJECT_DIR
     export TEST_TEMP_DIR
-    create_follow_test_wrapper "false" "FAILURE" "0"
+    create_follow_test_wrapper "true" "FAILURE" "2"
 
-    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --once
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 2>&1"
 
     assert_failure
-    assert_output --partial "BUILD FAILED"
+    assert_output --partial "Finished: FAILURE"
 }
 
 # -----------------------------------------------------------------------------
@@ -732,11 +790,251 @@ WRAPPER
 
     export PROJECT_DIR
     export TEST_TEMP_DIR
-    create_follow_test_wrapper "false" "SUCCESS" "0"
+    create_follow_test_wrapper "true" "SUCCESS" "2"
 
-    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --once --json
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once --json 2>&1"
 
     assert_success
     assert_output --partial '"status": "SUCCESS"'
     assert_output --partial '"number": 42'
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: --once exits 0 when build result is SUCCESS
+# Spec: 2026-02-16_add-once-flag-to-status-f-spec.md
+# -----------------------------------------------------------------------------
+@test "status_follow_once_exit_code_success" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_test_wrapper "true" "SUCCESS" "2"
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 2>&1"
+
+    assert_success
+    assert_output --partial "Finished: SUCCESS"
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: When no build starts within timeout, exits with error code 2
+# Spec: 2026-02-16_add-once-flag-to-status-f-spec.md
+# -----------------------------------------------------------------------------
+@test "status_follow_once_timeout" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    # Build 42 is already completed; get_last_build_number always returns 42
+    # so _follow_wait_for_new_build_timeout will never find a new build
+    create_follow_test_wrapper "false" "SUCCESS" "0"
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once=1 2>&1"
+
+    assert_failure
+    assert_output --partial "no new build detected for 1 seconds"
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: --once=20 monitors a build and exits when complete
+# Spec: 2026-02-16_add-once-flag-to-status-f-spec.md
+# -----------------------------------------------------------------------------
+@test "status_follow_once_custom_timeout" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    # Build in-progress; --once=20 gives plenty of time, exits when build completes
+    create_follow_test_wrapper "true" "SUCCESS" "2"
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once=20 2>&1"
+
+    assert_success
+    assert_output --partial "Finished: SUCCESS"
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: --once=<invalid> produces usage error
+# Spec: 2026-02-16_add-once-flag-to-status-f-spec.md
+# -----------------------------------------------------------------------------
+@test "status_follow_once_invalid_timeout" {
+    run "${PROJECT_DIR}/buildgit" status -f --once=abc
+
+    assert_failure
+    assert_output --partial "--once value must be a non-negative integer"
+
+    run "${PROJECT_DIR}/buildgit" status -f --once=-1
+
+    assert_failure
+    assert_output --partial "--once value must be a non-negative integer"
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: status -f with no running build does NOT display prior completed build
+# Spec: 2026-02-16_add-once-flag-to-status-f-spec.md
+# -----------------------------------------------------------------------------
+@test "status_follow_no_stale_replay" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    # Build 42 is already completed; follow mode should NOT replay it
+    create_follow_test_wrapper "false" "SUCCESS" "0"
+
+    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
+    FOLLOW_PID=$!
+
+    sleep 2
+    _kill_process_tree "$FOLLOW_PID"
+    wait "$FOLLOW_PID" 2>/dev/null || true
+
+    local output
+    output=$(cat "${TEST_TEMP_DIR}/output.txt")
+
+    # Stale build 42 should NOT be displayed
+    [[ "$output" != *"BUILD SUCCESSFUL"* ]] || {
+        echo "FAIL: stale build was replayed: $output" >&2
+        return 1
+    }
+
+    # Should be waiting for the next build instead
+    [[ "$output" == *"Waiting for next build"* ]]
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: status -f --once with no running build does NOT display prior build
+# Spec: 2026-02-16_add-once-flag-to-status-f-spec.md
+# -----------------------------------------------------------------------------
+@test "status_follow_once_no_stale_replay" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    # Build 42 is already completed; --once=1 should time out (not display stale build)
+    create_follow_test_wrapper "false" "SUCCESS" "0"
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once=1 2>&1"
+
+    assert_failure
+    # Timeout error should appear
+    assert_output --partial "no new build detected"
+    # Stale build output must NOT appear
+    refute_output --partial "BUILD SUCCESSFUL"
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: Info message shows (once, timeout=Ns) and omits "Press Ctrl+C"
+# Spec: 2026-02-16_add-once-flag-to-status-f-spec.md
+# -----------------------------------------------------------------------------
+@test "status_follow_once_info_message" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_test_wrapper "true" "SUCCESS" "2"
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 2>&1"
+
+    assert_success
+    assert_output --partial "once, timeout=10s"
+    refute_output --partial "Press Ctrl+C"
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: -n 2 -f displays 2 prior completed builds then follows
+# Spec: 2026-02-16_add-once-flag-to-status-f-spec.md
+# -----------------------------------------------------------------------------
+@test "status_follow_n_prior_builds" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    # Latest build is 42 (completed); builds 41 and 42 are available as prior
+    create_follow_n_prior_wrapper "42" "false"
+
+    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -n 2 > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
+    FOLLOW_PID=$!
+
+    sleep 3
+    _kill_process_tree "$FOLLOW_PID"
+    wait "$FOLLOW_PID" 2>/dev/null || true
+
+    local output
+    output=$(cat "${TEST_TEMP_DIR}/output.txt")
+
+    # Both prior builds should be displayed (41=FAILURE, 42=SUCCESS)
+    [[ "$output" == *"BUILD FAILED"* ]]
+    [[ "$output" == *"BUILD SUCCESSFUL"* ]]
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: -n 2 -f --once displays 2 prior builds then applies timeout
+# Spec: 2026-02-16_add-once-flag-to-status-f-spec.md
+# -----------------------------------------------------------------------------
+@test "status_follow_n_once_prior_builds" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    # Latest build is 42 (completed); builds 41 and 42 shown, then timeout
+    create_follow_n_prior_wrapper "42" "false"
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" -n 2 --once=1 2>&1"
+
+    assert_failure
+    # Prior builds should have been displayed
+    assert_output --partial "BUILD FAILED"
+    assert_output --partial "BUILD SUCCESSFUL"
+    # Timeout error should also appear
+    assert_output --partial "no new build detected"
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: In-progress build does not count toward -n prior builds
+# Spec: 2026-02-16_add-once-flag-to-status-f-spec.md
+# -----------------------------------------------------------------------------
+@test "status_follow_n_inprogress_not_counted" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    # Latest build is 43 (in-progress); -n 2 should show 42 and 41, NOT 43
+    create_follow_n_prior_wrapper "43" "true"
+
+    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -n 2 > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
+    FOLLOW_PID=$!
+
+    sleep 3
+    _kill_process_tree "$FOLLOW_PID"
+    wait "$FOLLOW_PID" 2>/dev/null || true
+
+    local output
+    output=$(cat "${TEST_TEMP_DIR}/output.txt")
+
+    # Build 41 (FAILURE) should be shown — proves 43 was skipped and we went back to 41
+    [[ "$output" == *"BUILD FAILED"* ]]
+    # Build 42 (SUCCESS) should also be shown as prior
+    [[ "$output" == *"BUILD SUCCESSFUL"* ]]
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: -n prior builds are shown BEFORE --once timeout countdown begins
+# Spec: 2026-02-16_add-once-flag-to-status-f-spec.md
+# -----------------------------------------------------------------------------
+@test "status_follow_n_prior_before_timeout" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    # Latest build is 42 (completed); --once=0 exits immediately after prior builds
+    create_follow_n_prior_wrapper "42" "false"
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" -n 2 --once=0 2>&1"
+
+    assert_failure
+    # Prior builds MUST appear (displayed before timeout countdown)
+    assert_output --partial "BUILD FAILED"
+    assert_output --partial "BUILD SUCCESSFUL"
+    # Immediate timeout (0 seconds)
+    assert_output --partial "no new build detected for 0 seconds"
 }

@@ -7,6 +7,8 @@ All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are do
 ### Changed
 - **`status --line` count flag** — Replaced `--line=N` syntax with a separate `-n <count>` flag. `--line` is now a pure boolean mode flag; use `buildgit status -n 5 --line` instead of `buildgit status --line=5`. Using `--line=value` now produces a descriptive error.
 - **`status --line` multi-build ordering** — Reversed output order for multi-build line mode (`-n N --line`): builds are now printed oldest-first, with the newest build on the last line. Exit code is based on the last (newest) build.
+- **`status -f --once` enhanced** — `--once` now accepts an optional timeout value via `--once=N` (seconds; default 10; `--once=0` = no wait). When no build is in progress, `--once` waits up to N seconds for a new build to start; exits with code 2 and error message if timeout expires. Follow mode no longer replays the previously completed build on entry — it waits silently for the next new build. Info message updated to show `(once, timeout=Ns)` and omits "Press Ctrl+C" hint.
+- **`-n <count>` with `-f`** — The `-n` flag is now compatible with follow mode. `buildgit status -n 3 -f` displays the 3 most recently completed builds (oldest first) before entering follow mode. In-progress builds do not count toward `-n`. Combining with `--once` is also supported.
 
 ## 2026-02-16
 

@@ -80,7 +80,7 @@ Global Options:
   --verbose                      Enable verbose output for debugging
 
 Commands:
-  status [build#] [-f|--follow] [--once] [--json] [--line] [-n <count>] [--all] [--no-tests]
+  status [build#] [-f|--follow] [--once[=N]] [-n <count>] [--json] [--line] [--all] [--no-tests]
                       Display Jenkins build status (latest or specific build)
                       Default: full output on TTY, one-line on pipe/redirect
   push [--no-follow] [git-push-options] [remote] [branch]
@@ -92,7 +92,10 @@ Examples:
   buildgit status              # Jenkins build status snapshot
   buildgit status 31           # Status of build #31
   buildgit status -f           # Follow builds indefinitely
-  buildgit status -f --once    # Follow current build, exit when done
+  buildgit status -f --once        # Follow current/next build, exit when done (10s timeout)
+  buildgit status -f --once=20    # Same, but wait up to 20 seconds for build to start
+  buildgit status -n 3 -f          # Show 3 prior builds, then follow indefinitely
+  buildgit status -n 3 -f --once   # Show 3 prior builds, then follow once with timeout
   buildgit status --json       # JSON format for Jenkins status
   buildgit status --line           # One-line status with test results
   buildgit status -n 5 --line      # Last 5 builds, oldest first, one line each
@@ -189,6 +192,8 @@ _parse_status_options() {
     STATUS_JSON_MODE=false
     STATUS_FOLLOW_MODE=false
     STATUS_ONCE_MODE=false
+    STATUS_ONCE_TIMEOUT=10
+    STATUS_N_SET=false
     STATUS_LINE_MODE=false
     STATUS_LINE_COUNT="1"
     STATUS_ALL_MODE=false
@@ -213,6 +218,15 @@ _parse_status_options() {
                 STATUS_ONCE_MODE=true
                 shift
                 ;;
+            --once=*)
+                STATUS_ONCE_MODE=true
+                local _once_val="${1#--once=}"
+                if ! [[ "$_once_val" =~ ^[0-9]+$ ]]; then
+                    _usage_error "--once value must be a non-negative integer"
+                fi
+                STATUS_ONCE_TIMEOUT="$_once_val"
+                shift
+                ;;
             -l|--line)
                 STATUS_LINE_MODE=true
                 shift
@@ -226,6 +240,7 @@ _parse_status_options() {
                     _usage_error "-n requires a positive integer argument"
                 fi
                 STATUS_LINE_COUNT="$1"
+                STATUS_N_SET=true
                 shift
                 ;;
             -a|--all)
@@ -891,6 +906,79 @@ _follow_wait_for_new_build() {
     done
 }
 
+# Wait for a new build number to appear, with a deadline-based timeout
+# Arguments: job_name, baseline_build_number, timeout_secs
+# Prints new build number on stdout and returns 0 on success
+# Returns 1 if timeout expires before a new build appears
+_follow_wait_for_new_build_timeout() {
+    local job_name="$1"
+    local baseline="$2"
+    local timeout_secs="$3"
+
+    local deadline=$(( $(date +%s) + timeout_secs ))
+
+    while true; do
+        local current
+        current=$(get_last_build_number "$job_name")
+
+        if [[ "$current" -gt "$baseline" ]]; then
+            echo "$current"
+            return 0
+        fi
+
+        local now
+        now=$(date +%s)
+        if [[ $now -ge $deadline ]]; then
+            return 1
+        fi
+
+        sleep "$POLL_INTERVAL"
+    done
+}
+
+# Display N most recently completed builds, oldest first
+# Arguments: job_name, count
+# In-progress builds are skipped and do not count toward N
+_display_n_prior_builds() {
+    local job_name="$1"
+    local count="$2"
+
+    local latest_build
+    latest_build=$(get_last_build_number "$job_name")
+
+    if [[ "$latest_build" == "0" || -z "$latest_build" ]]; then
+        return 0
+    fi
+
+    # Walk backwards collecting completed build numbers
+    local build_nums=()
+    local build_num=$latest_build
+    local collected=0
+
+    while [[ $collected -lt $count && $build_num -gt 0 ]]; do
+        local binfo
+        binfo=$(get_build_info "$job_name" "$build_num")
+        if [[ -n "$binfo" ]]; then
+            local is_building
+            is_building=$(echo "$binfo" | jq -r '.building // false')
+            if [[ "$is_building" != "true" ]]; then
+                build_nums+=("$build_num")
+                collected=$((collected + 1))
+            fi
+        fi
+        build_num=$((build_num - 1))
+    done
+
+    # Display oldest first (reverse order of collection)
+    local i
+    for (( i=${#build_nums[@]}-1; i>=0; i-- )); do
+        local bnum="${build_nums[$i]}"
+        local bjson
+        bjson=$(get_build_info "$job_name" "$bnum")
+        _display_completed_build "$job_name" "$bnum" "$bjson" || true
+    done
+}
+
 # Display completed build with full header (for follow mode)
 # Used when the follow loop detects a build that already completed
 # Reuses the same display functions as snapshot `buildgit status`
@@ -935,12 +1023,14 @@ _display_completed_build() {
 }
 
 # Follow mode implementation for status command
-# Spec reference: buildgit-spec.md, buildgit status -f/--follow
-# "Monitor current build if in progress, then wait indefinitely for subsequent builds"
+# Spec reference: 2026-02-16_add-once-flag-to-status-f-spec.md
+# On entry, does NOT replay the most recently completed build (no stale replay).
+# Only monitors builds that are running at or after invocation time.
 _cmd_status_follow() {
     local job_name="$1"
     local json_mode="$2"
     local once_mode="${3:-false}"
+    local once_timeout="${4:-10}"
 
     # Store job name for cleanup handler
     _FOLLOW_JOB_NAME="$job_name"
@@ -949,11 +1039,15 @@ _cmd_status_follow() {
     trap _follow_mode_cleanup SIGINT SIGTERM
 
     if [[ "$once_mode" == "true" ]]; then
-        bg_log_info "Follow mode enabled (once) - monitoring builds for job '$job_name'"
+        log_info "Follow mode enabled (once, timeout=${once_timeout}s) - monitoring builds for job '$job_name'"
     else
         bg_log_info "Follow mode enabled - monitoring builds for job '$job_name'"
         bg_log_info "Press Ctrl+C to stop monitoring"
     fi
+
+    # On the first check, if the latest build is already completed, skip it
+    # (no stale replay) and wait for the next new build instead.
+    local first_check=true
 
     while true; do
         # Get current build number and info
@@ -961,8 +1055,23 @@ _cmd_status_follow() {
         build_number=$(get_last_build_number "$job_name")
 
         if [[ "$build_number" == "0" || -z "$build_number" ]]; then
+            # No builds exist yet
+            if [[ "$first_check" == "true" && "$once_mode" == "true" ]]; then
+                if [[ "$once_timeout" == "0" ]]; then
+                    bg_log_error "no new build detected for 0 seconds"
+                    return 2
+                fi
+                if ! _follow_wait_for_new_build_timeout "$job_name" "0" "$once_timeout" > /dev/null; then
+                    bg_log_error "no new build detected for ${once_timeout} seconds"
+                    return 2
+                fi
+                first_check=false
+                continue
+            fi
             bg_log_essential "Waiting for first build of $job_name..."
-            build_number=$(_follow_wait_for_new_build "$job_name" "0")
+            _follow_wait_for_new_build "$job_name" "0" > /dev/null
+            first_check=false
+            continue
         fi
 
         local build_json
@@ -979,6 +1088,7 @@ _cmd_status_follow() {
 
         # If build is in progress, display banner and monitor until completion
         if [[ "$building" == "true" ]]; then
+            first_check=false
             local build_exit_code
             if [[ "$json_mode" == "true" && "$once_mode" == "true" ]]; then
                 local elapsed=0
@@ -1040,24 +1150,48 @@ _cmd_status_follow() {
                 return "$build_exit_code"
             fi
         else
-            # Build already completed - display full header matching snapshot mode
-            # Spec: bug-status-f-missing-header-spec.md
-            local build_exit_code
-            if [[ "$json_mode" == "true" && "$once_mode" == "true" ]]; then
-                if _jenkins_status_check "$job_name" "true" "$build_number"; then
-                    build_exit_code=0
+            # Build already completed
+            if [[ "$first_check" == "true" ]]; then
+                # On entry, do not replay the stale completed build.
+                # Wait for the next new build instead.
+                first_check=false
+                if [[ "$once_mode" == "true" ]]; then
+                    if [[ "$once_timeout" == "0" ]]; then
+                        bg_log_error "no new build detected for 0 seconds"
+                        return 2
+                    fi
+                    if ! _follow_wait_for_new_build_timeout "$job_name" "$build_number" "$once_timeout" > /dev/null; then
+                        bg_log_error "no new build detected for ${once_timeout} seconds"
+                        return 2
+                    fi
+                    continue
                 else
-                    build_exit_code=$?
+                    echo ""
+                    log_info "Waiting for next build of $job_name..."
+                    local new_build_number
+                    new_build_number=$(_follow_wait_for_new_build "$job_name" "$build_number")
+                    bg_log_info "New build #${new_build_number} detected"
+                    continue
                 fi
             else
-                if _display_completed_build "$job_name" "$build_number" "$build_json"; then
-                    build_exit_code=0
+                # Subsequent check: new build that completed quickly — display it
+                local build_exit_code
+                if [[ "$json_mode" == "true" && "$once_mode" == "true" ]]; then
+                    if _jenkins_status_check "$job_name" "true" "$build_number"; then
+                        build_exit_code=0
+                    else
+                        build_exit_code=$?
+                    fi
                 else
-                    build_exit_code=$?
+                    if _display_completed_build "$job_name" "$build_number" "$build_json"; then
+                        build_exit_code=0
+                    else
+                        build_exit_code=$?
+                    fi
                 fi
-            fi
-            if [[ "$once_mode" == "true" ]]; then
-                return "$build_exit_code"
+                if [[ "$once_mode" == "true" ]]; then
+                    return "$build_exit_code"
+                fi
             fi
         fi
 
@@ -1155,8 +1289,13 @@ cmd_status() {
             return 1
         fi
 
+        # Display N prior completed builds before entering follow mode (if -n specified)
+        if [[ "${STATUS_N_SET:-false}" == "true" ]]; then
+            _display_n_prior_builds "$_VALIDATED_JOB_NAME" "$STATUS_LINE_COUNT"
+        fi
+
         # Enter follow mode loop (never returns normally)
-        _cmd_status_follow "$_VALIDATED_JOB_NAME" "$STATUS_JSON_MODE" "$STATUS_ONCE_MODE"
+        _cmd_status_follow "$_VALIDATED_JOB_NAME" "$STATUS_JSON_MODE" "$STATUS_ONCE_MODE" "$STATUS_ONCE_TIMEOUT"
         # Should not reach here
         return 0
     fi

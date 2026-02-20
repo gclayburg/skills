@@ -160,7 +160,10 @@ buildgit status -f
 Follow a single build and exit when it completes:
 
 ```bash
-buildgit status -f --once
+buildgit status -f --once           # 10s timeout waiting for build to start
+buildgit status -f --once=20        # 20s timeout
+buildgit status -n 3 -f             # show 3 prior builds, then follow indefinitely
+buildgit status -n 3 -f --once      # show 3 prior builds, then follow once with timeout
 ```
 
 Get machine-readable output for scripting or agent consumption:
@@ -228,7 +231,9 @@ This lets both buildgit and your AI agent find the right Jenkins job automatical
 | `buildgit status -n 10 --no-tests` | One-line status without test-report API calls |
 | `buildgit status --all` | Force full status output |
 | `buildgit status -f` | Follow builds in real-time |
-| `buildgit status -f --once` | Follow one build, then exit |
+| `buildgit status -f --once` | Follow one build, then exit (10s timeout) |
+| `buildgit status -f --once=N` | Follow one build, N-second timeout |
+| `buildgit status -n N -f` | Show N prior builds, then follow indefinitely |
 | `buildgit status --json` | JSON output |
 | `buildgit build` | Trigger + monitor build |
 | `buildgit build --no-follow` | Trigger only |
