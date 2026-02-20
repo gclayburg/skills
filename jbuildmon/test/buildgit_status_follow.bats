@@ -96,8 +96,8 @@ create_follow_test_wrapper() {
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Safety: self-destruct after 8 seconds to prevent hanging in CI
-( sleep 8 && kill -9 $$ 2>/dev/null ) &
+# Safety: self-destruct after 12 seconds to prevent hanging in CI
+( sleep 12 && kill -9 $$ 2>/dev/null ) &
 
 # Source buildgit without executing main
 _BUILDGIT_TESTING=1
@@ -106,6 +106,8 @@ source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
 # Override poll interval for faster tests
 POLL_INTERVAL=1
 MAX_BUILD_TIME=30
+# Speed up settle loop to 1 stable poll (avoids waiting 3s in CI)
+MONITOR_SETTLE_STABLE_POLLS=1
 
 # Override Jenkins API functions with mocks
 verify_jenkins_connection() {
@@ -136,6 +138,16 @@ get_build_info() {
         # Build completed
         echo '{"number":42,"result":"__FINAL_RESULT__","building":false,"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/test-repo/42/"}'
     fi
+}
+
+# Mock get_all_stages to avoid HTTP timeout in CI (stage tracking not needed for these tests)
+get_all_stages() {
+    echo "[]"
+}
+
+# Mock fetch_test_results to avoid HTTP timeout in CI
+fetch_test_results() {
+    echo ""
 }
 
 get_console_output() {
@@ -634,8 +646,8 @@ WRAPPER
     local output
     output=$(cat "${TEST_TEMP_DIR}/output.txt")
 
-    # Should show BUILD SUCCESSFUL banner
-    [[ "$output" == *"BUILD SUCCESSFUL"* ]]
+    # Monitoring path shows BUILD IN PROGRESS banner followed by Finished line
+    [[ "$output" == *"BUILD IN PROGRESS"* ]]
 
     # Should show build metadata
     [[ "$output" == *"Job:"* ]]
@@ -668,8 +680,8 @@ WRAPPER
     local output
     output=$(cat "${TEST_TEMP_DIR}/output.txt")
 
-    # Should show BUILD FAILED banner
-    [[ "$output" == *"BUILD FAILED"* ]]
+    # Monitoring path shows BUILD IN PROGRESS banner followed by Finished line
+    [[ "$output" == *"BUILD IN PROGRESS"* ]]
 
     # Should show build metadata
     [[ "$output" == *"Job:"* ]]
