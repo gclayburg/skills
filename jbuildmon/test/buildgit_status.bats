@@ -114,6 +114,14 @@ fetch_test_results() {
     echo '{"passCount":120,"failCount":0,"skipCount":0}'
 }
 
+get_all_stages() {
+    echo "[]"
+}
+
+get_failed_stage() {
+    echo ""
+}
+
 # Call the status command
 cmd_status "\$@"
 WRAPPER_START
@@ -163,6 +171,8 @@ fetch_test_results() {
         *) echo "" ;;
     esac
 }
+get_all_stages() { echo "[]"; }
+get_failed_stage() { echo ""; }
 
 cmd_status "\$@"
 WRAPPER_START
@@ -210,6 +220,8 @@ fetch_test_results() {
         *) echo "" ;;
     esac
 }
+get_all_stages() { echo "[]"; }
+get_failed_stage() { echo ""; }
 
 cmd_status "\$@"
 WRAPPER_START
@@ -254,6 +266,8 @@ get_console_output() { echo "Started by user testuser"; }
 fetch_test_results() {
     echo '{"passCount":120,"failCount":0,"skipCount":0}'
 }
+get_all_stages() { echo "[]"; }
+get_failed_stage() { echo ""; }
 
 cmd_status "\$@"
 WRAPPER_START
@@ -298,6 +312,8 @@ get_console_output() { echo "Started by user testuser"; }
 fetch_test_results() {
     echo '{"passCount":95,"failCount":2,"skipCount":3}'
 }
+get_all_stages() { echo "[]"; }
+get_failed_stage() { echo ""; }
 
 cmd_status "\$@"
 WRAPPER_START
@@ -335,6 +351,8 @@ get_console_output() { echo "Started by user testuser"; }
 fetch_test_results() {
     echo ""
 }
+get_all_stages() { echo "[]"; }
+get_failed_stage() { echo ""; }
 
 cmd_status "\$@"
 WRAPPER_START
@@ -379,6 +397,8 @@ fetch_test_results() {
     echo "fetch_test_results should not be called with --no-tests" >&2
     return 99
 }
+get_all_stages() { echo "[]"; }
+get_failed_stage() { echo ""; }
 
 cmd_status "\$@"
 WRAPPER_START
@@ -506,6 +526,9 @@ get_build_info() {
     echo '{"number":42,"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/custom-job/42/"}'
 }
 get_console_output() { echo "Started by user testuser"; }
+fetch_test_results() { echo '{"passCount":120,"failCount":0,"skipCount":0}'; }
+get_all_stages() { echo "[]"; }
+get_failed_stage() { echo ""; }
 
 # Set the global JOB_NAME as if it came from global option parsing
 JOB_NAME="custom-job"
@@ -553,6 +576,9 @@ get_build_info() {
     echo '{"number":42,"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/custom-job/42/"}'
 }
 get_console_output() { echo "Started by user testuser"; }
+fetch_test_results() { echo '{"passCount":120,"failCount":0,"skipCount":0}'; }
+get_all_stages() { echo "[]"; }
+get_failed_stage() { echo ""; }
 
 JOB_NAME="custom-job"
 cmd_status "\$@"
@@ -681,6 +707,9 @@ get_build_info() {
     echo '{"number":'"${expected_build}"',"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/test-repo/'"${expected_build}"'/"}'
 }
 get_console_output() { echo "Started by user testuser"; }
+fetch_test_results() { echo '{"passCount":120,"failCount":0,"skipCount":0}'; }
+get_all_stages() { echo "[]"; }
+get_failed_stage() { echo ""; }
 
 cmd_status "\$@"
 WRAPPER
@@ -716,6 +745,9 @@ get_build_info() {
     echo ""
 }
 get_console_output() { echo ""; }
+fetch_test_results() { echo ""; }
+get_all_stages() { echo "[]"; }
+get_failed_stage() { echo ""; }
 
 cmd_status "\$@"
 WRAPPER

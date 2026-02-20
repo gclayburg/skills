@@ -156,6 +156,19 @@ get_current_stage() {
     echo "Build"
 }
 
+# Mock HTTP functions to avoid real connections in CI (bats sandbox)
+get_all_stages() {
+    echo "[]"
+}
+
+get_failed_stage() {
+    echo ""
+}
+
+fetch_test_results() {
+    echo ""
+}
+
 # Set job name to skip auto-detection
 JOB_NAME="test-repo"
 
@@ -334,9 +347,9 @@ WRAPPER
 @test "push_git_failure_exit_code" {
     cd "${TEST_REPO}"
 
-    # Try to push to non-existent remote
+    # Try to push to non-existent local path (avoids DNS lookup / network)
     git remote remove origin
-    git remote add origin "git@nonexistent.example.com:test/repo.git"
+    git remote add origin "${TEST_TEMP_DIR}/nonexistent-repo.git"
 
     export PROJECT_DIR
     export TEST_TEMP_DIR

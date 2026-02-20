@@ -142,6 +142,19 @@ get_last_build_number() {
     echo "42"
 }
 
+# Mock HTTP functions to avoid real connections in CI (bats sandbox)
+get_all_stages() {
+    echo "[]"
+}
+
+get_failed_stage() {
+    echo ""
+}
+
+fetch_test_results() {
+    echo ""
+}
+
 # Set job name to skip auto-detection
 JOB_NAME="test-repo"
 

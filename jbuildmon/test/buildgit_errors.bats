@@ -46,11 +46,27 @@ create_test_repo() {
     git commit --quiet -m "Initial commit"
 }
 
-# Helper to set up invalid Jenkins environment (unavailable Jenkins)
+# Helper to set up mock Jenkins environment that simulates unavailable Jenkins.
+# Uses a mock curl binary placed in PATH to avoid real network connections.
+# The mock curl returns an empty body with HTTP code 000 (connection refused),
+# which is what real curl returns when it cannot reach the server.
 setup_invalid_jenkins() {
-    export JENKINS_URL="http://invalid.jenkins.local:9999"
+    export JENKINS_URL="http://jenkins.example.com"
     export JENKINS_USER_ID="testuser"
     export JENKINS_API_TOKEN="testtoken"
+
+    # Install mock curl that simulates connection failure
+    mkdir -p "${TEST_TEMP_DIR}/bin"
+    cat > "${TEST_TEMP_DIR}/bin/curl" << 'EOF'
+#!/usr/bin/env bash
+# Mock curl: simulates connection failure (no HTTP response received).
+# jenkins_api_with_status uses -w "\n%{http_code}"; real curl outputs empty
+# body + newline + "000" when the connection is refused.
+printf '\n000'
+exit 7
+EOF
+    chmod +x "${TEST_TEMP_DIR}/bin/curl"
+    export PATH="${TEST_TEMP_DIR}/bin:${PATH}"
 }
 
 # Helper to clear Jenkins environment (missing config)

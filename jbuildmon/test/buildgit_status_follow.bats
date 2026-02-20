@@ -97,7 +97,7 @@ create_follow_test_wrapper() {
 set -euo pipefail
 
 # Safety: self-destruct after 12 seconds to prevent hanging in CI
-( sleep 12 && kill -9 $$ 2>/dev/null ) &
+( sleep 12 && kill -9 $$ 2>/dev/null ) 3>&- &
 
 # Source buildgit without executing main
 _BUILDGIT_TESTING=1
@@ -195,7 +195,7 @@ create_follow_n_prior_wrapper() {
 set -euo pipefail
 
 # Safety: self-destruct after 8 seconds to prevent hanging in CI
-( sleep 8 && kill -9 $$ 2>/dev/null ) &
+( sleep 8 && kill -9 $$ 2>/dev/null ) 3>&- &
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
@@ -251,6 +251,19 @@ get_current_stage() {
     echo "Build"
 }
 
+# Mock HTTP functions to avoid real connections in CI (bats sandbox)
+get_all_stages() {
+    echo "[]"
+}
+
+get_failed_stage() {
+    echo ""
+}
+
+fetch_test_results() {
+    echo ""
+}
+
 JOB_NAME="test-repo"
 cmd_status -f "$@"
 WRAPPER_END
@@ -274,7 +287,7 @@ create_new_build_detection_wrapper() {
 set -euo pipefail
 
 # Safety: self-destruct after 8 seconds to prevent hanging in CI
-( sleep 8 && kill -9 $$ 2>/dev/null ) &
+( sleep 8 && kill -9 $$ 2>/dev/null ) 3>&- &
 
 export PROJECT_DIR="__PROJECT_DIR__"
 export TEST_TEMP_DIR="__TEST_TEMP_DIR__"
@@ -325,6 +338,19 @@ get_console_output() {
 
 get_current_stage() {
     echo "Build"
+}
+
+# Mock HTTP functions to avoid real connections in CI (bats sandbox)
+get_all_stages() {
+    echo "[]"
+}
+
+get_failed_stage() {
+    echo ""
+}
+
+fetch_test_results() {
+    echo ""
 }
 
 JOB_NAME="test-repo"
@@ -455,7 +481,7 @@ WRAPPER
 set -euo pipefail
 
 # Safety: self-destruct after 8 seconds to prevent hanging in CI
-( sleep 8 && kill -9 $$ 2>/dev/null ) &
+( sleep 8 && kill -9 $$ 2>/dev/null ) 3>&- &
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
@@ -474,6 +500,9 @@ get_build_info() {
 }
 get_console_output() { echo "Started by user testuser"; }
 get_current_stage() { echo "Build"; }
+get_all_stages() { echo "[]"; }
+get_failed_stage() { echo ""; }
+fetch_test_results() { echo ""; }
 
 JOB_NAME="test-repo"
 cmd_status -f "$@"
@@ -581,7 +610,7 @@ WRAPPER_END
 set -euo pipefail
 
 # Safety: self-destruct after 8 seconds to prevent hanging in CI
-( sleep 8 && kill -9 $$ 2>/dev/null ) &
+( sleep 8 && kill -9 $$ 2>/dev/null ) 3>&- &
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
@@ -600,6 +629,9 @@ get_build_info() {
 }
 get_console_output() { echo "Started by user testuser"; }
 get_current_stage() { echo "Build"; }
+get_all_stages() { echo "[]"; }
+get_failed_stage() { echo ""; }
+fetch_test_results() { echo ""; }
 
 JOB_NAME="test-repo"
 cmd_status --follow "$@"
