@@ -1075,7 +1075,7 @@ WRAPPER
     export PROJECT_DIR
     create_status_line_count_wrapper
 
-    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line=2
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -n 2 --line
 
     assert_success
     assert_output --partial "SUCCESS     Job test-repo #42"
@@ -1089,7 +1089,7 @@ WRAPPER
     export PROJECT_DIR
     create_status_line_count_wrapper
 
-    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line=10
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -n 10 --line
 
     assert_success
     assert_output --partial "SUCCESS     Job test-repo #42"
@@ -1104,12 +1104,14 @@ WRAPPER
     export PROJECT_DIR
     create_status_line_count_wrapper
 
-    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 41 --line=2
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 41 -n 2 --line
 
+    # Oldest-first: #40 (SUCCESS) on line 1, #41 (FAILURE) on line 2 (newest/last)
     assert_failure
     first_line="$(printf "%s\n" "$output" | sed -n '1p')"
-    [ "${first_line#FAILURE     Job test-repo #41}" != "$first_line" ]
-    assert_output --partial "SUCCESS     Job test-repo #40"
+    [ "${first_line#SUCCESS     Job test-repo #40}" != "$first_line" ]
+    last_line="$(printf "%s\n" "$output" | tail -n 1)"
+    [ "${last_line#FAILURE     Job test-repo #41}" != "$last_line" ]
 }
 
 @test "status_line_invalid_count_zero" {
@@ -1117,10 +1119,10 @@ WRAPPER
     export PROJECT_DIR
     create_status_test_wrapper "SUCCESS" "false"
 
-    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line=0
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -n 0 --line
 
     assert_failure
-    assert_output --partial "Invalid --line value: 0"
+    assert_output --partial "-n requires a positive integer argument"
     assert_output --partial "Usage: buildgit"
 }
 
@@ -1129,23 +1131,81 @@ WRAPPER
     export PROJECT_DIR
     create_status_test_wrapper "SUCCESS" "false"
 
-    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line=abc
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -n abc --line
 
     assert_failure
-    assert_output --partial "Invalid --line value: abc"
+    assert_output --partial "-n requires a positive integer argument"
     assert_output --partial "Usage: buildgit"
 }
 
-@test "status_line_count_exit_code_uses_first_line_only" {
+@test "status_line_equals_syntax_error" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_test_wrapper "SUCCESS" "false"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line=5
+
+    assert_failure
+    assert_output --partial "--line does not accept a value"
+    assert_output --partial "-n <count>"
+    assert_output --partial "Usage: buildgit"
+}
+
+@test "status_line_n_no_arg_error" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_test_wrapper "SUCCESS" "false"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -n --line
+
+    assert_failure
+    assert_output --partial "-n requires a positive integer argument"
+    assert_output --partial "Usage: buildgit"
+}
+
+@test "status_line_n_ordering_oldest_first" {
     cd "${TEST_REPO}"
     export PROJECT_DIR
     create_status_line_count_wrapper
 
-    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line=3
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -n 3 --line
 
-    # First line is SUCCESS (#42), so overall exit should be success
+    assert_success
+    # Output must be in ascending build number order: #40, #41, #42
+    line1="$(printf "%s\n" "$output" | sed -n '1p')"
+    line2="$(printf "%s\n" "$output" | sed -n '2p')"
+    line3="$(printf "%s\n" "$output" | sed -n '3p')"
+    [ "${line1#*Job test-repo #40}" != "$line1" ]
+    [ "${line2#*Job test-repo #41}" != "$line2" ]
+    [ "${line3#*Job test-repo #42}" != "$line3" ]
+}
+
+@test "status_line_n_without_line_mode_ignored" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_line_count_wrapper
+
+    # -n without --line: ignored, full mode runs (no --all either, so TTY detection applies;
+    # since tests run without a TTY, non-TTY default (line mode) kicks in showing 1 build)
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -n 5
+
+    # In non-TTY context the default is one-line mode; -n is silently ignored so only 1 build shown
+    line_count="$(printf "%s\n" "$output" | wc -l | tr -d ' ')"
+    [ "$line_count" -eq 1 ]
+}
+
+@test "status_line_count_exit_code_uses_last_line_only" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_line_count_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -n 3 --line
+
+    # Last line is newest (#42, SUCCESS), so overall exit should be success
     assert_success
     assert_output --partial "FAILURE     Job test-repo #41"
+    last_line="$(printf "%s\n" "$output" | tail -n 1)"
+    [ "${last_line#SUCCESS     Job test-repo #42}" != "$last_line" ]
 }
 
 @test "status_line_result_padded" {
@@ -1166,7 +1226,7 @@ WRAPPER
     export PROJECT_DIR
     create_status_line_alignment_wrapper
 
-    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line=2
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -n 2 --line
 
     assert_failure
     line1="$(printf "%s\n" "$output" | sed -n '1p')"
@@ -1273,7 +1333,7 @@ WRAPPER
     export PROJECT_DIR
     create_status_no_tests_guard_wrapper
 
-    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line=3 --no-tests
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -n 3 --line --no-tests
 
     assert_success
     line_count="$(printf "%s\n" "$output" | wc -l | tr -d ' ')"

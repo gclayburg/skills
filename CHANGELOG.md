@@ -2,14 +2,22 @@
 
 All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are documented in this file.
 
+## 2026-02-19
+
+### Changed
+- **`status --line` count flag** — Replaced `--line=N` syntax with a separate `-n <count>` flag. `--line` is now a pure boolean mode flag; use `buildgit status -n 5 --line` instead of `buildgit status --line=5`. Using `--line=value` now produces a descriptive error.
+- **`status --line` multi-build ordering** — Reversed output order for multi-build line mode (`-n N --line`): builds are now printed oldest-first, with the newest build on the last line. Exit code is based on the last (newest) build.
+
 ## 2026-02-16
 
 ### Features
 - **`line status test summary`** - Added `Tests=<passed>/<failed>/<skipped>` to `buildgit status --line` and `--line=N` output
 - **`line status no-tests flag`** - Added `buildgit status --no-tests` to skip `testReport/api/json` calls in line mode and render `Tests=?/?/?`
+- **`status follow once mode`** - Added `buildgit status -f --once` to follow a single build and exit with the build result code
 
 ### Changed
 - **`line status completion wording`** - Replaced `completed in` with `Took` for completed one-line status output
+- **`status follow usage and skill docs`** - Updated help text, README, and skill docs to include `status -f --once` for agent-safe single-build monitoring
 
 ## 2026-02-15
 

@@ -80,7 +80,7 @@ Global Options:
   --verbose                      Enable verbose output for debugging
 
 Commands:
-  status [build#] [-f|--follow] [--json] [--line[=N]] [--all] [--no-tests]
+  status [build#] [-f|--follow] [--once] [--json] [--line] [-n <count>] [--all] [--no-tests]
                       Display Jenkins build status (latest or specific build)
                       Default: full output on TTY, one-line on pipe/redirect
   push [--no-follow] [git-push-options] [remote] [branch]
@@ -92,10 +92,12 @@ Examples:
   buildgit status              # Jenkins build status snapshot
   buildgit status 31           # Status of build #31
   buildgit status -f           # Follow builds indefinitely
+  buildgit status -f --once    # Follow current build, exit when done
   buildgit status --json       # JSON format for Jenkins status
-  buildgit status --line       # One-line status with test results
-  buildgit status --line=10 --no-tests  # Last 10 builds, skip test fetch
-  buildgit status --all | less # Full status piped to pager
+  buildgit status --line           # One-line status with test results
+  buildgit status -n 5 --line      # Last 5 builds, oldest first, one line each
+  buildgit status -n 10 --no-tests # Last 10 builds, skip test fetch
+  buildgit status --all | less     # Full status piped to pager
   buildgit push                # Push + monitor build
   buildgit push --no-follow    # Push only, no monitoring
   buildgit --job myjob build   # Trigger build for specific job
@@ -182,10 +184,11 @@ parse_global_options() {
 # =============================================================================
 
 # Parse status command options
-# Sets: STATUS_JSON_MODE, STATUS_FOLLOW_MODE, STATUS_LINE_MODE, STATUS_LINE_COUNT, STATUS_ALL_MODE, STATUS_NO_TESTS
+# Sets: STATUS_JSON_MODE, STATUS_FOLLOW_MODE, STATUS_ONCE_MODE, STATUS_LINE_MODE, STATUS_LINE_COUNT, STATUS_ALL_MODE, STATUS_NO_TESTS
 _parse_status_options() {
     STATUS_JSON_MODE=false
     STATUS_FOLLOW_MODE=false
+    STATUS_ONCE_MODE=false
     STATUS_LINE_MODE=false
     STATUS_LINE_COUNT="1"
     STATUS_ALL_MODE=false
@@ -206,17 +209,23 @@ _parse_status_options() {
                 STATUS_FOLLOW_MODE=true
                 shift
                 ;;
+            --once)
+                STATUS_ONCE_MODE=true
+                shift
+                ;;
             -l|--line)
                 STATUS_LINE_MODE=true
-                STATUS_LINE_COUNT="1"
                 shift
                 ;;
             --line=*)
-                STATUS_LINE_MODE=true
-                STATUS_LINE_COUNT="${1#--line=}"
-                if ! [[ "$STATUS_LINE_COUNT" =~ ^[1-9][0-9]*$ ]]; then
-                    _usage_error "Invalid --line value: $STATUS_LINE_COUNT (must be a positive integer)"
+                _usage_error "--line does not accept a value; use -n <count> to specify number of builds"
+                ;;
+            -n)
+                shift
+                if [[ -z "${1:-}" ]] || ! [[ "$1" =~ ^[1-9][0-9]*$ ]]; then
+                    _usage_error "-n requires a positive integer argument"
                 fi
+                STATUS_LINE_COUNT="$1"
                 shift
                 ;;
             -a|--all)
@@ -445,7 +454,7 @@ _status_line_for_build_json() {
 
 # Fast one-line status output for snapshot mode.
 # Arguments: job_name [start_build_number] [line_count]
-# Returns: exit code based only on the first printed line.
+# Returns: exit code based only on the last printed line (newest build).
 _status_line_check() {
     local job_name="$1"
     local start_build_number="${2:-}"
@@ -461,36 +470,57 @@ _status_line_check() {
         fi
     fi
 
-    local first_exit_code=1
+    # Collect build numbers to print (newest to oldest), capping at available builds.
+    local build_numbers=()
     local i=0
     while [[ "$i" -lt "$line_count" ]]; do
         local current_build_number=$((first_build_number - i))
         if [[ "$current_build_number" -lt 1 ]]; then
             break
         fi
-
-        local build_json
-        build_json=$(get_build_info "$job_name" "$current_build_number")
-        if [[ -z "$build_json" ]]; then
-            if [[ "$i" -eq 0 ]]; then
-                echo "Error: Failed to fetch build information" >&2
-                return 1
-            fi
-            break
-        fi
-
-        local line_exit=1
-        if _status_line_for_build_json "$job_name" "$current_build_number" "$build_json" "$no_tests"; then
-            line_exit=0
-        fi
-        if [[ "$i" -eq 0 ]]; then
-            first_exit_code="$line_exit"
-        fi
-
+        build_numbers+=("$current_build_number")
         i=$((i + 1))
     done
 
-    return "$first_exit_code"
+    # Validate that at least the newest build can be fetched.
+    if [[ "${#build_numbers[@]}" -eq 0 ]]; then
+        echo "Error: No builds found for job '${job_name}'" >&2
+        return 1
+    fi
+
+    # Print in reverse order: oldest first, newest last.
+    # build_numbers[0] = newest, build_numbers[N-1] = oldest.
+    # Loop j from N-1 down to 0 to print oldest→newest.
+    local last_exit_code=1
+    local total="${#build_numbers[@]}"
+    local j="$total"
+    while [[ "$j" -gt 0 ]]; do
+        j=$((j - 1))
+        local bn="${build_numbers[$j]}"
+
+        local build_json
+        build_json=$(get_build_info "$job_name" "$bn")
+        if [[ -z "$build_json" ]]; then
+            if [[ "$j" -eq 0 ]]; then
+                # Newest build failed to fetch — hard error
+                echo "Error: Failed to fetch build information" >&2
+                return 1
+            fi
+            # Older build not available; skip silently
+            continue
+        fi
+
+        local line_exit=1
+        if _status_line_for_build_json "$job_name" "$bn" "$build_json" "$no_tests"; then
+            line_exit=0
+        fi
+        # j==0 is the newest build (last printed line); its exit code is the return value.
+        if [[ "$j" -eq 0 ]]; then
+            last_exit_code="$line_exit"
+        fi
+    done
+
+    return "$last_exit_code"
 }
 
 # Extract trigger, commit, and correlation info from a build
@@ -910,6 +940,7 @@ _display_completed_build() {
 _cmd_status_follow() {
     local job_name="$1"
     local json_mode="$2"
+    local once_mode="${3:-false}"
 
     # Store job name for cleanup handler
     _FOLLOW_JOB_NAME="$job_name"
@@ -917,8 +948,12 @@ _cmd_status_follow() {
     # Set up interrupt handler for follow mode
     trap _follow_mode_cleanup SIGINT SIGTERM
 
-    bg_log_info "Follow mode enabled - monitoring builds for job '$job_name'"
-    bg_log_info "Press Ctrl+C to stop monitoring"
+    if [[ "$once_mode" == "true" ]]; then
+        bg_log_info "Follow mode enabled (once) - monitoring builds for job '$job_name'"
+    else
+        bg_log_info "Follow mode enabled - monitoring builds for job '$job_name'"
+        bg_log_info "Press Ctrl+C to stop monitoring"
+    fi
 
     while true; do
         # Get current build number and info
@@ -944,31 +979,86 @@ _cmd_status_follow() {
 
         # If build is in progress, display banner and monitor until completion
         if [[ "$building" == "true" ]]; then
-            bg_log_info "Build #${build_number} is in progress, monitoring..."
+            local build_exit_code
+            if [[ "$json_mode" == "true" && "$once_mode" == "true" ]]; then
+                local elapsed=0
+                while [[ $elapsed -lt $MAX_BUILD_TIME ]]; do
+                    build_json=$(get_build_info "$job_name" "$build_number")
+                    if [[ -z "$build_json" ]]; then
+                        sleep "$POLL_INTERVAL"
+                        elapsed=$((elapsed + POLL_INTERVAL))
+                        continue
+                    fi
 
-            # Calculate running time for status -f (joining in-progress build)
-            # Spec: bug-build-monitoring-header-spec.md
-            local build_ts_ms running_msg=""
-            build_ts_ms=$(echo "$build_json" | jq -r '.timestamp // 0')
-            if [[ "$build_ts_ms" != "0" ]]; then
-                local now_ms=$(($(date +%s) * 1000))
-                local running_ms=$((now_ms - build_ts_ms))
-                local running_display
-                running_display=$(format_duration "$running_ms")
-                running_msg="Job ${job_name} #${build_number} has been running for ${running_display}"
+                    building=$(echo "$build_json" | jq -r '.building // false')
+                    if [[ "$building" != "true" ]]; then
+                        break
+                    fi
+
+                    sleep "$POLL_INTERVAL"
+                    elapsed=$((elapsed + POLL_INTERVAL))
+                done
+
+                if [[ "$building" == "true" ]]; then
+                    bg_log_error "Build #${build_number} did not complete within ${MAX_BUILD_TIME}s timeout"
+                    return 1
+                fi
+
+                if _jenkins_status_check "$job_name" "true" "$build_number"; then
+                    build_exit_code=0
+                else
+                    build_exit_code=$?
+                fi
+            else
+                bg_log_info "Build #${build_number} is in progress, monitoring..."
+
+                # Calculate running time for status -f (joining in-progress build)
+                # Spec: bug-build-monitoring-header-spec.md
+                local build_ts_ms running_msg=""
+                build_ts_ms=$(echo "$build_json" | jq -r '.timestamp // 0')
+                if [[ "$build_ts_ms" != "0" ]]; then
+                    local now_ms=$(($(date +%s) * 1000))
+                    local running_ms=$((now_ms - build_ts_ms))
+                    local running_display
+                    running_display=$(format_duration "$running_ms")
+                    running_msg="Job ${job_name} #${build_number} has been running for ${running_display}"
+                fi
+
+                # Display build info banner before entering monitoring loop
+                # Spec: unify-follow-log-spec.md, Section 5 (buildgit status -f)
+                _display_build_in_progress_banner "$job_name" "$build_number" "$running_msg"
+                _monitor_build "$job_name" "$build_number"
+                # Display build completion (test results if applicable + Finished line)
+                # Spec: unify-follow-log-spec.md, Section 4 (Build Completion)
+                if _handle_build_completion "$job_name" "$build_number"; then
+                    build_exit_code=0
+                else
+                    build_exit_code=$?
+                fi
             fi
-
-            # Display build info banner before entering monitoring loop
-            # Spec: unify-follow-log-spec.md, Section 5 (buildgit status -f)
-            _display_build_in_progress_banner "$job_name" "$build_number" "$running_msg"
-            _monitor_build "$job_name" "$build_number"
-            # Display build completion (test results if applicable + Finished line)
-            # Spec: unify-follow-log-spec.md, Section 4 (Build Completion)
-            _handle_build_completion "$job_name" "$build_number" || true
+            if [[ "$once_mode" == "true" ]]; then
+                return "$build_exit_code"
+            fi
         else
             # Build already completed - display full header matching snapshot mode
             # Spec: bug-status-f-missing-header-spec.md
-            _display_completed_build "$job_name" "$build_number" "$build_json" || true
+            local build_exit_code
+            if [[ "$json_mode" == "true" && "$once_mode" == "true" ]]; then
+                if _jenkins_status_check "$job_name" "true" "$build_number"; then
+                    build_exit_code=0
+                else
+                    build_exit_code=$?
+                fi
+            else
+                if _display_completed_build "$job_name" "$build_number" "$build_json"; then
+                    build_exit_code=0
+                else
+                    build_exit_code=$?
+                fi
+            fi
+            if [[ "$once_mode" == "true" ]]; then
+                return "$build_exit_code"
+            fi
         fi
 
         # Show waiting message (always shown - essential output)
@@ -1049,6 +1139,9 @@ cmd_status() {
     if [[ "$STATUS_LINE_MODE" == "true" && "$STATUS_FOLLOW_MODE" == "true" ]]; then
         _usage_error "Cannot use --line with --follow"
     fi
+    if [[ "$STATUS_ONCE_MODE" == "true" && "$STATUS_FOLLOW_MODE" != "true" ]]; then
+        _usage_error "Error: --once requires --follow (-f)"
+    fi
 
     # Validate incompatible options: follow + build number
     if [[ "$STATUS_FOLLOW_MODE" == "true" && -n "$STATUS_BUILD_NUMBER" ]]; then
@@ -1063,7 +1156,7 @@ cmd_status() {
         fi
 
         # Enter follow mode loop (never returns normally)
-        _cmd_status_follow "$_VALIDATED_JOB_NAME" "$STATUS_JSON_MODE"
+        _cmd_status_follow "$_VALIDATED_JOB_NAME" "$STATUS_JSON_MODE" "$STATUS_ONCE_MODE"
         # Should not reach here
         return 0
     fi

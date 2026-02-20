@@ -40,3 +40,5 @@ These files represent completed specifications in the specs/ directory.  This li
 - 2026-02-15_quick-status-line-spec.md  add TTY-aware one-line snapshot mode (`--line`/`--line=N`) and full-output override (`--all`) for `buildgit status`
 - 2026-02-15_line-jobs-enhance-spec.md  align `status --line` result field to fixed width and colorize status tokens with existing TTY-aware color rules
 - 2026-02-16_single-line-with-tests-spec.md  add `Tests=pass/fail/skip` to `status --line` output, replace `completed in` with `Took`, and add `--no-tests` to skip line-mode test report fetches
+- 2026-02-16_add-once-flag-to-status-f-spec.md  add `--once` for `buildgit status -f` to follow one build and exit (including `--json` support)
+- 2026-02-19_line-n-flag-oldest-first-spec.md  replace `--line=N` with `-n <count>` flag and reverse line mode output order to oldest-first (newest build on last line)

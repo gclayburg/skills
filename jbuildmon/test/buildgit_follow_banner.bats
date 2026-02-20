@@ -293,7 +293,7 @@ Running on agent1
 # -----------------------------------------------------------------------------
 @test "cmd_status_follow_calls_banner_for_in_progress_build" {
     # Check that _cmd_status_follow contains the banner function call
-    run grep -A20 'if \[\[ "\$building" == "true" \]\]' "${PROJECT_DIR}/buildgit"
+    run grep -A80 'if \[\[ "\$building" == "true" \]\]' "${PROJECT_DIR}/buildgit"
     assert_success
     assert_output --partial "_display_build_in_progress_banner"
 }

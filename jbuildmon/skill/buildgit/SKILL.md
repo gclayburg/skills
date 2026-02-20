@@ -24,10 +24,11 @@ The `buildgit` script is bundled at `scripts/buildgit` within this skill package
 | `scripts/buildgit status` | Jenkins build status snapshot |
 | `scripts/buildgit status <build#>` | Status of a specific build number |
 | `scripts/buildgit status --line` | One-line status for latest build |
-| `scripts/buildgit status --line=<N>` | One-line status for latest N builds |
-| `scripts/buildgit status --line=<N> --no-tests` | One-line status while skipping test-report API calls |
+| `scripts/buildgit status -n <N> --line` | One-line status for latest N builds (oldest first) |
+| `scripts/buildgit status -n <N> --no-tests` | One-line status while skipping test-report API calls |
 | `scripts/buildgit status --all` | Force full snapshot output |
 | `scripts/buildgit status -f` | Follow builds in real-time (Ctrl+C to stop) |
+| `scripts/buildgit status -f --once` | Follow current build to completion, then exit |
 | `scripts/buildgit status --json` | Machine-readable Jenkins build status |
 | `scripts/buildgit push` | Push + monitor Jenkins build until complete |
 | `scripts/buildgit push --no-follow` | Push only, no build monitoring |
@@ -56,6 +57,10 @@ For failures, summarize the failed stage name, error logs, and test failure deta
 For snapshot mode defaults, `scripts/buildgit status` is TTY-aware:
 - TTY stdout: full output
 - non-TTY stdout (pipe/redirect): one-line output
+
+For agent-safe follow mode, prefer:
+- `scripts/buildgit status -f --once` to follow exactly one build and exit
+- `scripts/buildgit status -f` only when you intentionally want indefinite monitoring
 
 ## Dynamic Context
 

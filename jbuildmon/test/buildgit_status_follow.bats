@@ -673,3 +673,70 @@ WRAPPER
     # Should show console URL
     [[ "$output" == *"Console:"*"console"* ]]
 }
+
+# -----------------------------------------------------------------------------
+# Test Case: Follow mode with --once exits after first completed build
+# Spec: 2026-02-16_add-once-flag-to-status-f-spec.md
+# -----------------------------------------------------------------------------
+@test "follow_once_completed_build_exits_without_waiting" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_test_wrapper "false" "SUCCESS" "0"
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 2>&1"
+
+    assert_success
+    refute_output --partial "Waiting for next build"
+    refute_output --partial "Press Ctrl+C to stop monitoring"
+    assert_output --partial "BUILD SUCCESSFUL"
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: --once without -f is rejected
+# Spec: 2026-02-16_add-once-flag-to-status-f-spec.md
+# -----------------------------------------------------------------------------
+@test "status_once_requires_follow" {
+    cd "${TEST_REPO}"
+
+    run "${PROJECT_DIR}/buildgit" status --once
+
+    assert_failure
+    assert_output --partial "Error: --once requires --follow (-f)"
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: Follow mode with --once returns non-zero for failed build
+# Spec: 2026-02-16_add-once-flag-to-status-f-spec.md
+# -----------------------------------------------------------------------------
+@test "follow_once_exit_code_failure" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_test_wrapper "false" "FAILURE" "0"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --once
+
+    assert_failure
+    assert_output --partial "BUILD FAILED"
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: Follow mode with --once and --json outputs JSON and exits
+# Spec: 2026-02-16_add-once-flag-to-status-f-spec.md
+# -----------------------------------------------------------------------------
+@test "follow_once_json_outputs_json" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_test_wrapper "false" "SUCCESS" "0"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --once --json
+
+    assert_success
+    assert_output --partial '"status": "SUCCESS"'
+    assert_output --partial '"number": 42'
+}

@@ -157,6 +157,12 @@ Follow builds in real-time (stays open and watches for new builds):
 buildgit status -f
 ```
 
+Follow a single build and exit when it completes:
+
+```bash
+buildgit status -f --once
+```
+
 Get machine-readable output for scripting or agent consumption:
 
 ```bash
@@ -166,10 +172,10 @@ buildgit status --json
 Get one-line status output:
 
 ```bash
-buildgit status --line       # latest build only
-buildgit status --line=10    # latest 10 builds, newest to oldest
-buildgit status --line=10 --no-tests   # skip test report fetch for speed
-buildgit status --all        # force full output even when piped
+buildgit status --line           # latest build only
+buildgit status -n 5 --line      # last 5 builds, oldest to newest
+buildgit status -n 10 --no-tests # skip test report fetch for speed
+buildgit status --all            # force full output even when piped
 ```
 
 ### Trigger a build
@@ -218,10 +224,11 @@ This lets both buildgit and your AI agent find the right Jenkins job automatical
 | `buildgit status` | Build status snapshot |
 | `buildgit status 31` | Status of specific build |
 | `buildgit status --line` | One-line status for latest build |
-| `buildgit status --line=10` | One-line status for latest 10 builds |
-| `buildgit status --line=10 --no-tests` | One-line status without test-report API calls |
+| `buildgit status -n 10 --line` | One-line status for latest 10 builds (oldest first) |
+| `buildgit status -n 10 --no-tests` | One-line status without test-report API calls |
 | `buildgit status --all` | Force full status output |
 | `buildgit status -f` | Follow builds in real-time |
+| `buildgit status -f --once` | Follow one build, then exit |
 | `buildgit status --json` | JSON output |
 | `buildgit build` | Trigger + monitor build |
 | `buildgit build --no-follow` | Trigger only |
