@@ -6,18 +6,6 @@
 
 load test_helper
 
-# Kill a process and all its children (portable across macOS and Linux)
-# Uses SIGKILL (-9) because SIGTERM is deferred during command substitution
-# on Linux, which causes hangs when the process is blocked in $(...) subshells.
-_kill_process_tree() {
-    local pid="$1"
-    # Kill children first (grandchildren become orphans but exit on their own)
-    pkill -9 -P "$pid" 2>/dev/null || true
-    # Kill the parent process
-    kill -9 "$pid" 2>/dev/null || true
-    wait "$pid" 2>/dev/null || true
-}
-
 # =============================================================================
 # Setup and Teardown
 # =============================================================================
@@ -53,11 +41,6 @@ setup() {
 }
 
 teardown() {
-    # Clean up any background processes
-    if [[ -n "${FOLLOW_PID:-}" ]]; then
-        _kill_process_tree "$FOLLOW_PID"
-    fi
-
     # Clean up temporary directory
     if [[ -d "${TEST_TEMP_DIR}" ]]; then
         rm -rf "${TEST_TEMP_DIR}"
@@ -92,12 +75,9 @@ create_follow_test_wrapper() {
     echo "0" > "${TEST_TEMP_DIR}/build_info_calls"
 
     # Write the wrapper script with proper variable substitution
-    cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << 'WRAPPER_END'
+cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << 'WRAPPER_END'
 #!/usr/bin/env bash
 set -euo pipefail
-
-# Safety: self-destruct after 12 seconds to prevent hanging in CI
-( sleep 12 && kill -9 $$ 2>/dev/null ) 3>&- &
 
 # Source buildgit without executing main
 _BUILDGIT_TESTING=1
@@ -194,9 +174,6 @@ create_follow_n_prior_wrapper() {
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Safety: self-destruct after 8 seconds to prevent hanging in CI
-( sleep 8 && kill -9 $$ 2>/dev/null ) 3>&- &
-
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
 
@@ -282,19 +259,15 @@ create_new_build_detection_wrapper() {
         -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
         "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
 
+    # Counter for build-number progression (file-based for subshell persistence)
+    echo "0" > "${TEST_TEMP_DIR}/build_number_calls"
+
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << 'WRAPPER'
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Safety: self-destruct after 8 seconds to prevent hanging in CI
-( sleep 8 && kill -9 $$ 2>/dev/null ) 3>&- &
-
 export PROJECT_DIR="__PROJECT_DIR__"
 export TEST_TEMP_DIR="__TEST_TEMP_DIR__"
-
-# Track state
-BUILD_NUMBER_CALLS=0
-BUILD_INFO_CALLS=0
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
@@ -310,9 +283,12 @@ verify_job_exists() {
 
 # Simulate build number progression
 get_last_build_number() {
-    BUILD_NUMBER_CALLS=$((BUILD_NUMBER_CALLS + 1))
+    local calls
+    calls=$(cat "${TEST_TEMP_DIR}/build_number_calls")
+    calls=$((calls + 1))
+    echo "$calls" > "${TEST_TEMP_DIR}/build_number_calls"
     # First few calls return 42, then return 43 to simulate new build
-    if [[ $BUILD_NUMBER_CALLS -le 3 ]]; then
+    if [[ $calls -le 3 ]]; then
         echo "42"
     else
         echo "43"
@@ -320,14 +296,11 @@ get_last_build_number() {
 }
 
 get_build_info() {
-    BUILD_INFO_CALLS=$((BUILD_INFO_CALLS + 1))
     local build_num="${2:-42}"
 
-    if [[ $BUILD_INFO_CALLS -le 2 ]]; then
-        # First build - already completed
+    if [[ "$build_num" == "42" ]]; then
         echo '{"number":42,"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/test-repo/42/"}'
     else
-        # New build detected and completed
         echo '{"number":43,"result":"SUCCESS","building":false,"timestamp":1706700060000,"duration":90000,"url":"http://jenkins.example.com/job/test-repo/43/"}'
     fi
 }
@@ -382,19 +355,8 @@ WRAPPER
     # Build in-progress: follow mode should monitor it and show result when done
     create_follow_test_wrapper "true" "SUCCESS" "2"
 
-    # Run in background
-    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
-    FOLLOW_PID=$!
-
-    # Wait for output to be generated
-    sleep 5
-
-    # Kill the process
-    _kill_process_tree "$FOLLOW_PID"
-
-    # Check output
-    local output
-    output=$(cat "${TEST_TEMP_DIR}/output.txt")
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 2>&1"
+    assert_success
 
     # Should show follow mode entered the monitoring path for an in-progress build.
     # "BUILD IN PROGRESS" banner appears immediately when monitoring starts.
@@ -413,21 +375,10 @@ WRAPPER
     # Build already complete (not building)
     create_follow_test_wrapper "false" "SUCCESS" "1"
 
-    # Run in background
-    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
-    FOLLOW_PID=$!
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once=1 2>&1"
+    assert_failure
 
-    # Wait for waiting message to appear
-    sleep 5
-
-    # Kill the process
-    _kill_process_tree "$FOLLOW_PID"
-
-    # Check output for waiting message
-    local output
-    output=$(cat "${TEST_TEMP_DIR}/output.txt")
-
-    [[ "$output" == *"Waiting for next build"* ]]
+    assert_output --partial "no new build detected for 1 seconds"
 }
 
 # -----------------------------------------------------------------------------
@@ -441,22 +392,9 @@ WRAPPER
     export TEST_TEMP_DIR
     create_new_build_detection_wrapper
 
-    # Run in background
-    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
-    FOLLOW_PID=$!
-
-    # Wait for new build detection
-    sleep 6
-
-    # Kill the process
-    _kill_process_tree "$FOLLOW_PID"
-
-    # Check output - should show multiple build results or waiting messages
-    local output
-    output=$(cat "${TEST_TEMP_DIR}/output.txt")
-
-    # Should show waiting message at some point
-    [[ "$output" == *"Waiting for next build"* ]]
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once=20 2>&1"
+    assert_success
+    assert_output --partial "#43"
 }
 
 # -----------------------------------------------------------------------------
@@ -479,9 +417,6 @@ WRAPPER
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << 'WRAPPER_END'
 #!/usr/bin/env bash
 set -euo pipefail
-
-# Safety: self-destruct after 8 seconds to prevent hanging in CI
-( sleep 8 && kill -9 $$ 2>/dev/null ) 3>&- &
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
@@ -510,17 +445,12 @@ WRAPPER_END
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
-    # Run with timeout (simulates forced termination)
-    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
-    local bg_pid=$!
-    sleep 4
-    _kill_process_tree "$bg_pid"
+    # Run in once mode to exercise follow path without external process control.
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once=1 2>&1"
+    assert_failure
 
-    local output
-    output=$(cat "${TEST_TEMP_DIR}/output.txt")
-
-    # Verify follow mode was entered (waiting message shows)
-    [[ "$output" == *"Waiting for next build"* ]]
+    # Verify follow mode entered once mode path.
+    assert_output --partial "Follow mode enabled (once, timeout=1s)"
 
     # Verify the cleanup handler function exists in buildgit
     grep -q "_follow_mode_cleanup" "${PROJECT_DIR}/buildgit"
@@ -538,28 +468,8 @@ WRAPPER_END
     # Build in-progress: completes after 2 polls
     create_follow_test_wrapper "true" "SUCCESS" "2"
 
-    # Run in background with short timeout
-    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
-    FOLLOW_PID=$!
-
-    # Wait for output to appear (poll instead of fixed sleep to avoid race conditions)
-    local waited=0
-    while [[ $waited -lt 8 ]]; do
-        if [[ -s "${TEST_TEMP_DIR}/output.txt" ]]; then
-            # Give a moment for more output to accumulate
-            sleep 1
-            break
-        fi
-        sleep 1
-        waited=$((waited + 1))
-    done
-
-    # Kill the process
-    _kill_process_tree "$FOLLOW_PID"
-
-    # Check that build result was displayed
-    local output
-    output=$(cat "${TEST_TEMP_DIR}/output.txt")
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 2>&1"
+    assert_success
 
     # Should show build information
     [[ "$output" == *"Build"* ]] || [[ "$output" == *"#42"* ]] || [[ "$output" == *"SUCCESS"* ]]
@@ -576,18 +486,11 @@ WRAPPER_END
     export TEST_TEMP_DIR
     create_follow_test_wrapper "false" "SUCCESS" "1"
 
-    # Run with -f option
-    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
-    FOLLOW_PID=$!
-
-    sleep 4
-    _kill_process_tree "$FOLLOW_PID"
-
-    local output
-    output=$(cat "${TEST_TEMP_DIR}/output.txt")
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once=1 2>&1"
+    assert_failure
 
     # Should enter follow mode (shows waiting message or build status)
-    [[ "$output" == *"Waiting for next build"* ]] || [[ "$output" == *"BUILD"* ]]
+    assert_output --partial "no new build detected for 1 seconds"
 }
 
 # -----------------------------------------------------------------------------
@@ -608,9 +511,6 @@ WRAPPER_END
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << 'WRAPPER'
 #!/usr/bin/env bash
 set -euo pipefail
-
-# Safety: self-destruct after 8 seconds to prevent hanging in CI
-( sleep 8 && kill -9 $$ 2>/dev/null ) 3>&- &
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
@@ -639,17 +539,11 @@ WRAPPER
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
-    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
-    FOLLOW_PID=$!
-
-    sleep 4
-    _kill_process_tree "$FOLLOW_PID"
-
-    local output
-    output=$(cat "${TEST_TEMP_DIR}/output.txt")
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once=1 2>&1"
+    assert_failure
 
     # Should enter follow mode
-    [[ "$output" == *"Waiting for next build"* ]] || [[ "$output" == *"BUILD"* ]]
+    assert_output --partial "no new build detected for 1 seconds"
 }
 
 # =============================================================================
@@ -669,14 +563,8 @@ WRAPPER
     # Tests that follow mode shows header after monitoring an in-progress build
     create_follow_test_wrapper "true" "SUCCESS" "2"
 
-    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
-    FOLLOW_PID=$!
-
-    sleep 5
-    _kill_process_tree "$FOLLOW_PID"
-
-    local output
-    output=$(cat "${TEST_TEMP_DIR}/output.txt")
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 2>&1"
+    assert_success
 
     # Monitoring path shows BUILD IN PROGRESS banner followed by Finished line
     [[ "$output" == *"BUILD IN PROGRESS"* ]]
@@ -703,14 +591,8 @@ WRAPPER
     # Build in-progress (building=true), result=FAILURE, completes after 2 polls
     create_follow_test_wrapper "true" "FAILURE" "2"
 
-    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
-    FOLLOW_PID=$!
-
-    sleep 5
-    _kill_process_tree "$FOLLOW_PID"
-
-    local output
-    output=$(cat "${TEST_TEMP_DIR}/output.txt")
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 2>&1"
+    assert_failure
 
     # Monitoring path shows BUILD IN PROGRESS banner followed by Finished line
     [[ "$output" == *"BUILD IN PROGRESS"* ]]
@@ -736,14 +618,8 @@ WRAPPER
     export TEST_TEMP_DIR
     create_follow_test_wrapper "true" "SUCCESS" "2"
 
-    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
-    FOLLOW_PID=$!
-
-    sleep 5
-    _kill_process_tree "$FOLLOW_PID"
-
-    local output
-    output=$(cat "${TEST_TEMP_DIR}/output.txt")
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 2>&1"
+    assert_success
 
     # Count occurrences of "Finished: SUCCESS" - should appear exactly once
     local count
@@ -762,14 +638,8 @@ WRAPPER
     export TEST_TEMP_DIR
     create_follow_test_wrapper "true" "SUCCESS" "2"
 
-    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
-    FOLLOW_PID=$!
-
-    sleep 5
-    _kill_process_tree "$FOLLOW_PID"
-
-    local output
-    output=$(cat "${TEST_TEMP_DIR}/output.txt")
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 2>&1"
+    assert_success
 
     # Should show console URL
     [[ "$output" == *"Console:"*"console"* ]]
@@ -925,15 +795,8 @@ WRAPPER
     # Build 42 is already completed; follow mode should NOT replay it
     create_follow_test_wrapper "false" "SUCCESS" "0"
 
-    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
-    FOLLOW_PID=$!
-
-    sleep 2
-    _kill_process_tree "$FOLLOW_PID"
-    wait "$FOLLOW_PID" 2>/dev/null || true
-
-    local output
-    output=$(cat "${TEST_TEMP_DIR}/output.txt")
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once=1 2>&1"
+    assert_failure
 
     # Stale build 42 should NOT be displayed
     [[ "$output" != *"BUILD SUCCESSFUL"* ]] || {
@@ -941,8 +804,8 @@ WRAPPER
         return 1
     }
 
-    # Should be waiting for the next build instead
-    [[ "$output" == *"Waiting for next build"* ]]
+    # Timeout confirms we waited for a new build instead of replaying stale output.
+    assert_output --partial "no new build detected"
 }
 
 # -----------------------------------------------------------------------------
@@ -996,15 +859,8 @@ WRAPPER
     # Latest build is 42 (completed); builds 41 and 42 are available as prior
     create_follow_n_prior_wrapper "42" "false"
 
-    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -n 2 > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
-    FOLLOW_PID=$!
-
-    sleep 3
-    _kill_process_tree "$FOLLOW_PID"
-    wait "$FOLLOW_PID" 2>/dev/null || true
-
-    local output
-    output=$(cat "${TEST_TEMP_DIR}/output.txt")
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" -n 2 --once=1 2>&1"
+    assert_failure
 
     # Both prior builds should be displayed (41=FAILURE, 42=SUCCESS)
     [[ "$output" == *"BUILD FAILED"* ]]
@@ -1045,15 +901,8 @@ WRAPPER
     # Latest build is 43 (in-progress); -n 2 should show 42 and 41, NOT 43
     create_follow_n_prior_wrapper "43" "true"
 
-    bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -n 2 > "${TEST_TEMP_DIR}/output.txt" 2>&1 3>&- &
-    FOLLOW_PID=$!
-
-    sleep 3
-    _kill_process_tree "$FOLLOW_PID"
-    wait "$FOLLOW_PID" 2>/dev/null || true
-
-    local output
-    output=$(cat "${TEST_TEMP_DIR}/output.txt")
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" -n 2 --once=20 2>&1"
+    assert_success
 
     # Build 41 (FAILURE) should be shown — proves 43 was skipped and we went back to 41
     [[ "$output" == *"BUILD FAILED"* ]]
