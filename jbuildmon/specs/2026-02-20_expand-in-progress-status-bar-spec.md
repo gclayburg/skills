@@ -1,9 +1,9 @@
 # Feature: Expand In-Progress Status Bar to All Build-Monitoring Commands
 
 - **Date:** `2026-02-20T13:48:07-0700`
-- **References:** `specs/todo/expand-in-progress-status-bar.md`
+- **References:** `specs/done-reports/expand-in-progress-status-bar.md`
 - **Supersedes:** (none — extends `2026-02-20_add-f-option-to-line-status-spec.md`)
-- **State:** `DRAFT`
+- **State:** `IMPLEMENTED`
 
 ## Overview
 

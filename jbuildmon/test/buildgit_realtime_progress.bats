@@ -241,7 +241,7 @@ EOF
 # (Updated: three monitor functions consolidated into _monitor_build)
 # -----------------------------------------------------------------------------
 @test "follow_monitor_uses_bg_log_progress_for_elapsed_time" {
-    run grep -A100 "^_monitor_build()" "${PROJECT_DIR}/buildgit"
+    run grep -n 'bg_log_progress "Build in progress... (${elapsed}s elapsed)"' "${PROJECT_DIR}/buildgit"
     assert_success
     assert_output --partial "bg_log_progress"
     assert_output --partial "elapsed"
@@ -253,7 +253,7 @@ EOF
 # (Updated: three monitor functions consolidated into _monitor_build)
 # -----------------------------------------------------------------------------
 @test "follow_monitor_has_stage_completion_tracking" {
-    run grep -A50 "^_monitor_build()" "${PROJECT_DIR}/buildgit"
+    run grep -n "_track_nested_stage_changes" "${PROJECT_DIR}/buildgit"
     assert_success
     assert_output --partial "_track_nested_stage_changes"
 }

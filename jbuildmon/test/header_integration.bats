@@ -86,7 +86,7 @@ teardown() {
 # Spec: bug-build-monitoring-header-spec.md - no elapsed in header
 @test "push_header_no_elapsed" {
     # Verify cmd_push path calls banner WITHOUT any suffix
-    run grep -A2 "# Spec: unify-follow-log-spec.md, Section 5 (buildgit push)" "${PROJECT_DIR}/buildgit"
+    run grep -A20 "# Spec: unify-follow-log-spec.md, Section 5 (buildgit push)" "${PROJECT_DIR}/buildgit"
     assert_success
     assert_output --partial '_display_build_in_progress_banner "$job_name" "$new_build_number"'
     refute_output --partial 'running_msg'
@@ -94,7 +94,7 @@ teardown() {
 
 @test "build_header_no_elapsed" {
     # Verify cmd_build path calls banner WITHOUT any suffix
-    run grep -A2 "# Spec: unify-follow-log-spec.md, Section 5 (buildgit build)" "${PROJECT_DIR}/buildgit"
+    run grep -A20 "# Spec: unify-follow-log-spec.md, Section 5 (buildgit build)" "${PROJECT_DIR}/buildgit"
     assert_success
     assert_output --partial '_display_build_in_progress_banner "$job_name" "$build_number"'
     refute_output --partial 'running_msg'

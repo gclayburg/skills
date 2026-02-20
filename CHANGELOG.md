@@ -9,6 +9,8 @@ All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are do
 - **Line follow in-progress behavior** — In line follow mode on TTY, in-progress builds now render an in-place animated 20-column progress bar with elapsed time and an estimate from Jenkins `lastSuccessfulBuild` duration.
 - **Line follow completion behavior** — When a followed build completes, the progress line is cleared and replaced with the standard `--line` completed-build row (including test summary when enabled).
 - **Line follow non-TTY behavior** — In-progress builds are now silent on non-TTY output in line follow mode; only the final completed `--line` row is printed.
+- **`push --line` and `build --line`** — Added compact line monitoring mode to push/build commands. On TTY, monitoring uses the animated in-progress bar; on completion, output is a single `--line` summary row.
+- **Sticky footer progress in full monitoring mode** — `push`, `build`, and `status -f` now render the in-progress progress bar as the bottom line on TTY while preserving existing full stage/header output.
 
 ## 2026-02-19
 

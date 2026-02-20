@@ -37,8 +37,10 @@ The `buildgit` script is bundled at `scripts/buildgit` within this skill package
 | `scripts/buildgit status --json` | Machine-readable Jenkins build status |
 | `scripts/buildgit push` | Push + monitor Jenkins build until complete |
 | `scripts/buildgit push --no-follow` | Push only, no build monitoring |
+| `scripts/buildgit push --line` | Push + compact one-line monitoring (TTY shows progress bar) |
 | `scripts/buildgit build` | Trigger a new build + monitor until complete |
 | `scripts/buildgit build --no-follow` | Trigger only, no monitoring |
+| `scripts/buildgit build --line` | Trigger + compact one-line monitoring (TTY shows progress bar) |
 | `scripts/buildgit --job <name> <cmd>` | Override auto-detected job name |
 
 ## Interpreting Output

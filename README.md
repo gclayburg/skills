@@ -137,6 +137,12 @@ Just want to push without waiting?
 buildgit push --no-follow
 ```
 
+Prefer compact one-line monitoring output?
+
+```bash
+buildgit push --line            # progress bar on TTY, final one-line summary
+```
+
 ### Check build status
 
 See the current state of the latest build:
@@ -194,6 +200,13 @@ Kick off a build without pushing (like hitting "Build Now" in Jenkins):
 buildgit build
 ```
 
+Compact mode is also available for triggered builds:
+
+```bash
+buildgit build --line           # progress bar on TTY, final one-line summary
+buildgit build --no-follow      # trigger only, no monitoring
+```
+
 ### Git passthrough
 
 Any command buildgit doesn't recognize gets passed straight to `git`:
@@ -229,6 +242,7 @@ This lets both buildgit and your AI agent find the right Jenkins job automatical
 |---------|-------------|
 | `buildgit push` | Push + monitor build |
 | `buildgit push --no-follow` | Push only |
+| `buildgit push --line` | Push + compact one-line monitoring |
 | `buildgit status` | Build status snapshot |
 | `buildgit status 31` | Status of specific build |
 | `buildgit status --line` | One-line status for latest build |
@@ -238,6 +252,7 @@ This lets both buildgit and your AI agent find the right Jenkins job automatical
 | `buildgit status -f` | Follow builds in real-time |
 | `buildgit status -f --once` | Follow one build, then exit (10s timeout) |
 | `buildgit status -f --once=N` | Follow one build, N-second timeout |
+| `buildgit build --line` | Trigger + compact one-line monitoring |
 | `buildgit status -n N -f` | Show N prior builds, then follow indefinitely |
 | `buildgit status -f --line` | Follow builds in compact one-line mode |
 | `buildgit status -n N -f --line` | Show N prior one-line rows, then follow in line mode |

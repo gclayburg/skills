@@ -113,6 +113,15 @@ wait_for_queue_item() {
     return 0
 }
 
+jenkins_api() {
+    if [[ "${1:-}" == *"/lastSuccessfulBuild/api/json" ]]; then
+        echo '{"duration":120000}'
+        return 0
+    fi
+    echo ""
+    return 1
+}
+
 get_build_info() {
     # Use file-based counter for persistence across calls
     local count
@@ -272,6 +281,51 @@ WRAPPER
     [[ "$output" == *"queued"* ]] || [[ "$output" == *"triggered"* ]] || [[ "$output" == *"monitoring disabled"* ]]
 }
 
+@test "build_line_shows_progress_and_single_summary_on_tty" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_build_test_wrapper "SUCCESS" "2" "true"
+
+    run bash -c "BUILDGIT_FORCE_TTY=1 bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line 2>&1"
+
+    assert_success
+    assert_output --partial "IN_PROGRESS Job test-repo #43 ["
+    assert_output --partial "SUCCESS"
+    refute_output --partial "BUILD IN PROGRESS"
+    refute_output --partial "Finished:"
+}
+
+@test "build_line_non_tty_silent_until_summary" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_build_test_wrapper "SUCCESS" "2" "true"
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line 2>&1"
+
+    assert_success
+    refute_output --partial "IN_PROGRESS Job test-repo #43 ["
+    assert_output --partial "SUCCESS"
+    assert_output --partial "Job test-repo #43"
+}
+
+@test "build_line_no_follow_matches_no_follow_behavior" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_build_test_wrapper "SUCCESS" "10" "true"
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line --no-follow 2>&1"
+
+    assert_success
+    assert_output --partial "monitoring disabled"
+    refute_output --partial "IN_PROGRESS Job"
+}
+
 # -----------------------------------------------------------------------------
 # Test Case: Build returns 0 on successful build
 # Spec: "Exit Code: Success (git OK, build OK) = 0"
@@ -393,6 +447,7 @@ WRAPPER
     assert_success
     assert_output --partial "Usage: buildgit"
     assert_output --partial "Commands:"
+    assert_output --partial "build [--no-follow] [--line]"
 }
 
 # -----------------------------------------------------------------------------

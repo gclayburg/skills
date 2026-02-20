@@ -110,10 +110,17 @@ verify_job_exists() {
 }
 
 jenkins_api() {
+    if [[ "${1:-}" == *"/lastSuccessfulBuild/api/json" ]]; then
+        echo '{"duration":120000}'
+        return 0
+    fi
     # Mock queue API - return empty queue
     if [[ "$1" == "/queue/api/json" ]]; then
         echo '{"items":[]}'
+        return 0
     fi
+    echo ""
+    return 1
 }
 
 get_last_build_number() {
@@ -292,6 +299,63 @@ WRAPPER
     # Should complete quickly (less than 5 seconds) since no monitoring
     [ "$elapsed" -lt 5 ]
     [ "$status" -eq 0 ]
+}
+
+@test "push_line_shows_progress_and_single_summary_on_tty" {
+    cd "${TEST_REPO}"
+
+    echo "Line mode monitor test" >> README.md
+    git add README.md
+    git commit --quiet -m "Line mode monitor test"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_push_test_wrapper "SUCCESS" "2"
+
+    run bash -c "BUILDGIT_FORCE_TTY=1 bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line 2>&1"
+
+    assert_success
+    assert_output --partial "IN_PROGRESS Job test-repo #43 ["
+    assert_output --partial "SUCCESS"
+    refute_output --partial "BUILD IN PROGRESS"
+    refute_output --partial "Finished:"
+}
+
+@test "push_line_non_tty_silent_until_summary" {
+    cd "${TEST_REPO}"
+
+    echo "Line mode non tty test" >> README.md
+    git add README.md
+    git commit --quiet -m "Line mode non tty test"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_push_test_wrapper "SUCCESS" "2"
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line 2>&1"
+
+    assert_success
+    refute_output --partial "IN_PROGRESS Job test-repo #43 ["
+    assert_output --partial "SUCCESS"
+    assert_output --partial "Job test-repo #43"
+}
+
+@test "push_line_no_follow_matches_no_follow_behavior" {
+    cd "${TEST_REPO}"
+
+    echo "Line mode no follow test" >> README.md
+    git add README.md
+    git commit --quiet -m "Line mode no follow test"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_push_test_wrapper "SUCCESS" "10"
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line --no-follow 2>&1"
+
+    assert_success
+    assert_output --partial "Push completed (monitoring disabled)"
+    refute_output --partial "IN_PROGRESS Job"
 }
 
 # -----------------------------------------------------------------------------

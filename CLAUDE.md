@@ -24,20 +24,25 @@ Global Options:
   --verbose                      Enable verbose output for debugging
 
 Commands:
-  status [build#] [-f|--follow] [--json]
+  status [build#] [-f|--follow] [--once[=N]] [-n <count>] [--json] [--line] [--all] [--no-tests]
                       Display Jenkins build status (latest or specific build)
-  push [--no-follow] [git-push-options] [remote] [branch]
+                      Default: full output on TTY, one-line on pipe/redirect
+  push [--no-follow] [--line] [git-push-options] [remote] [branch]
                       Push commits and monitor Jenkins build
-  build [--no-follow] Trigger and monitor Jenkins build
+  build [--no-follow] [--line]
+                      Trigger and monitor Jenkins build
   <any-git-command>   Passed through to git
 
 Examples:
   buildgit status              # Jenkins build status snapshot
   buildgit status 31           # Status of build #31
   buildgit status -f           # Follow builds indefinitely
+  buildgit status -f --line    # Follow builds with one-line output + progress bar (TTY only)
   buildgit status --json       # JSON format for Jenkins status
   buildgit push                # Push + monitor build
   buildgit push --no-follow    # Push only, no monitoring
+  buildgit push --line         # Push + compact one-line monitoring with progress bar
+  buildgit build --line        # Trigger + compact one-line monitoring with progress bar
   buildgit --job myjob build   # Trigger build for specific job
   buildgit log --oneline -5    # Passed through to git
 

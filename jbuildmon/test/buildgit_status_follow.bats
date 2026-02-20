@@ -1040,6 +1040,77 @@ WRAPPER
     assert_output --partial "SUCCESS"
 }
 
+@test "status_follow_full_mode_tty_keeps_full_completion_output" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_test_wrapper "true" "SUCCESS" "2"
+
+    cat > "${TEST_TEMP_DIR}/follow_footer_probe.sh" << 'WRAPPER_END'
+#!/usr/bin/env bash
+set -euo pipefail
+
+_BUILDGIT_TESTING=1
+source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+POLL_INTERVAL=1
+MAX_BUILD_TIME=30
+MONITOR_SETTLE_STABLE_POLLS=1
+
+verify_jenkins_connection() { return 0; }
+verify_job_exists() {
+    JOB_URL="${JENKINS_URL}/job/$1"
+    return 0
+}
+jenkins_api() {
+    if [[ "${1:-}" == *"/lastSuccessfulBuild/api/json" ]]; then
+        echo '{"duration":120000}'
+        return 0
+    fi
+    echo ""
+    return 1
+}
+get_last_build_number() { echo "42"; }
+get_build_info() {
+    local count
+    count=$(cat "${TEST_TEMP_DIR}/build_info_calls")
+    count=$((count + 1))
+    echo "$count" > "${TEST_TEMP_DIR}/build_info_calls"
+    if [[ $count -le 2 ]]; then
+        echo '{"number":42,"result":"null","building":true,"timestamp":1706700000000,"duration":0,"url":"http://jenkins.example.com/job/test-repo/42/"}'
+    else
+        echo '{"number":42,"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/test-repo/42/"}'
+    fi
+}
+get_all_stages() { echo "[]"; }
+fetch_test_results() { echo ""; }
+get_console_output() {
+    echo "Started by user testuser"
+    echo "Checking out Revision abc1234567890"
+}
+get_current_stage() { echo "Build"; }
+_status_stdout_is_tty() { return 0; }
+
+_display_follow_line_progress() {
+    echo "__STICKY_FOOTER__ $1 $2"
+}
+_clear_follow_line_progress() {
+    echo "__STICKY_CLEAR__"
+}
+
+JOB_NAME="test-repo"
+cmd_status -f --once
+WRAPPER_END
+    chmod +x "${TEST_TEMP_DIR}/follow_footer_probe.sh"
+
+    run bash -c "BUILDGIT_FORCE_TTY=1 bash \"${TEST_TEMP_DIR}/follow_footer_probe.sh\" 2>&1"
+
+    assert_success
+    assert_output --partial "BUILD IN PROGRESS"
+    assert_output --partial "Finished: SUCCESS"
+    refute_output --partial "Tests=?/?/? Took"
+}
+
 @test "status_follow_line_n_prior_builds" {
     cd "${TEST_REPO}"
     export PROJECT_DIR

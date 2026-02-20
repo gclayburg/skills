@@ -83,9 +83,10 @@ Commands:
   status [build#] [-f|--follow] [--once[=N]] [-n <count>] [--json] [--line] [--all] [--no-tests]
                       Display Jenkins build status (latest or specific build)
                       Default: full output on TTY, one-line on pipe/redirect
-  push [--no-follow] [git-push-options] [remote] [branch]
+  push [--no-follow] [--line] [git-push-options] [remote] [branch]
                       Push commits and monitor Jenkins build
-  build [--no-follow] Trigger and monitor Jenkins build
+  build [--no-follow] [--line]
+                      Trigger and monitor Jenkins build
   <any-git-command>   Passed through to git
 
 Examples:
@@ -106,6 +107,8 @@ Examples:
   buildgit status --all | less     # Full status piped to pager
   buildgit push                # Push + monitor build
   buildgit push --no-follow    # Push only, no monitoring
+  buildgit push --line         # Push + compact one-line monitoring with progress bar
+  buildgit build --line        # Trigger + compact one-line monitoring with progress bar
   buildgit --job myjob build   # Trigger build for specific job
   buildgit log --oneline -5    # Passed through to git
 
@@ -592,6 +595,70 @@ _clear_follow_line_progress() {
     printf '\r\033[K'
 }
 
+# Compact line-mode monitor for in-progress builds.
+# On TTY, renders animated progress; on non-TTY, waits silently.
+# Always prints a single completion line when build finishes.
+# Arguments: job_name, build_number, [no_tests]
+# Returns: status-line exit code (0=SUCCESS, 1=non-SUCCESS)
+_monitor_build_line_mode() {
+    local job_name="$1"
+    local build_number="$2"
+    local no_tests="${3:-false}"
+    local interactive_line_mode=false
+    if _status_stdout_is_tty; then
+        interactive_line_mode=true
+    fi
+
+    local elapsed=0
+    local line_frame=0
+    local estimate_ms=""
+    local showed_progress=false
+    local build_json building
+
+    if [[ "$interactive_line_mode" == "true" ]]; then
+        estimate_ms=$(_get_last_successful_build_duration "$job_name")
+    fi
+
+    while [[ $elapsed -lt $MAX_BUILD_TIME ]]; do
+        build_json=$(get_build_info "$job_name" "$build_number")
+        if [[ -z "$build_json" ]]; then
+            sleep "$POLL_INTERVAL"
+            elapsed=$((elapsed + POLL_INTERVAL))
+            line_frame=$((line_frame + 1))
+            continue
+        fi
+
+        building=$(echo "$build_json" | jq -r '.building // false')
+        if [[ "$building" != "true" ]]; then
+            break
+        fi
+
+        if [[ "$interactive_line_mode" == "true" ]]; then
+            _display_follow_line_progress "$job_name" "$build_number" "$build_json" "$estimate_ms" "$line_frame"
+            showed_progress=true
+        fi
+
+        sleep "$POLL_INTERVAL"
+        elapsed=$((elapsed + POLL_INTERVAL))
+        line_frame=$((line_frame + 1))
+    done
+
+    if [[ "${building:-true}" == "true" ]]; then
+        if [[ "$showed_progress" == "true" ]]; then
+            _clear_follow_line_progress
+            echo ""
+        fi
+        bg_log_error "Build #${build_number} did not complete within ${MAX_BUILD_TIME}s timeout"
+        return 1
+    fi
+
+    if [[ "$showed_progress" == "true" ]]; then
+        _clear_follow_line_progress
+    fi
+
+    _status_line_for_build_json "$job_name" "$build_number" "$build_json" "$no_tests"
+}
+
 # Fast one-line status output for snapshot mode.
 # Arguments: job_name [start_build_number] [line_count]
 # Returns: exit code based only on the last printed line (newest build).
@@ -864,9 +931,20 @@ _print_deferred_header_fields() {
 _monitor_build() {
     local job_name="$1"
     local build_number="$2"
+    local show_progress_footer="${3:-false}"
     local elapsed=0
     local consecutive_failures=0
     local last_time_report=0
+    local line_frame=0
+    local showed_progress=false
+    local estimate_ms=""
+    local render_progress=false
+    if [[ "$show_progress_footer" == "true" ]]; then
+        if _status_stdout_is_tty; then
+            render_progress=true
+            estimate_ms=$(_get_last_successful_build_duration "$job_name")
+        fi
+    fi
 
     # Initialize stage_state from banner's snapshot (avoids timing gaps)
     # _BANNER_STAGES_JSON is set by _display_stages() --completed-only in the banner
@@ -882,6 +960,10 @@ _monitor_build() {
 
         if [[ -z "$build_info" ]]; then
             consecutive_failures=$((consecutive_failures + 1))
+            if [[ "$showed_progress" == "true" ]]; then
+                _clear_follow_line_progress
+                showed_progress=false
+            fi
             if [[ $consecutive_failures -ge 5 ]]; then
                 bg_log_error "Too many consecutive API failures ($consecutive_failures)"
                 return 1
@@ -889,10 +971,18 @@ _monitor_build() {
             bg_log_warning "API request failed, retrying... ($consecutive_failures/5)"
             sleep "$POLL_INTERVAL"
             elapsed=$((elapsed + POLL_INTERVAL))
+            line_frame=$((line_frame + 1))
             continue
         fi
 
         consecutive_failures=0
+
+        # Keep the footer progress line as the final line by clearing it before
+        # printing any new monitoring content above it.
+        if [[ "$showed_progress" == "true" ]]; then
+            _clear_follow_line_progress
+            showed_progress=false
+        fi
 
         # Print deferred header fields when data becomes available
         # Spec: bug-build-monitoring-header-spec.md - deferred header fields
@@ -912,6 +1002,10 @@ _monitor_build() {
 
         # Check completion (after stage tracking so final transitions are caught)
         if [[ "$building" == "false" && -n "$result" ]]; then
+            if [[ "$showed_progress" == "true" ]]; then
+                _clear_follow_line_progress
+                showed_progress=false
+            fi
             # Reconcile late-arriving nested stage metadata before exiting monitor.
             # Jenkins can mark the root build complete slightly before nested
             # stage details are fully available through API/log parsing.
@@ -943,10 +1037,20 @@ _monitor_build() {
             last_time_report=$elapsed
         fi
 
+        if [[ "$render_progress" == "true" ]]; then
+            _display_follow_line_progress "$job_name" "$build_number" "$build_info" "$estimate_ms" "$line_frame"
+            showed_progress=true
+        fi
+
         sleep "$POLL_INTERVAL"
         elapsed=$((elapsed + POLL_INTERVAL))
+        line_frame=$((line_frame + 1))
     done
 
+    if [[ "$showed_progress" == "true" ]]; then
+        _clear_follow_line_progress
+        echo ""
+    fi
     bg_log_error "Build timeout: exceeded ${MAX_BUILD_TIME} seconds"
     bg_log_info "Build may still be running - check Jenkins console" >&2
     return 1
@@ -1164,12 +1268,6 @@ _cmd_status_follow() {
     local once_timeout="${4:-10}"
     local line_mode="${5:-false}"
     local no_tests="${6:-false}"
-    local interactive_line_mode=false
-    if [[ "$line_mode" == "true" && "$json_mode" != "true" ]]; then
-        if _status_stdout_is_tty; then
-            interactive_line_mode=true
-        fi
-    fi
 
     # Store job name for cleanup handler
     _FOLLOW_JOB_NAME="$job_name"
@@ -1234,53 +1332,7 @@ _cmd_status_follow() {
             first_check=false
             local build_exit_code
             if [[ "$line_mode" == "true" && "$json_mode" != "true" ]]; then
-                local elapsed=0
-                local line_frame=0
-                local estimate_ms
-                estimate_ms=""
-                if [[ "$interactive_line_mode" == "true" ]]; then
-                    estimate_ms=$(_get_last_successful_build_duration "$job_name")
-                fi
-                local showed_progress=false
-
-                while [[ $elapsed -lt $MAX_BUILD_TIME ]]; do
-                    build_json=$(get_build_info "$job_name" "$build_number")
-                    if [[ -z "$build_json" ]]; then
-                        sleep "$POLL_INTERVAL"
-                        elapsed=$((elapsed + POLL_INTERVAL))
-                        line_frame=$((line_frame + 1))
-                        continue
-                    fi
-
-                    building=$(echo "$build_json" | jq -r '.building // false')
-                    if [[ "$building" != "true" ]]; then
-                        break
-                    fi
-
-                    if [[ "$interactive_line_mode" == "true" ]]; then
-                        _display_follow_line_progress "$job_name" "$build_number" "$build_json" "$estimate_ms" "$line_frame"
-                        showed_progress=true
-                    fi
-
-                    sleep "$POLL_INTERVAL"
-                    elapsed=$((elapsed + POLL_INTERVAL))
-                    line_frame=$((line_frame + 1))
-                done
-
-                if [[ "$building" == "true" ]]; then
-                    if [[ "$showed_progress" == "true" ]]; then
-                        _clear_follow_line_progress
-                        echo ""
-                    fi
-                    bg_log_error "Build #${build_number} did not complete within ${MAX_BUILD_TIME}s timeout"
-                    return 1
-                fi
-
-                if [[ "$showed_progress" == "true" ]]; then
-                    _clear_follow_line_progress
-                fi
-
-                if _status_line_for_build_json "$job_name" "$build_number" "$build_json" "$no_tests"; then
+                if _monitor_build_line_mode "$job_name" "$build_number" "$no_tests"; then
                     build_exit_code=0
                 else
                     build_exit_code=$?
@@ -1332,7 +1384,7 @@ _cmd_status_follow() {
                 # Display build info banner before entering monitoring loop
                 # Spec: unify-follow-log-spec.md, Section 5 (buildgit status -f)
                 _display_build_in_progress_banner "$job_name" "$build_number" "$running_msg"
-                _monitor_build "$job_name" "$build_number"
+                _monitor_build "$job_name" "$build_number" "true"
                 # Display build completion (test results if applicable + Finished line)
                 # Spec: unify-follow-log-spec.md, Section 4 (Build Completion)
                 if _handle_build_completion "$job_name" "$build_number"; then
@@ -1549,12 +1601,17 @@ cmd_status() {
 # Sets: PUSH_NO_FOLLOW, PUSH_GIT_ARGS
 _parse_push_options() {
     PUSH_NO_FOLLOW=false
+    PUSH_LINE_MODE=false
     PUSH_GIT_ARGS=()
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --no-follow)
                 PUSH_NO_FOLLOW=true
+                shift
+                ;;
+            --line)
+                PUSH_LINE_MODE=true
                 shift
                 ;;
             *)
@@ -1759,10 +1816,17 @@ cmd_push() {
 
     # Display unified build header before monitoring
     # Spec: unify-follow-log-spec.md, Section 5 (buildgit push)
+    if [[ "$PUSH_LINE_MODE" == "true" ]]; then
+        if _monitor_build_line_mode "$job_name" "$new_build_number" "false"; then
+            return 0
+        fi
+        return 1
+    fi
+
     _display_build_in_progress_banner "$job_name" "$new_build_number"
 
     # Monitor build until completion
-    if ! _monitor_build "$job_name" "$new_build_number"; then
+    if ! _monitor_build "$job_name" "$new_build_number" "true"; then
         bg_log_error "Build monitoring interrupted or timed out"
         bg_log_essential "Suggestion: Check Jenkins console at ${JENKINS_URL}/job/${job_name}/${new_build_number}/console"
         return 1
@@ -1782,6 +1846,7 @@ cmd_push() {
 # Sets: BUILD_NO_FOLLOW
 _parse_build_options() {
     BUILD_NO_FOLLOW=false
+    BUILD_LINE_MODE=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -1791,6 +1856,10 @@ _parse_build_options() {
                 ;;
             --no-follow)
                 BUILD_NO_FOLLOW=true
+                shift
+                ;;
+            --line)
+                BUILD_LINE_MODE=true
                 shift
                 ;;
             *)
@@ -1864,10 +1933,17 @@ cmd_build() {
 
     # Display unified build header before monitoring
     # Spec: unify-follow-log-spec.md, Section 5 (buildgit build)
+    if [[ "$BUILD_LINE_MODE" == "true" ]]; then
+        if _monitor_build_line_mode "$job_name" "$build_number" "false"; then
+            return 0
+        fi
+        return 1
+    fi
+
     _display_build_in_progress_banner "$job_name" "$build_number"
 
     # Monitor build until completion
-    if ! _monitor_build "$job_name" "$build_number"; then
+    if ! _monitor_build "$job_name" "$build_number" "true"; then
         bg_log_error "Build monitoring interrupted or timed out"
         bg_log_essential "Suggestion: Check Jenkins console at ${JENKINS_URL}/job/${job_name}/${build_number}/console"
         return 1
