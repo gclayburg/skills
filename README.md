@@ -1,3 +1,5 @@
+
+
 # buildgit
 
 A CLI tool that lets you push code and see if the Jenkins build passed — without ever leaving your terminal. Built for humans on the command line and AI agents alike.
@@ -164,6 +166,9 @@ buildgit status -f --once           # 10s timeout waiting for build to start
 buildgit status -f --once=20        # 20s timeout
 buildgit status -n 3 -f             # show 3 prior builds, then follow indefinitely
 buildgit status -n 3 -f --once      # show 3 prior builds, then follow once with timeout
+buildgit status -f --line           # compact follow output (+ progress bar on TTY)
+buildgit status -f --once --line    # follow one build in compact mode, then exit
+buildgit status -n 5 -f --line      # show 5 prior one-line rows, then follow in line mode
 ```
 
 Get machine-readable output for scripting or agent consumption:
@@ -234,6 +239,8 @@ This lets both buildgit and your AI agent find the right Jenkins job automatical
 | `buildgit status -f --once` | Follow one build, then exit (10s timeout) |
 | `buildgit status -f --once=N` | Follow one build, N-second timeout |
 | `buildgit status -n N -f` | Show N prior builds, then follow indefinitely |
+| `buildgit status -f --line` | Follow builds in compact one-line mode |
+| `buildgit status -n N -f --line` | Show N prior one-line rows, then follow in line mode |
 | `buildgit status --json` | JSON output |
 | `buildgit build` | Trigger + monitor build |
 | `buildgit build --no-follow` | Trigger only |
@@ -250,3 +257,12 @@ This lets both buildgit and your AI agent find the right Jenkins job automatical
 ## License
 
 MIT
+
+
+## Developing
+
+This project uses bats-core for testing.  It must be installed as a git submodule to run the tests:
+
+```bash
+$ git submodule update --init --recursive
+```

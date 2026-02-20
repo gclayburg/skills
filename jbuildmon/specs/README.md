@@ -42,3 +42,4 @@ These files represent completed specifications in the specs/ directory.  This li
 - 2026-02-16_single-line-with-tests-spec.md  add `Tests=pass/fail/skip` to `status --line` output, replace `completed in` with `Took`, and add `--no-tests` to skip line-mode test report fetches
 - 2026-02-16_add-once-flag-to-status-f-spec.md  add `--once` for `buildgit status -f` to follow one build and exit (including `--json` support)
 - 2026-02-19_line-n-flag-oldest-first-spec.md  replace `--line=N` with `-n <count>` flag and reverse line mode output order to oldest-first (newest build on last line)
+- 2026-02-20_add-f-option-to-line-status-spec.md  allow `status -f --line`, add TTY progress bar for in-progress builds, support `-n` + follow + line, and keep non-TTY follow-line output silent until completion

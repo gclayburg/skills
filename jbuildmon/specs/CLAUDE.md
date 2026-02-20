@@ -12,7 +12,7 @@ Individual `*-spec.md` files are treated as the specification for each featureâ€
 - newly created specs will start in the DRAFT state.
 - DRAFT spec filename is based on the raw file name and the date (YYYY-MM-DD America/Denver TZ) draft created, e.g. `featurereport74.md` -> `./specs/2026-02-15_featurereport74-spec.md`
 
-**Specification template (include at top of each spec):**
+**Specification template (include at top of each DRAFT spec):**
 ```
 ## Title
 
@@ -20,6 +20,13 @@ Individual `*-spec.md` files are treated as the specification for each featureâ€
 - **References:** list of `<other-raw-report-path.md>` or `<none>`
 - **Supersedes:** list of `<other-spec-file.md>`
 - **State:** one of these valid values: `DRAFT`, `IMPLEMENTED`, `VALIDATED`
+```
+
+**Specification template (include verbatim in the DRAFT spec):**
+```
+## SPEC workflow
+
+1. read `specs/CLAUDE.md` and follow all rules there to implement this DRAFT spec (DRAFT->IMPLEMENTED)
 ```
 
 - before creating a DRAFT spec, you must read all the relevant background material and then ask questions about anything that needs clarification

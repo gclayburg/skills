@@ -1090,16 +1090,16 @@ WRAPPER
     assert_output --partial "Usage: buildgit"
 }
 
-@test "status_line_rejects_follow" {
+@test "status_line_with_follow_is_allowed" {
     cd "${TEST_REPO}"
     export PROJECT_DIR
     create_status_test_wrapper "SUCCESS" "false"
 
-    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line --follow
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line --follow --once=0
 
     assert_failure
-    assert_output --partial "Cannot use --line with --follow"
-    assert_output --partial "Usage: buildgit"
+    refute_output --partial "Cannot use --line with --follow"
+    assert_output --partial "no new build detected for 0 seconds"
 }
 
 @test "status_line_count_2" {

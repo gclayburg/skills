@@ -100,6 +100,15 @@ verify_job_exists() {
     return 0
 }
 
+jenkins_api() {
+    if [[ "${1:-}" == *"/lastSuccessfulBuild/api/json" ]]; then
+        echo '{"duration":120000}'
+        return 0
+    fi
+    echo ""
+    return 1
+}
+
 get_last_build_number() {
     echo "42"
 }
@@ -152,6 +161,65 @@ WRAPPER_END
         && mv "${TEST_TEMP_DIR}/buildgit_wrapper.sh.tmp" "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+}
+
+create_follow_line_progress_wrapper() {
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/follow_line_progress.sh" << 'WRAPPER_END'
+#!/usr/bin/env bash
+set -euo pipefail
+
+_BUILDGIT_TESTING=1
+source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+date() {
+    if [[ "${1:-}" == "+%s" ]]; then
+        echo "${FAKE_NOW_SECONDS:-1706700000}"
+        return 0
+    fi
+    command date "$@"
+}
+
+jenkins_api() {
+    if [[ "${1:-}" == *"/lastSuccessfulBuild/api/json" ]]; then
+        if [[ "${MOCK_LAST_SUCCESS_KIND:-duration}" == "none" ]]; then
+            echo '{}'
+        else
+            echo '{"duration":250000}'
+        fi
+        return 0
+    fi
+    echo ""
+    return 1
+}
+
+case "${1:-}" in
+    determinate)
+        FAKE_NOW_SECONDS=1706700035
+        _display_follow_line_progress "ralph1" "42" '{"timestamp":1706700000000}' "100000" "0"
+        ;;
+    unknown)
+        FAKE_NOW_SECONDS=1706700035
+        _display_follow_line_progress "ralph1" "42" '{"timestamp":1706700000000}' "" "3"
+        ;;
+    over)
+        FAKE_NOW_SECONDS=1706700180
+        _display_follow_line_progress "ralph1" "42" '{"timestamp":1706700000000}' "120000" "0"
+        ;;
+    estimate)
+        _get_last_successful_build_duration "ralph1"
+        ;;
+    *)
+        echo "unknown action" >&2
+        exit 1
+        ;;
+esac
+WRAPPER_END
+
+    chmod +x "${TEST_TEMP_DIR}/follow_line_progress.sh"
 }
 
 # Create wrapper for -n with follow mode tests
@@ -930,4 +998,142 @@ WRAPPER
     assert_output --partial "BUILD SUCCESSFUL"
     # Immediate timeout (0 seconds)
     assert_output --partial "no new build detected for 0 seconds"
+}
+
+@test "status_follow_line_completed_output" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_test_wrapper "true" "SUCCESS" "2"
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line --once 2>&1"
+
+    assert_success
+    assert_output --partial "SUCCESS"
+    assert_output --partial "Job test-repo #42"
+    assert_output --partial "Tests=?/?/? Took"
+}
+
+@test "status_follow_line_once_exit_code_failure" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_test_wrapper "true" "FAILURE" "2"
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line --once 2>&1"
+
+    assert_failure
+    assert_output --partial "FAILURE"
+    assert_output --partial "Job test-repo #42"
+}
+
+@test "status_follow_line_non_tty" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_test_wrapper "true" "SUCCESS" "2"
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line --once 2>&1"
+
+    assert_success
+    refute_output --partial "IN_PROGRESS Job test-repo #42 ["
+    assert_output --partial "SUCCESS"
+}
+
+@test "status_follow_line_n_prior_builds" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_n_prior_wrapper "42" "false"
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" -n 3 --line --once=0 2>&1"
+
+    assert_failure
+    assert_output --partial "Job test-repo #40"
+    assert_output --partial "Job test-repo #41"
+    assert_output --partial "Job test-repo #42"
+    refute_output --partial "BUILD FAILED"
+}
+
+@test "status_follow_line_rejects_json" {
+    cd "${TEST_REPO}"
+
+    run "${PROJECT_DIR}/buildgit" status -f --line --json
+
+    assert_failure
+    assert_output --partial "Cannot use --line with --json"
+}
+
+@test "status_follow_line_rejects_all" {
+    cd "${TEST_REPO}"
+
+    run "${PROJECT_DIR}/buildgit" status -f --line --all
+
+    assert_failure
+    assert_output --partial "Cannot use --line with --all"
+}
+
+@test "status_follow_line_progress_bar_format" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" determinate
+
+    assert_success
+    assert_output --partial "IN_PROGRESS Job ralph1 #42 [======>             ] 35% 35s / ~1m 40s"
+}
+
+@test "status_follow_line_estimate_from_last_success" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" estimate
+
+    assert_success
+    assert_output "250000"
+}
+
+@test "status_follow_line_no_prior_success" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash -c "MOCK_LAST_SUCCESS_KIND=none bash \"${TEST_TEMP_DIR}/follow_line_progress.sh\" estimate"
+
+    assert_success
+    assert_output ""
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" unknown
+    assert_success
+    assert_output --partial "~unknown"
+    refute_output --partial "%"
+}
+
+@test "status_follow_line_over_estimate" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" over
+
+    assert_success
+    assert_output --partial "[====================] 150% 3m 0s / ~2m 0s"
+}
+
+@test "status_follow_line_once_timeout" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_test_wrapper "false" "SUCCESS" "0"
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line --once=1 2>&1"
+
+    assert_failure
+    assert_output --partial "no new build detected for 1 seconds"
 }

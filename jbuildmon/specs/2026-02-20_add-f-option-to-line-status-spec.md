@@ -1,9 +1,9 @@
 # Feature: Follow Mode with Line Output (`-f --line`) and In-Progress Bar
 
 - **Date:** `2026-02-20T10:58:39-0700`
-- **References:** `specs/todo/add-f-option-to--line-status.md`
+- **References:** `specs/done-reports/add-f-option-to--line-status.md`
 - **Supersedes:** `2026-02-15_quick-status-line-spec.md` (partially — removes `--line` / `--follow` incompatibility), `2026-02-19_line-n-flag-oldest-first-spec.md` (partially — removes `-n` / `--follow` / `--line` incompatibility)
-- **State:** `DRAFT`
+- **State:** `IMPLEMENTED`
 
 ## Overview
 
@@ -180,6 +180,10 @@ Per `CLAUDE.md`: `buildgit status`, `buildgit status -f`, and `buildgit status -
 | `test/buildgit_status.bats` | Add tests per Test Strategy below. |
 | `skill/buildgit/SKILL.md` | Document `status -f --line` option. |
 
+## SPEC workflow
+
+1. read `specs/CLAUDE.md` and follow all rules there to implement this DRAFT spec (DRAFT->IMPLEMENTED)
+
 ## Acceptance Criteria
 
 1. `buildgit status -f --line` no longer produces an error.
@@ -195,7 +199,7 @@ Per `CLAUDE.md`: `buildgit status`, `buildgit status -f`, and `buildgit status -
 11. `--line` remains incompatible with `--json` and `--all`.
 12. Help text is updated with new examples.
 13. Exit codes follow existing conventions (0 for SUCCESS, 1 for non-SUCCESS, 2 for `--once` timeout).
-14. SKILL.md is updated.
+14. all `specs/CLAUDE.md` rules are followed for implementing this DRAFT spec
 
 ## Test Strategy
 

@@ -32,6 +32,8 @@ The `buildgit` script is bundled at `scripts/buildgit` within this skill package
 | `scripts/buildgit status -f --once=N` | Same, but wait up to N seconds for a build to start |
 | `scripts/buildgit status -n N -f` | Show N prior completed builds then follow indefinitely |
 | `scripts/buildgit status -n N -f --once` | Show N prior builds then follow once with timeout |
+| `scripts/buildgit status -f --line` | Follow builds with compact one-line output (TTY shows progress bar) |
+| `scripts/buildgit status -n N -f --line` | Show N prior one-line rows then follow in one-line mode |
 | `scripts/buildgit status --json` | Machine-readable Jenkins build status |
 | `scripts/buildgit push` | Push + monitor Jenkins build until complete |
 | `scripts/buildgit push --no-follow` | Push only, no build monitoring |

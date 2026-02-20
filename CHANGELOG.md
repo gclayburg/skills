@@ -2,6 +2,14 @@
 
 All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are documented in this file.
 
+## 2026-02-20
+
+### Changed
+- **`status -f --line` support** — Removed the `--line`/`--follow` incompatibility. `buildgit status -f --line` is now supported, including `--once` and `-n <count>` combinations.
+- **Line follow in-progress behavior** — In line follow mode on TTY, in-progress builds now render an in-place animated 20-column progress bar with elapsed time and an estimate from Jenkins `lastSuccessfulBuild` duration.
+- **Line follow completion behavior** — When a followed build completes, the progress line is cleared and replaced with the standard `--line` completed-build row (including test summary when enabled).
+- **Line follow non-TTY behavior** — In-progress builds are now silent on non-TTY output in line follow mode; only the final completed `--line` row is printed.
+
 ## 2026-02-19
 
 ### Changed
