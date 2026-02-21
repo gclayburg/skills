@@ -54,7 +54,7 @@ If user asks to implement a DRAFT spec:
 - [ ] **Update `jbuildmon/skill/buildgit/references/reference.md`** if the output format or available options change (new flags, new output sections, changed progress bar format, etc.).
 - [ ] **Update the spec file:** Change its `State:` field to `IMPLEMENTED` and add it to the spec index in `specs/README.md`.
 - [ ] **Handle referenced files:** If the spec lists files in its `References:` header, move those files to `specs/done-reports/` and update the reference paths in the spec accordingly.
-- [ ] **Update `CLAUDE.md`** (at the repository root): if the output of `buildgit --help` changes in any way (new or changed options, wording, etc)
+- [ ] **Update `CLAUDE.md` AND `README.MD`** (at the repository root): if the output of `buildgit --help` changes in any way (new or changed options, wording, etc)
 
 ## Workflow for IMPLEMENTED->VALIDATED
 

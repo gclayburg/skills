@@ -11,54 +11,143 @@ Every developer knows this workflow:
 1. `git push`
 2. Open Jenkins in a browser
 3. Stare at the build page, hitting refresh
-4. Eventually find out the build failed 4 minutes ago because of a missing semicolon
+4. Click on 47 things only to eventually find out the build failed 4 minutes ago because of a missing semicolon
 
 **buildgit** collapses all of that into one command. Push your code, and it monitors the Jenkins build right in your terminal until it passes or fails. When the build succeeds, you see a clean summary. When it fails, you see exactly what went wrong — the failed stage, the error, the failing tests — without wading through hundreds of lines of console log.
 
 ## The Workflow
 
+The workflow is simple.  Make some changes to a file, commit it, and push with `buildgit`.
+That's it. `buildgit` pushes your code, detectes the Jenkins build job starting, and streams the result to the terminal.  IN_PROGRESS banner is shown when running on a tty.
+
+```bash
+$ vim src/app.js
+$ git commit -am "fix auth timeout"
+$ buildgit push scranton
+To ssh://scranton2.garyclayburg.com:2233/home/git/upbanner.git
+   51bb15e..06af8bd  master -> master
+[13:11:27] ℹ Waiting for Jenkins build upbanner to start...
+
+╔════════════════════════════════════════╗
+║          BUILD IN PROGRESS             ║
+╚════════════════════════════════════════╝
+
+Job:        upbanner
+Build:      #158
+Status:     BUILDING
+Trigger:    Automated (git push)
+Commit:     06af8bd - "fix with timeout"
+            ✓ Your commit (HEAD)
+Started:    2026-02-21 13:11:34
+
+=== Build Info ===
+  Started by:  buildtriggerdude
+  Agent:       agent1paton
+  Pipeline:    Jenkinsfile from git ssh://git@scranton2:2233/home/git/upbanner.git
+==================
+
+Console:    http://palmer.garyclayburg.com:18080/job/upbanner/158/console
+
+[13:11:38] ℹ   Stage: [agent1paton   ] Declarative: Checkout SCM (2s)
+[13:11:43] ℹ   Stage: [agent1paton   ] Artifactory configuration (2s)
+IN_PROGRESS Job upbanner #158 [=>                  ] 10% 19s / ~3m 5s
 ```
-# 1. Make your changes
-vim src/app.js
 
-# 2. Commit
-git commit -am "fix auth timeout"
+You'll see the basics about the build, along with build pipeline stages as they are finished.
+The IN_PROGRESS indicator shows as long as the build is running.
 
-# 3. Push and watch
-buildgit push
+At the completion you'll see the final message:
+
+```bash
+...
+[13:11:38] ℹ   Stage: [agent1paton   ] Declarative: Checkout SCM (2s)
+[13:11:43] ℹ   Stage: [agent1paton   ] Artifactory configuration (2s)
+[13:14:37] ℹ   Stage: [agent1paton   ] main build (2m 52s)
+[13:14:37] ℹ   Stage: [agent1paton   ] Publish build info (2s)
+[13:14:37] ℹ   Stage: [agent1paton   ] Declarative: Post Actions (<1s)
+
+
+=== Test Results ===
+  Total: 52 | Passed: 52 | Failed: 0 | Skipped: 0
+====================
+
+Finished: SUCCESS
+[13:14:47] ℹ Duration: 3m 2s
 ```
 
-That's it. Step 3 pushes your code, picks up the Jenkins build, and streams the result:
+If there was an error, you'll get more detail about what went wrong.  compile?  build? test? something else?
+Here is one that failed with a bad Jenkinsfile:
 
-```
+```bash
 $ buildgit push
-Enumerating objects: 5, done.
-Writing objects: 100% (3/3), 312 bytes | 312.00 KiB/s, done.
-To github.com:user/myproject.git
-   a1b2c3d..e4f5g6h  main -> main
+To ssh://scranton2:2233/home/git/phandlemono.git
+   4ae2fc1..039301d  main -> main
+[09:13:35] ℹ Waiting for Jenkins build phandlemono-IT to start...
 
-Monitoring build myproject #42...
-Stage: Initialize      ✓ (2s)
-Stage: Build           ✓ (3s)
-Stage: Unit Tests      ✓ (12s)
-Stage: Deploy          ✓ (1s)
-Build #42: SUCCESS
+╔════════════════════════════════════════╗
+║          BUILD IN PROGRESS             ║
+╚════════════════════════════════════════╝
+
+Job:        phandlemono-IT
+Build:      #41
+Status:     BUILDING
+Trigger:    Automated (git push)
+Started:    2026-02-21 09:13:43
+
+=== Build Info ===
+  Started by:  buildtriggerdude
+  Pipeline:    Jenkinsfile from git ssh://git@scranton2:2233/home/git/phandlemono.git
+==================
+
+Console:    http://palmer.garyclayburg.com:18080/job/phandlemono-IT/41/console
+
+
+
+=== Console Output ===
+Started by user buildtriggerdude
+Obtained Jenkinsfile from git ssh://git@scranton2:2233/home/git/phandlemono.git
+org.codehaus.groovy.control.MultipleCompilationErrorsException: startup failed:
+WorkflowScript: 59: expecting ')', found 'eSet' @ line 59, column 45.
+             for (entry in chang eSet.items
+                                 ^
+
+1 error
+
+        at org.codehaus.groovy.control.ErrorCollector.failIfErrors(ErrorCollector.java:309)
+        at org.codehaus.groovy.control.ErrorCollector.addFatalError(ErrorCollector.java:149)
+        at org.codehaus.groovy.control.ErrorCollector.addError(ErrorCollector.java:119)
+        at org.codehaus.groovy.control.ErrorCollector.addError(ErrorCollector.java:131)
+        at org.codehaus.groovy.control.SourceUnit.addError(SourceUnit.java:349)
+        at org.codehaus.groovy.antlr.AntlrParserPlugin.transformCSTIntoAST(AntlrParserPlugin.java:225)
+        at org.codehaus.groovy.antlr.AntlrParserPlugin.parseCST(AntlrParserPlugin.java:191)
+        at org.codehaus.groovy.control.SourceUnit.parse(SourceUnit.java:233)
+        at org.codehaus.groovy.control.CompilationUnit$1.call(CompilationUnit.java:189)
+        at org.codehaus.groovy.control.CompilationUnit.applyToSourceUnits(CompilationUnit.java:966)
+        at org.codehaus.groovy.control.CompilationUnit.doPhaseOperation(CompilationUnit.java:626)
+        at org.codehaus.groovy.control.CompilationUnit.processPhaseOperations(CompilationUnit.java:602)
+        at org.codehaus.groovy.control.CompilationUnit.compile(CompilationUnit.java:579)
+        at groovy.lang.GroovyClassLoader.doParseClass(GroovyClassLoader.java:323)
+        at groovy.lang.GroovyClassLoader.parseClass(GroovyClassLoader.java:293)
+        at PluginClassLoader for script-security//org.jenkinsci.plugins.scriptsecurity.sandbox.groovy.GroovySandbox$Scope.parse(GroovySandbox.java:162)
+        at PluginClassLoader for workflow-cps//org.jenkinsci.plugins.workflow.cps.CpsGroovyShell.doParse(CpsGroovyShell.java:188)
+        at PluginClassLoader for workflow-cps//org.jenkinsci.plugins.workflow.cps.CpsGroovyShell.reparse(CpsGroovyShell.java:173)
+        at PluginClassLoader for workflow-cps//org.jenkinsci.plugins.workflow.cps.CpsFlowExecution.parseScript(CpsFlowExecution.java:653)
+        at PluginClassLoader for workflow-cps//org.jenkinsci.plugins.workflow.cps.CpsFlowExecution.start(CpsFlowExecution.java:599)
+        at PluginClassLoader for workflow-job//org.jenkinsci.plugins.workflow.job.WorkflowRun.run(WorkflowRun.java:341)
+        at hudson.model.ResourceController.execute(ResourceController.java:101)
+        at hudson.model.Executor.run(Executor.java:454)
+[Checks API] No suitable checks publisher found.
+Finished: FAILURE
+======================
+
+Finished: FAILURE
+[09:13:48] ℹ Duration: 0s
 ```
 
-When something breaks, you see only what matters:
+When something breaks, you see only what matters.
 
-```
-Stage: Unit Tests      FAILED (8s)
-
-FAILED TESTS:
-  - com.example.AuthTest.testLoginExpired
-  - com.example.AuthTest.testTokenRefresh
-
-Error: 2 test(s) failed
-Build #43: FAILURE
-```
-
-No scrolling through a full console log. buildgit filters out the noise and shows you the details you need to fix the problem.
+No scrolling through a full console log. `buildgit` filters out the noise and shows you the details you need to fix the problem.
+**Note**: This part is an overall goal, not yet completed.  Got an idea to make this better?  PR's are welcome!
 
 ## For Humans and Agents
 
@@ -89,9 +178,9 @@ git clone https://github.com/gclayburg/skills.git
 export PATH="$PATH:$(pwd)/skills/jbuildmon/skill/buildgit/scripts"
 ```
 
-### Prerequisites
+## Prerequisites
 
-buildgit sits on top of an existing git + Jenkins setup. You'll need:
+`buildgit` sits on top of an existing git + Jenkins setup. You'll need:
 
 - **bash**, **curl**, **jq**
 - **Git** for your project, with a remote repository
@@ -120,117 +209,7 @@ export JENKINS_API_TOKEN="your-api-token"
 
 To generate an API token: Jenkins > your user > Configure > API Token > Add new Token.
 
-
-## Usage
-
-### Push and monitor
-
-The core workflow — push your commits and watch the build:
-
-```bash
-buildgit push
-```
-
-Just want to push without waiting?
-
-```bash
-buildgit push --no-follow
-```
-
-Prefer compact one-line monitoring output?
-
-```bash
-buildgit push --line            # progress bar on TTY, final one-line summary
-```
-
-### Check build status
-
-See the current state of the latest build:
-
-```bash
-buildgit status
-```
-
-`buildgit status` defaults to full output in an interactive terminal, and one-line output when piped/redirected (non-TTY stdout).
-
-Check a specific build by number:
-
-```bash
-buildgit status 31
-```
-
-Follow builds in real-time (stays open and watches for new builds):
-
-```bash
-buildgit status -f
-```
-
-Follow a single build and exit when it completes:
-
-```bash
-buildgit status -f --once           # 10s timeout waiting for build to start
-buildgit status -f --once=20        # 20s timeout
-buildgit status -n 3 -f             # show 3 prior builds, then follow indefinitely
-buildgit status -n 3 -f --once      # show 3 prior builds, then follow once with timeout
-buildgit status -f --line           # compact follow output (+ progress bar on TTY)
-buildgit status -f --once --line    # follow one build in compact mode, then exit
-buildgit status -n 5 -f --line      # show 5 prior one-line rows, then follow in line mode
-```
-
-Get machine-readable output for scripting or agent consumption:
-
-```bash
-buildgit status --json
-```
-
-Get one-line status output:
-
-```bash
-buildgit status --line           # latest build only
-buildgit status -n 5 --line      # last 5 builds, oldest to newest
-buildgit status -n 10 --no-tests # skip test report fetch for speed
-buildgit status --all            # force full output even when piped
-```
-
-### Trigger a build
-
-Kick off a build without pushing (like hitting "Build Now" in Jenkins):
-
-```bash
-buildgit build
-```
-
-Compact mode is also available for triggered builds:
-
-```bash
-buildgit build --line           # progress bar on TTY, final one-line summary
-buildgit build --no-follow      # trigger only, no monitoring
-```
-
-### Git passthrough
-
-Any command buildgit doesn't recognize gets passed straight to `git`:
-
-```bash
-buildgit log --oneline -5
-buildgit diff HEAD~1
-buildgit checkout -b feature
-```
-
-### Real-world output examples
-
-See [jbuildmon/skill/buildgit/references/reference.md](jbuildmon/skill/buildgit/references/reference.md)
-for full examples: push with failure, parallel pipeline stages, progress bars, and live follow mode.
-
-### Multiple projects
-
-buildgit auto-detects the Jenkins job name from your project configuration. Override it with `--job`:
-
-```bash
-buildgit --job other-project status
-```
-
-## Per-Project Setup
+### Project setup
 
 Add the Jenkins job name to your project's root `CLAUDE.md` or `AGENTS.md`:
 
@@ -241,43 +220,78 @@ Add the Jenkins job name to your project's root `CLAUDE.md` or `AGENTS.md`:
 
 This lets both buildgit and your AI agent find the right Jenkins job automatically.
 
-## Quick Reference
+To override this inferred jobname, override it with `--job`:
 
-| Command | What it does |
-|---------|-------------|
-| `buildgit push` | Push + monitor build |
-| `buildgit push --no-follow` | Push only |
-| `buildgit push --line` | Push + compact one-line monitoring |
-| `buildgit status` | Build status snapshot |
-| `buildgit status 31` | Status of specific build |
-| `buildgit status --line` | One-line status for latest build |
-| `buildgit status -n 10 --line` | One-line status for latest 10 builds (oldest first) |
-| `buildgit status -n 10 --no-tests` | One-line status without test-report API calls |
-| `buildgit status --all` | Force full status output |
-| `buildgit status -f` | Follow builds in real-time |
-| `buildgit status -f --once` | Follow one build, then exit (10s timeout) |
-| `buildgit status -f --once=N` | Follow one build, N-second timeout |
-| `buildgit build --line` | Trigger + compact one-line monitoring |
-| `buildgit status -n N -f` | Show N prior builds, then follow indefinitely |
-| `buildgit status -f --line` | Follow builds in compact one-line mode |
-| `buildgit status -n N -f --line` | Show N prior one-line rows, then follow in line mode |
-| `buildgit status --json` | JSON output |
-| `buildgit build` | Trigger + monitor build |
-| `buildgit build --no-follow` | Trigger only |
-| `buildgit --job NAME CMD` | Override job name |
+```bash
+buildgit --job other-project status
+```
 
-## Exit Codes
+### Real-world output examples
 
-| Code | Meaning |
-|------|---------|
-| 0 | Success — build passed |
-| 1 | Failure — build failed or error occurred |
-| 2 | Build is in progress |
+See [jbuildmon/skill/buildgit/references/reference.md](jbuildmon/skill/buildgit/references/reference.md)
+for full examples: push with failure, parallel pipeline stages, progress bars, and live follow mode.
+
+# Usage
+
+```bash
+$ buildgit --help
+Usage: buildgit [global-options] <command> [command-options] [arguments]
+
+A unified interface for git operations with Jenkins CI/CD integration.
+
+Global Options:
+  -j, --job <name>               Specify Jenkins job name (overrides auto-detection)
+  -c, --console <mode>           Show console log output (auto or line count)
+  -h, --help                     Show this help message
+  --verbose                      Enable verbose output for debugging
+
+Commands:
+  status [build#] [-f|--follow] [--once[=N]] [-n <count>] [--json] [--line] [--all] [--no-tests]
+                      Display Jenkins build status (latest or specific build)
+                      Default: full output on TTY, one-line on pipe/redirect
+  push [--no-follow] [--line] [git-push-options] [remote] [branch]
+                      Push commits and monitor Jenkins build
+  build [--no-follow] [--line]
+                      Trigger and monitor Jenkins build
+  <any-git-command>   Passed through to git
+
+Examples:
+Snapshot status of completed Jenkins build jobs:
+  buildgit status                  # Jenkins build status snapshot
+  buildgit status 31               # Status of build #31
+  buildgit status --json           # JSON format for Jenkins status
+  buildgit status --line           # One-line status with test results
+  buildgit status -n 5 --line      # Last 5 builds, oldest first, one line each
+  buildgit status -n 10 --no-tests # Last 10 builds, skip test fetch
+  buildgit status --all | less     # Full status piped to pager
+  buildgit push --no-follow        # Push only, no monitoring
+
+Monitor ongoing Jenkins build jobs:
+  buildgit status -f               # Follow builds indefinitely
+  buildgit status -f --once        # Follow current/next build, exit when done (10s timeout)
+  buildgit status -f --once=20     # Same, but wait up to 20 seconds for build to start
+  buildgit status -n 3 -f          # Show 3 prior builds, then follow indefinitely
+  buildgit status -n 3 -f --once   # Show 3 prior builds, then follow once with timeout
+  buildgit status -f --line        # Follow builds with one-line output + progress bar (TTY only)
+  buildgit status -f --once --line # Follow one build in one-line mode, then exit
+  buildgit status -n 5 -f --line   # Show 5 prior one-line rows, then follow in one-line mode
+  buildgit push                    # Push + monitor build
+  buildgit push --line             # Push + compact one-line monitoring with progress bar
+  buildgit build --line            # Trigger + compact one-line monitoring with progress bar
+  buildgit --job myjob build       # Trigger build for specific job
+
+Passthrough:
+  buildgit log --oneline -5        # Passed through to git
+
+Environment Variables:
+  JENKINS_URL         Base URL of the Jenkins server
+  JENKINS_USER_ID     Jenkins username for API authentication
+  JENKINS_API_TOKEN   Jenkins API token for authentication
+ ```
 
 ## License
 
 MIT
-
 
 ## Developing
 
@@ -286,3 +300,5 @@ This project uses bats-core for testing.  It must be installed as a git submodul
 ```bash
 $ git submodule update --init --recursive
 ```
+
+Contributions are welcome.

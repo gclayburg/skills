@@ -12,7 +12,7 @@ A symlink at `jbuildmon/buildgit` preserves backward compatibility.
 Execute this tool with:  ./jbuildmon/buildgit
 
 ```bash
-$ ./jbuildmon/buildgit --help
+$ buildgit --help
 Usage: buildgit [global-options] <command> [command-options] [arguments]
 
 A unified interface for git operations with Jenkins CI/CD integration.
@@ -34,17 +34,32 @@ Commands:
   <any-git-command>   Passed through to git
 
 Examples:
-  buildgit status              # Jenkins build status snapshot
-  buildgit status 31           # Status of build #31
-  buildgit status -f           # Follow builds indefinitely
-  buildgit status -f --line    # Follow builds with one-line output + progress bar (TTY only)
-  buildgit status --json       # JSON format for Jenkins status
-  buildgit push                # Push + monitor build
-  buildgit push --no-follow    # Push only, no monitoring
-  buildgit push --line         # Push + compact one-line monitoring with progress bar
-  buildgit build --line        # Trigger + compact one-line monitoring with progress bar
-  buildgit --job myjob build   # Trigger build for specific job
-  buildgit log --oneline -5    # Passed through to git
+Snapshot status of completed Jenkins build jobs:
+  buildgit status                  # Jenkins build status snapshot
+  buildgit status 31               # Status of build #31
+  buildgit status --json           # JSON format for Jenkins status
+  buildgit status --line           # One-line status with test results
+  buildgit status -n 5 --line      # Last 5 builds, oldest first, one line each
+  buildgit status -n 10 --no-tests # Last 10 builds, skip test fetch
+  buildgit status --all | less     # Full status piped to pager
+  buildgit push --no-follow        # Push only, no monitoring
+
+Monitor ongoing Jenkins build jobs:
+  buildgit status -f               # Follow builds indefinitely
+  buildgit status -f --once        # Follow current/next build, exit when done (10s timeout)
+  buildgit status -f --once=20     # Same, but wait up to 20 seconds for build to start
+  buildgit status -n 3 -f          # Show 3 prior builds, then follow indefinitely
+  buildgit status -n 3 -f --once   # Show 3 prior builds, then follow once with timeout
+  buildgit status -f --line        # Follow builds with one-line output + progress bar (TTY only)
+  buildgit status -f --once --line # Follow one build in one-line mode, then exit
+  buildgit status -n 5 -f --line   # Show 5 prior one-line rows, then follow in one-line mode
+  buildgit push                    # Push + monitor build
+  buildgit push --line             # Push + compact one-line monitoring with progress bar
+  buildgit build --line            # Trigger + compact one-line monitoring with progress bar
+  buildgit --job myjob build       # Trigger build for specific job
+
+Passthrough:
+  buildgit log --oneline -5        # Passed through to git
 
 Environment Variables:
   JENKINS_URL         Base URL of the Jenkins server
