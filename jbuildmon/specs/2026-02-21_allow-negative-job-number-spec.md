@@ -1,7 +1,7 @@
 ## Relative build numbers and fix `-n` in full output mode
 
 - **Date:** `2026-02-21T14:43:52-0700`
-- **References:** `specs/todo/allow-negative-job-number.md`
+- **References:** `specs/todo/allow-negative-job-number.md`, `specs/todo/negative-numbers-with-n-enhanced.md`
 - **Supersedes:** (none)
 - **State:** `DRAFT`
 
@@ -19,135 +19,131 @@ In `cmd_status()`, when `use_line_mode` is false, the code calls `_jenkins_statu
 
 ## Specification
 
+### Key principle: `status <build-ref>` always shows exactly one build
+
+Any form of `buildgit status <build-ref>` — whether positive, zero, or negative — always shows the status of **exactly one build**. This is distinct from `-n <count>`, which shows multiple builds.
+
 ### 1. Relative build number syntax
 
-Accept `0` and negative integers as the build number positional argument:
+Accept `0` and negative integers as the build number positional argument. These are **relative references** that resolve to a single absolute build number:
 
-| Syntax | Meaning | Equivalent |
-|--------|---------|------------|
-| `buildgit status 31` | Specific build #31 | (unchanged) |
-| `buildgit status 0` | Current/latest build | `buildgit status` (no arg) |
-| `buildgit status -1` | One build before the latest | `buildgit status -n 1 --line` shows same build |
-| `buildgit status -2` | Two builds before the latest | — |
-| `buildgit status -N` | N builds before the latest | — |
+| Syntax | Meaning | Example (latest=#200) |
+|--------|---------|----------------------|
+| `buildgit status 31` | Absolute build #31 | Shows #31 |
+| `buildgit status 0` | Current/latest build | Shows #200 |
+| `buildgit status -1` | One build before the latest | Shows #199 |
+| `buildgit status -2` | Two builds before the latest | Shows #198 |
+| `buildgit status -N` | N builds before the latest | Shows #(200-N) |
 
-**Resolution of `0`:** Show the in-progress build if one exists, otherwise show the last completed build (same as `buildgit status` with no argument).
+**Resolution of `0`:** Show the in-progress build if one exists, otherwise show the last completed build (same as `buildgit status` with no argument). Internally, treat `0` as equivalent to omitting the build number.
 
-**Resolution of negative numbers:** Resolve `get_last_build_number()` and subtract the absolute value. If `last_build == 199` then `-2` resolves to build `#197`. If the resolved number is less than 1, show an error.
+**Resolution of negative numbers:** Call `get_last_build_number()` and subtract the absolute value. If `last_build == 200` then `-2` resolves to build `#198`. If the resolved number is less than 1, show an error.
 
-### 2. Negative-number shorthand for `-n`
+**Single build only:** `-N` as a build reference always shows exactly one build. It is **not** a shorthand for `-n N`. These are completely different:
+- `buildgit status -2` → shows one build: the build from 2 ago (#198)
+- `buildgit status -n 2` → shows two builds: the last 2 builds (#199, #200)
 
-Accept `-N` (where N is 1–99) as a shorthand for `-n N` when no build number has been set:
+### 2. `-N` option parsing
 
-| Shorthand | Equivalent |
-|-----------|------------|
-| `buildgit status -3 --line` | `buildgit status -n 3 --line` |
-| `buildgit status -5` | `buildgit status -n 5` |
+In `_parse_status_options()`, recognize `-N` (where N is a positive integer) as a relative build reference:
 
-**Disambiguation rule:** A bare negative number like `-3` acts as a `-n` shorthand (show last 3 builds). To reference a specific relative build (3 builds ago), the user combines it differently — this is the natural reading since `-3` as "show 3 builds" is more common than "show the build from 3 ago".
+- `-1` → relative build offset 1 (one before latest)
+- `-2` → relative build offset 2 (two before latest)
+- `-99` → relative build offset 99
 
-Wait — this creates ambiguity. Let me reconsider.
+This is parsed as a build number, not as `-n`. Internally, the negative value is stored and resolved to an absolute build number before the Jenkins API call.
 
-Looking at the raw file more carefully:
-- `buildgit status -3 --line` should equal `buildgit status -n 3 --line`
-- `buildgit status 0` = current build
-- `buildgit status -1` = 1 build before current
+**Validation:**
+- `-0` is accepted and treated the same as `0` (latest build)
+- Must not conflict with existing short flags (`-f`, `-n`, `-h`, `-a`). Since those are all single letters and `-N` starts with a digit, there is no conflict.
+- If a build number is already set (e.g. `buildgit status 31 -2`), show an error: build number already specified.
 
-These two definitions conflict: `-3` can't mean both "3 builds ago" (relative) and "show last 3" (`-n 3`).
+### 3. Mutual exclusivity: build reference vs `-n`
 
-**Resolution per the raw file:** `-N` is shorthand for `-n N` (show last N builds). This is the primary use case. The `0` and negative relative build concepts apply only to the positional build number argument when it stands alone or is clearly a build reference.
+A build reference (positive, zero, or negative) and `-n <count>` are **mutually exclusive**. If both are specified, show an error:
 
-Revised rule:
-- **`-N` as a status option** (e.g. `-3`) → treated as shorthand for `-n N` (show last N builds)
-- **`0` as positional argument** → current/latest build (equivalent to no argument)
+```
+$ buildgit status -2 -n 3 --line
+Error: Cannot combine a build number with -n
+```
 
-This means there is **no** "negative relative build" syntax — `-1` means "show last 1 build" (same as `-n 1`), not "one build before latest". This matches the raw file's stated equivalences.
+This applies to all combinations:
+- `buildgit status 31 -n 3` → error
+- `buildgit status -2 -n 3` → error
+- `buildgit status 0 -n 5` → error
 
-### Revised specification
-
-#### 2a. Accept `-N` as `-n N` shorthand in status option parsing
-
-In `_parse_status_options()`, recognize `-N` (where N is 1–99) as equivalent to `-n N`:
-
-- `-1` → `-n 1`
-- `-3` → `-n 3`
-- `-99` → `-n 99`
-
-Validation: reject `-0`, `-100+`, and non-numeric values.
-
-Must not conflict with other short flags (currently `-f`, `-n`, `-h`, `-a`). Since these are all single-letter and `-N` is always a digit, there is no conflict.
-
-#### 2b. Accept `0` as build number positional argument
-
-In `_parse_status_options()`, accept `0` as a valid build number. Treat `0` identically to omitting the build number (show latest/current build). Internally, convert `0` to empty string so existing code paths handle it naturally.
-
-### 3. Fix `-n` in full output mode
+### 4. Fix `-n` in full output mode
 
 When `-n` is specified without `--line` on a TTY, show full output for each of the N builds instead of only the latest.
 
 #### Implementation
 
 In `cmd_status()`, when `use_line_mode` is false and `STATUS_N_SET` is true:
-- Get the starting build number (from `STATUS_BUILD_NUMBER` or `get_last_build_number()`)
+- Get the starting build number via `get_last_build_number()`
 - Collect N build numbers working backwards (same logic as `_status_line_check`)
 - Loop through them oldest-first, calling `_jenkins_status_check()` for each
-- Separate multiple builds with a visual divider (e.g. a blank line or `---`)
+- Separate multiple builds with a blank line
 - Exit code based on the last (newest) build
 
-This applies to all modes where `-n` is relevant:
-- `buildgit status -n 3` → 3 full-output status reports
-- `buildgit status -3` → same (via shorthand)
+This applies to all output modes:
+- `buildgit status -n 3` → 3 full-output status reports (oldest first)
 - `buildgit status -n 3 --line` → unchanged (already works)
-- `buildgit status -n 3 --json` → array of N JSON objects (or N newline-separated objects)
+- `buildgit status -n 3 --json` → N newline-separated JSON objects (JSONL format)
 
-#### JSON with `-n`
-
-When `-n` is combined with `--json`, output one JSON object per build, newline-separated (JSONL format). This keeps each object parseable with standard tools like `jq`.
-
-### 4. Interaction with other flags
+### 5. Interaction with other flags
 
 | Combination | Behavior |
 |-------------|----------|
-| `-3 --line` | Show last 3 builds in line mode |
-| `-3` (TTY) | Show last 3 builds in full mode |
-| `-3` (non-TTY) | Show last 3 builds in line mode (existing TTY-aware default) |
-| `-3 --json` | Show last 3 builds in JSONL |
-| `-3 -f` | Error: `-n` and `-f` are incompatible (existing validation) |
+| `-2` | Show one build: 2 builds ago, full output |
+| `-2 --line` | Show one build: 2 builds ago, line output |
+| `-2 --json` | Show one build: 2 builds ago, JSON output |
+| `-2 -f` | Error: cannot combine build number with `-f` (existing rule) |
+| `-2 -n 3` | Error: cannot combine build number with `-n` |
+| `-n 3` (TTY) | Show last 3 builds in full mode (bug fix) |
+| `-n 3 --line` | Show last 3 builds in line mode (unchanged) |
+| `-n 3 --json` | Show last 3 builds in JSONL |
+| `-n 3 -f` | Error: `-n` and `-f` are incompatible (existing rule) |
 | `0` | Same as no build number |
 | `0 --line` | Same as `--line` with no build number |
-| `-3 --all` | Show last 3 builds in full mode (forced) |
+| `-n 3 --all` | Show last 3 builds in full mode (forced) |
 
-### 5. Existing validation updates
+### 6. Help text updates
 
-- Build number regex: change from `^[1-9][0-9]*$` to also accept `0`
-- Add new case for `-N` pattern in option parsing (before the generic unknown-option error)
-- `-n` combined with a specific build number (e.g. `buildgit status 31 -n 3`): existing behavior already works in line mode; extend to full mode
+Update `buildgit --help` to document relative build numbers:
+
+```
+  status [build#] [-f|--follow] [--once[=N]] [-n <count>] [--json] [--line] [--all] [--no-tests]
+                      Display Jenkins build status (latest or specific build)
+                      build# can be absolute (31) or relative (0=latest, -1=previous, -2=two ago)
+```
 
 ## Test Strategy
 
 ### New tests
 
-1. **`-3` shorthand sets STATUS_LINE_COUNT** — verify `-3` produces same parsed state as `-n 3`
-2. **`-1` shorthand works** — single build
-3. **`-99` shorthand works** — max two-digit count
-4. **`-0` rejected** — error message
-5. **`-100` not treated as shorthand** — falls through to unknown option error
-6. **`0` as build number** — accepted, treated as latest build
-7. **`0` with `--line`** — works, shows latest build in line mode
-8. **Full mode `-n 2`** — shows 2 complete build reports (bug fix validation)
-9. **Full mode `-n 3`** — shows 3 complete build reports
-10. **Full mode `-n` exit code** — based on newest (last-printed) build
-11. **Full mode `-n` ordering** — oldest first, newest last
-12. **`-3 --json`** — outputs 3 JSONL objects
-13. **`-3 -f` rejected** — error (existing incompatibility preserved)
-14. **`-3 --line`** — equivalent to `-n 3 --line`
-15. **`-N` with existing build number rejected** — e.g. `buildgit status 31 -3` errors
+1. **`-1` shows second-to-last build** — if latest is #200, shows #199 only
+2. **`-2` shows third-to-last build** — if latest is #200, shows #198 only
+3. **`0` shows latest build** — same as no argument
+4. **`-0` shows latest build** — same as `0`
+5. **`-1 --line` shows one line** — the second-to-last build
+6. **`-2 --json` shows one JSON object** — the build from 2 ago
+7. **Relative build resolves to < 1** — error message (e.g. `-999` when only 5 builds exist)
+8. **`-2 -n 3` rejected** — error: cannot combine build number with `-n`
+9. **`31 -n 3` rejected** — error: cannot combine build number with `-n`
+10. **`0 -n 3` rejected** — error: cannot combine build number with `-n`
+11. **Full mode `-n 2` shows 2 builds** — bug fix validation: two complete build reports
+12. **Full mode `-n 3` shows 3 builds** — three complete build reports
+13. **Full mode `-n` exit code** — based on newest (last-printed) build
+14. **Full mode `-n` ordering** — oldest first, newest last
+15. **`-n 3 --json` outputs 3 JSONL objects** — one per line
+16. **`-N -f` rejected** — error: cannot combine build number with `-f` (existing rule)
+17. **`-N` with existing build number rejected** — e.g. `buildgit status 31 -2` errors
 
 ### Existing tests to verify
 
 - All current `-n` + `--line` tests still pass
 - All current build number positional arg tests still pass
-- All current `-f` + `-n` incompatibility tests still pass
+- All current `-f` incompatibility tests still pass
 
 ## SPEC workflow
 
