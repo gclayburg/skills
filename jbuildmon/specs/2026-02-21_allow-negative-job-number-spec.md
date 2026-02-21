@@ -1,9 +1,9 @@
 ## Relative build numbers and fix `-n` in full output mode
 
 - **Date:** `2026-02-21T14:43:52-0700`
-- **References:** `specs/todo/allow-negative-job-number.md`, `specs/todo/negative-numbers-with-n-enhanced.md`
+- **References:** `specs/done-reports/allow-negative-job-number.md`, `specs/done-reports/negative-numbers-with-n-enhanced.md`
 - **Supersedes:** (none)
-- **State:** `DRAFT`
+- **State:** `IMPLEMENTED`
 
 ## Background
 

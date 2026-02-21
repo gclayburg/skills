@@ -92,6 +92,25 @@ SUCCESS     Job phandlemono-IT #37 Tests=19/0/0 Took 5m 41s on 2026-02-16 (4 day
 SUCCESS     Job phandlemono-IT #38 Tests=19/0/0 Took 5m 32s on 2026-02-17 (3 days ago)
 ```
 
+## Show one relative build
+
+```bash
+$ buildgit status -2
+# Shows exactly one build: two builds before the latest
+```
+
+## Show last N builds in full or JSONL mode
+
+```bash
+$ buildgit status -n 3
+# Prints 3 full build reports, oldest first
+
+$ buildgit status -n 3 --json
+{"job":"phandlemono-IT","build":{"number":36,...}}
+{"job":"phandlemono-IT","build":{"number":37,...}}
+{"job":"phandlemono-IT","build":{"number":38,...}}
+```
+
 ## Show last N builds then follow (--line -f)
 
 ```bash

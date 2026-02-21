@@ -6,6 +6,12 @@ All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are do
 
 ### Features
 - **`-v` verbose short flag** — Added `-v` as a global option alias for `--verbose`, matching common CLI conventions.
+- **Relative `status` build references** — `buildgit status` now accepts `0`, and negative build refs (`-1`, `-2`, …) to query builds relative to the latest build number.
+
+### Changed
+- **`status` build ref + `-n` validation** — Build references and `-n <count>` are now mutually exclusive (`Cannot combine a build number with -n`).
+- **`status -n` snapshot behavior** — `-n <count>` without `--line` now prints full snapshot output for multiple builds (oldest-first) instead of being ignored.
+- **`status -n --json` output shape** — Multi-build JSON snapshot mode now emits JSONL (one compact JSON object per build line, oldest-first).
 
 ## 2026-02-20
 

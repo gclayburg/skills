@@ -22,9 +22,11 @@ The `buildgit` script is bundled at `scripts/buildgit` within this skill package
 | Command | Purpose |
 |---------|---------|
 | `scripts/buildgit status` | Jenkins build status snapshot |
-| `scripts/buildgit status <build#>` | Status of a specific build number |
+| `scripts/buildgit status <build#>` | Status of one build (`31`, `0`, `-1`, `-2`) |
 | `scripts/buildgit status --line` | One-line status for latest build |
 | `scripts/buildgit status -n <N> --line` | One-line status for latest N builds (oldest first) |
+| `scripts/buildgit status -n <N>` | Full snapshot output for latest N builds (oldest first) |
+| `scripts/buildgit status -n <N> --json` | JSONL snapshot output for latest N builds |
 | `scripts/buildgit status -n <N> --no-tests` | One-line status while skipping test-report API calls |
 | `scripts/buildgit status --all` | Force full snapshot output |
 | `scripts/buildgit status -f` | Follow builds in real-time (Ctrl+C to stop) |
@@ -66,6 +68,12 @@ For failures, summarize the failed stage name, error logs, and test failure deta
 For snapshot mode defaults, `scripts/buildgit status` is TTY-aware:
 - TTY stdout: full output
 - non-TTY stdout (pipe/redirect): one-line output
+- Exception: when `-n` is provided without `--line`, snapshot output is full multi-build mode.
+
+Build reference rules:
+- `0` and `-0` mean latest/current build
+- Negative values (`-1`, `-2`) are relative offsets from latest build
+- Build reference and `-n` are mutually exclusive
 
 **Console log (`--console`):**
 On failed builds, buildgit shows a curated error summary by default.

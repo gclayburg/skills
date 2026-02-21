@@ -248,6 +248,7 @@ Global Options:
 Commands:
   status [build#] [-f|--follow] [--once[=N]] [-n <count>] [--json] [--line] [--all] [--no-tests]
                       Display Jenkins build status (latest or specific build)
+                      build# can be absolute (31) or relative (0=latest, -1=previous, -2=two ago)
                       Default: full output on TTY, one-line on pipe/redirect
   push [--no-follow] [--line] [git-push-options] [remote] [branch]
                       Push commits and monitor Jenkins build

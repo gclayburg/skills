@@ -82,6 +82,7 @@ Global Options:
 Commands:
   status [build#] [-f|--follow] [--once[=N]] [-n <count>] [--json] [--line] [--all] [--no-tests]
                       Display Jenkins build status (latest or specific build)
+                      build# can be absolute (31) or relative (0=latest, -1=previous, -2=two ago)
                       Default: full output on TTY, one-line on pipe/redirect
   push [--no-follow] [--line] [git-push-options] [remote] [branch]
                       Push commits and monitor Jenkins build
@@ -254,6 +255,17 @@ _parse_status_options() {
                 STATUS_N_SET=true
                 shift
                 ;;
+            -[0-9]*)
+                # Relative build number shorthand (e.g. -1, -2, -0)
+                if ! [[ "$1" =~ ^-[0-9]+$ ]]; then
+                    _usage_error "Unknown option for status command: $1"
+                fi
+                if [[ -n "$STATUS_BUILD_NUMBER" ]]; then
+                    _usage_error "Unexpected argument: $1 (build number already set to $STATUS_BUILD_NUMBER)"
+                fi
+                STATUS_BUILD_NUMBER="$1"
+                shift
+                ;;
             -a|--all)
                 STATUS_ALL_MODE=true
                 shift
@@ -270,8 +282,8 @@ _parse_status_options() {
                 if [[ -n "$STATUS_BUILD_NUMBER" ]]; then
                     _usage_error "Unexpected argument: $1 (build number already set to $STATUS_BUILD_NUMBER)"
                 fi
-                if ! [[ "$1" =~ ^[1-9][0-9]*$ ]]; then
-                    _usage_error "Invalid build number: $1 (must be a positive integer)"
+                if ! [[ "$1" =~ ^(0|[1-9][0-9]*)$ ]]; then
+                    _usage_error "Invalid build number: $1 (must be a non-negative integer)"
                 fi
                 STATUS_BUILD_NUMBER="$1"
                 shift
@@ -729,6 +741,130 @@ _status_line_check() {
         # j==0 is the newest build (last printed line); its exit code is the return value.
         if [[ "$j" -eq 0 ]]; then
             last_exit_code="$line_exit"
+        fi
+    done
+
+    return "$last_exit_code"
+}
+
+# Resolve status build reference to an absolute build number.
+# Arguments: job_name, raw_build_ref
+# Outputs: resolved absolute build number, or empty string for "latest"
+# Returns: 0 on success, 1 on invalid/out-of-range reference
+_resolve_status_build_number() {
+    local job_name="$1"
+    local raw_build_ref="${2:-}"
+
+    if [[ -z "$raw_build_ref" ]]; then
+        echo ""
+        return 0
+    fi
+
+    # 0 and -0 mean "latest/current build"
+    if [[ "$raw_build_ref" == "0" || "$raw_build_ref" == "-0" ]]; then
+        echo ""
+        return 0
+    fi
+
+    # Positive values are absolute build numbers
+    if [[ "$raw_build_ref" =~ ^[1-9][0-9]*$ ]]; then
+        echo "$raw_build_ref"
+        return 0
+    fi
+
+    # Negative values are relative offsets from latest build number
+    if [[ "$raw_build_ref" =~ ^-[0-9]+$ ]]; then
+        local relative_offset="${raw_build_ref#-}"
+        local latest_build_number
+        latest_build_number=$(get_last_build_number "$job_name")
+        if [[ "$latest_build_number" == "0" || -z "$latest_build_number" ]]; then
+            echo "Error: No builds found for job '${job_name}'" >&2
+            return 1
+        fi
+
+        local resolved_build_number=$((latest_build_number - relative_offset))
+        if [[ "$resolved_build_number" -lt 1 ]]; then
+            echo "Error: Relative build reference ${raw_build_ref} resolved to #${resolved_build_number} (must be >= 1)" >&2
+            return 1
+        fi
+
+        echo "$resolved_build_number"
+        return 0
+    fi
+
+    echo "Error: Invalid build number: ${raw_build_ref}" >&2
+    return 1
+}
+
+# Snapshot status output for multiple builds (oldest first).
+# Arguments: job_name, [start_build_number], [line_count], [json_mode]
+# Returns: exit code based on the newest build (last printed row/object)
+_status_multi_build_check() {
+    local job_name="$1"
+    local start_build_number="${2:-}"
+    local line_count="${3:-1}"
+    local json_mode="${4:-false}"
+    local first_build_number="$start_build_number"
+
+    if [[ -z "$first_build_number" ]]; then
+        first_build_number=$(get_last_build_number "$job_name")
+        if [[ "$first_build_number" == "0" || -z "$first_build_number" ]]; then
+            echo "Error: No builds found for job '${job_name}'" >&2
+            return 1
+        fi
+    fi
+
+    local build_numbers=()
+    local i=0
+    while [[ "$i" -lt "$line_count" ]]; do
+        local current_build_number=$((first_build_number - i))
+        if [[ "$current_build_number" -lt 1 ]]; then
+            break
+        fi
+        build_numbers+=("$current_build_number")
+        i=$((i + 1))
+    done
+
+    if [[ "${#build_numbers[@]}" -eq 0 ]]; then
+        echo "Error: No builds found for job '${job_name}'" >&2
+        return 1
+    fi
+
+    local last_exit_code=1
+    local total="${#build_numbers[@]}"
+    local j="$total"
+    while [[ "$j" -gt 0 ]]; do
+        j=$((j - 1))
+        local bn="${build_numbers[$j]}"
+        local build_exit=1
+
+        if [[ "$json_mode" == "true" ]]; then
+            local json_object
+            if json_object=$(_jenkins_status_check "$job_name" "true" "$bn"); then
+                build_exit=0
+            else
+                build_exit=$?
+            fi
+
+            if [[ -n "$json_object" ]]; then
+                # JSONL: one compact JSON object per build.
+                local compact_json
+                compact_json=$(printf "%s\n" "$json_object" | jq -c . 2>/dev/null || printf "%s\n" "$json_object")
+                printf "%s\n" "$compact_json"
+            fi
+        else
+            if [[ "$j" -lt $((total - 1)) ]]; then
+                echo ""
+            fi
+            if _jenkins_status_check "$job_name" "false" "$bn"; then
+                build_exit=0
+            else
+                build_exit=$?
+            fi
+        fi
+
+        if [[ "$j" -eq 0 ]]; then
+            last_exit_code="$build_exit"
         fi
     done
 
@@ -1539,6 +1675,9 @@ cmd_status() {
     if [[ "$STATUS_ONCE_MODE" == "true" && "$STATUS_FOLLOW_MODE" != "true" ]]; then
         _usage_error "Error: --once requires --follow (-f)"
     fi
+    if [[ "${STATUS_N_SET:-false}" == "true" && -n "$STATUS_BUILD_NUMBER" ]]; then
+        _usage_error "Cannot combine a build number with -n"
+    fi
 
     # Validate incompatible options: follow + build number
     if [[ "$STATUS_FOLLOW_MODE" == "true" && -n "$STATUS_BUILD_NUMBER" ]]; then
@@ -1570,9 +1709,18 @@ cmd_status() {
         return 1
     fi
 
+    local resolved_status_build_number=""
+    if ! resolved_status_build_number=$(_resolve_status_build_number "$_VALIDATED_JOB_NAME" "$STATUS_BUILD_NUMBER"); then
+        return 1
+    fi
+
     # JSON mode always uses structured output path
     if [[ "$STATUS_JSON_MODE" == "true" ]]; then
-        _jenkins_status_check "$_VALIDATED_JOB_NAME" "$STATUS_JSON_MODE" "$STATUS_BUILD_NUMBER"
+        if [[ "${STATUS_N_SET:-false}" == "true" ]]; then
+            _status_multi_build_check "$_VALIDATED_JOB_NAME" "$resolved_status_build_number" "$STATUS_LINE_COUNT" "true"
+            return $?
+        fi
+        _jenkins_status_check "$_VALIDATED_JOB_NAME" "$STATUS_JSON_MODE" "$resolved_status_build_number"
         return $?
     fi
 
@@ -1580,7 +1728,7 @@ cmd_status() {
     # Default: full output on TTY, one-line output when stdout is not a TTY.
     local use_line_mode="$STATUS_LINE_MODE"
     local line_count="$STATUS_LINE_COUNT"
-    if [[ "$STATUS_LINE_MODE" != "true" && "$STATUS_ALL_MODE" != "true" ]]; then
+    if [[ "$STATUS_LINE_MODE" != "true" && "$STATUS_ALL_MODE" != "true" && "${STATUS_N_SET:-false}" != "true" ]]; then
         if [[ -t 1 ]]; then
             use_line_mode=false
         else
@@ -1590,11 +1738,16 @@ cmd_status() {
     fi
 
     if [[ "$use_line_mode" == "true" ]]; then
-        _status_line_check "$_VALIDATED_JOB_NAME" "$STATUS_BUILD_NUMBER" "$line_count" "$STATUS_NO_TESTS"
+        _status_line_check "$_VALIDATED_JOB_NAME" "$resolved_status_build_number" "$line_count" "$STATUS_NO_TESTS"
         return $?
     fi
 
-    _jenkins_status_check "$_VALIDATED_JOB_NAME" "$STATUS_JSON_MODE" "$STATUS_BUILD_NUMBER"
+    if [[ "${STATUS_N_SET:-false}" == "true" ]]; then
+        _status_multi_build_check "$_VALIDATED_JOB_NAME" "$resolved_status_build_number" "$line_count" "false"
+        return $?
+    fi
+
+    _jenkins_status_check "$_VALIDATED_JOB_NAME" "$STATUS_JSON_MODE" "$resolved_status_build_number"
 }
 
 # =============================================================================

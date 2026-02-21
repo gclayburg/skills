@@ -180,6 +180,49 @@ WRAPPER_START
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 }
 
+# Helper for full snapshot -n tests where newest build fails
+create_status_full_count_latest_failure_wrapper() {
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER_START
+#!/usr/bin/env bash
+set -euo pipefail
+
+export PROJECT_DIR="${PROJECT_DIR}"
+export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
+
+_BUILDGIT_TESTING=1
+source "\${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+verify_jenkins_connection() { return 0; }
+verify_job_exists() {
+    local job_name="\$1"
+    JOB_URL="\${JENKINS_URL}/job/\${job_name}"
+    return 0
+}
+get_last_build_number() { echo "42"; }
+get_build_info() {
+    local build_num="\$2"
+    case "\$build_num" in
+        42) echo '{"number":42,"result":"FAILURE","building":false,"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/test-repo/42/"}' ;;
+        41) echo '{"number":41,"result":"SUCCESS","building":false,"timestamp":1706699700000,"duration":90000,"url":"http://jenkins.example.com/job/test-repo/41/"}' ;;
+        40) echo '{"number":40,"result":"SUCCESS","building":false,"timestamp":1706699400000,"duration":80000,"url":"http://jenkins.example.com/job/test-repo/40/"}' ;;
+        *) echo "" ;;
+    esac
+}
+get_console_output() { echo "Started by user testuser"; }
+fetch_test_results() { echo '{"passCount":10,"failCount":0,"skipCount":0}'; }
+get_all_stages() { echo "[]"; }
+get_failed_stage() { echo ""; }
+
+cmd_status "\$@"
+WRAPPER_START
+
+    chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+}
+
 # Helper for --line alignment tests with mixed status lengths
 create_status_line_alignment_wrapper() {
     sed -e '/^main "\$@"$/d' \
@@ -817,30 +860,74 @@ WRAPPER
 
     assert_failure
     assert_output --partial "Invalid build number: abc"
-    assert_output --partial "must be a positive integer"
+    assert_output --partial "must be a non-negative integer"
 }
 
-@test "status_invalid_build_number_zero" {
+@test "status_build_number_zero_uses_latest" {
     cd "${TEST_REPO}"
     export PROJECT_DIR
-    create_build_number_test_wrapper "42"
+    create_build_number_test_wrapper "99"
 
-    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 0
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 0 --all
 
-    assert_failure
-    assert_output --partial "Invalid build number: 0"
+    assert_success
+    assert_output --partial "REQUESTED_BUILD: 99"
 }
 
-@test "status_invalid_build_number_negative" {
+@test "status_build_number_negative_relative" {
     cd "${TEST_REPO}"
     export PROJECT_DIR
-    create_build_number_test_wrapper "42"
+    create_build_number_test_wrapper "98"
 
-    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -5
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -1 --all
+
+    assert_success
+    assert_output --partial "REQUESTED_BUILD: 98"
+}
+
+@test "status_build_number_negative_two_relative" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_build_number_test_wrapper "97"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -2 --all
+
+    assert_success
+    assert_output --partial "REQUESTED_BUILD: 97"
+}
+
+@test "status_build_number_negative_zero_uses_latest" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_build_number_test_wrapper "99"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -0 --all
+
+    assert_success
+    assert_output --partial "REQUESTED_BUILD: 99"
+}
+
+@test "status_relative_build_number_json_single_object" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_build_number_test_wrapper "97"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -2 --json
+
+    assert_success
+    assert_output --partial '"number": 97'
+}
+
+@test "status_relative_build_number_out_of_range_errors" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_build_number_test_wrapper "99"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -100
 
     assert_failure
-    # -5 will be caught as an unknown option
-    assert_output --partial "Unknown option for status command: -5"
+    assert_output --partial "resolved to #"
+    assert_output --partial "must be >= 1"
 }
 
 # -----------------------------------------------------------------------------
@@ -867,6 +954,61 @@ WRAPPER
 
     assert_failure
     assert_output --partial "Cannot use --follow with a specific build number"
+}
+
+@test "status_follow_with_relative_build_number_errors" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_build_number_test_wrapper "98"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -2 -f
+
+    assert_failure
+    assert_output --partial "Cannot use --follow with a specific build number"
+}
+
+@test "status_absolute_build_number_with_n_errors" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_build_number_test_wrapper "31"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 31 -n 3
+
+    assert_failure
+    assert_output --partial "Cannot combine a build number with -n"
+}
+
+@test "status_relative_build_number_with_n_errors" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_build_number_test_wrapper "98"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -2 -n 3
+
+    assert_failure
+    assert_output --partial "Cannot combine a build number with -n"
+}
+
+@test "status_zero_build_number_with_n_errors" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_build_number_test_wrapper "99"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 0 -n 3
+
+    assert_failure
+    assert_output --partial "Cannot combine a build number with -n"
+}
+
+@test "status_duplicate_build_numbers_positional_and_negative_error" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_build_number_test_wrapper "31"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 31 -2
+
+    assert_failure
+    assert_output --partial "build number already set to 31"
 }
 
 # -----------------------------------------------------------------------------
@@ -1066,6 +1208,19 @@ WRAPPER
     assert_output --partial "SUCCESS     Job test-repo #31 Tests=120/0/0 Took 2m 0s"
 }
 
+@test "status_line_with_relative_build_number" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_test_wrapper "SUCCESS" "false"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -1 --line
+
+    assert_success
+    assert_output --partial "SUCCESS     Job test-repo #41 Tests=120/0/0 Took 2m 0s"
+    line_count="$(printf "%s\n" "$output" | wc -l | tr -d ' ')"
+    [ "$line_count" -eq 1 ]
+}
+
 @test "status_line_rejects_all" {
     cd "${TEST_REPO}"
     export PROJECT_DIR
@@ -1131,19 +1286,16 @@ WRAPPER
     [ "$line_count" -eq 3 ]
 }
 
-@test "status_line_with_build_number_and_count" {
+@test "status_line_with_build_number_and_count_rejected" {
     cd "${TEST_REPO}"
     export PROJECT_DIR
     create_status_line_count_wrapper
 
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 41 -n 2 --line
 
-    # Oldest-first: #40 (SUCCESS) on line 1, #41 (FAILURE) on line 2 (newest/last)
     assert_failure
-    first_line="$(printf "%s\n" "$output" | sed -n '1p')"
-    [ "${first_line#SUCCESS     Job test-repo #40}" != "$first_line" ]
-    last_line="$(printf "%s\n" "$output" | tail -n 1)"
-    [ "${last_line#FAILURE     Job test-repo #41}" != "$last_line" ]
+    assert_output --partial "Cannot combine a build number with -n"
+    assert_output --partial "Usage: buildgit"
 }
 
 @test "status_line_invalid_count_zero" {
@@ -1212,18 +1364,57 @@ WRAPPER
     [ "${line3#*Job test-repo #42}" != "$line3" ]
 }
 
-@test "status_line_n_without_line_mode_ignored" {
+@test "status_n_without_line_mode_uses_full_mode" {
     cd "${TEST_REPO}"
     export PROJECT_DIR
     create_status_line_count_wrapper
 
-    # -n without --line: ignored, full mode runs (no --all either, so TTY detection applies;
-    # since tests run without a TTY, non-TTY default (line mode) kicks in showing 1 build)
-    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -n 5
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -n 2
 
-    # In non-TTY context the default is one-line mode; -n is silently ignored so only 1 build shown
-    line_count="$(printf "%s\n" "$output" | wc -l | tr -d ' ')"
-    [ "$line_count" -eq 1 ]
+    assert_success
+    build_header_count="$(printf "%s\n" "$output" | grep -c '^Build:[[:space:]]*#' || true)"
+    [ "$build_header_count" -eq 2 ]
+    assert_output --partial "Build:      #41"
+    assert_output --partial "Build:      #42"
+}
+
+@test "status_n_full_mode_ordering_oldest_first" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_line_count_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -n 3
+
+    assert_success
+    build_numbers="$(printf "%s\n" "$output" | sed -n 's/^Build:[[:space:]]*#\([0-9][0-9]*\)$/\1/p' | paste -sd ' ' -)"
+    [ "$build_numbers" = "40 41 42" ]
+}
+
+@test "status_n_full_mode_exit_code_uses_newest_build" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_full_count_latest_failure_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -n 3
+
+    assert_failure
+    assert_output --partial "Build:      #40"
+    assert_output --partial "Build:      #41"
+    assert_output --partial "Build:      #42"
+}
+
+@test "status_n_json_outputs_jsonl_oldest_first" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_line_count_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -n 3 --json
+
+    assert_success
+    json_line_count="$(printf "%s\n" "$output" | grep -c '^{\"job\":' || true)"
+    [ "$json_line_count" -eq 3 ]
+    build_numbers="$(printf "%s\n" "$output" | grep '^{' | jq -r '.build.number' | paste -sd ' ' -)"
+    [ "$build_numbers" = "40 41 42" ]
 }
 
 @test "status_line_count_exit_code_uses_last_line_only" {
