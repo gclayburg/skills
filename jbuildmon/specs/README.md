@@ -44,3 +44,4 @@ These files represent completed specifications in the specs/ directory.  This li
 - 2026-02-19_line-n-flag-oldest-first-spec.md  replace `--line=N` with `-n <count>` flag and reverse line mode output order to oldest-first (newest build on last line)
 - 2026-02-20_add-f-option-to-line-status-spec.md  allow `status -f --line`, add TTY progress bar for in-progress builds, support `-n` + follow + line, and keep non-TTY follow-line output silent until completion
 - 2026-02-20_expand-in-progress-status-bar-spec.md  add `--line` support to `push`/`build` and expand TTY in-progress progress bar rendering across build-monitoring commands
+- 2026-02-21_expand-verbose-flag-spec.md  add `-v` short alias for `--verbose` global option

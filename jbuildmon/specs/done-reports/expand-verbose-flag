@@ -1,0 +1,1 @@
+we have a verbose flag to buildgit with --verbose.  we do not have a -v option that is essentailly an alias.  we need to add that.

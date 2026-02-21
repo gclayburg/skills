@@ -21,7 +21,7 @@ Global Options:
   -j, --job <name>               Specify Jenkins job name (overrides auto-detection)
   -c, --console <mode>           Show console log output (auto or line count)
   -h, --help                     Show this help message
-  --verbose                      Enable verbose output for debugging
+  -v, --verbose                  Enable verbose output for debugging
 
 Commands:
   status [build#] [-f|--follow] [--once[=N]] [-n <count>] [--json] [--line] [--all] [--no-tests]

@@ -69,7 +69,7 @@ A unified interface for git operations with Jenkins CI/CD integration.
 Global Options:
   -j, --job <name>    Specify Jenkins job name (overrides auto-detection)
   -h, --help          Show this help message
-  --verbose           Enable verbose output for debugging
+  -v, --verbose       Enable verbose output for debugging
 
 Commands:
   status [-f|--follow] [--json]
@@ -105,7 +105,7 @@ parse_global_options() {
                 show_usage
                 exit 0
                 ;;
-            --verbose)
+            -v|--verbose)
                 VERBOSE_MODE=true
                 shift
                 ;;
@@ -190,6 +190,32 @@ EOF
     assert_success
     assert_output --partial "VERBOSE_MODE: true"
     assert_output --partial "COMMAND: status"
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: -v sets verbose mode (short alias for --verbose)
+# Spec: 2026-02-21_expand-verbose-flag-spec.md
+# -----------------------------------------------------------------------------
+@test "parse_global_verbose_short_flag" {
+    export PROJECT_DIR
+    create_args_test_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_test.sh" -v status
+
+    assert_success
+    assert_output --partial "VERBOSE_MODE: true"
+    assert_output --partial "COMMAND: status"
+}
+
+# -----------------------------------------------------------------------------
+# Test Case: -v appears in help output
+# Spec: 2026-02-21_expand-verbose-flag-spec.md
+# -----------------------------------------------------------------------------
+@test "help_shows_verbose_short_flag" {
+    run "${PROJECT_DIR}/buildgit" --help
+
+    assert_success
+    assert_output --partial "-v, --verbose"
 }
 
 # -----------------------------------------------------------------------------

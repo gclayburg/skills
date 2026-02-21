@@ -11,7 +11,7 @@
 # Global Options:
 #   -j, --job <name>    Specify Jenkins job name
 #   -h, --help          Show help
-#   --verbose           Enable verbose/debug output
+#   -v, --verbose       Enable verbose/debug output
 #
 # Commands:
 #   status [build#]     Jenkins build status (latest or specific build)
@@ -77,7 +77,7 @@ Global Options:
   -j, --job <name>               Specify Jenkins job name (overrides auto-detection)
   -c, --console <mode>           Show console log output (auto or line count)
   -h, --help                     Show this help message
-  --verbose                      Enable verbose output for debugging
+  -v, --verbose                  Enable verbose output for debugging
 
 Commands:
   status [build#] [-f|--follow] [--once[=N]] [-n <count>] [--json] [--line] [--all] [--no-tests]
@@ -169,7 +169,7 @@ parse_global_options() {
                 show_usage
                 exit 0
                 ;;
-            --verbose)
+            -v|--verbose)
                 VERBOSE_MODE=true
                 shift
                 ;;

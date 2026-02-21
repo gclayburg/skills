@@ -2,6 +2,11 @@
 
 All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are documented in this file.
 
+## 2026-02-21
+
+### Features
+- **`-v` verbose short flag** — Added `-v` as a global option alias for `--verbose`, matching common CLI conventions.
+
 ## 2026-02-20
 
 ### Changed
