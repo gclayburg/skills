@@ -1,145 +1,228 @@
-# buildgit — Full Command Reference
+# buildgit — Real-World Examples
 
-The `buildgit` script and its `lib/jenkins-common.sh` library are bundled in this skill package under `scripts/`. No separate installation is required.
+## Setup requirements
 
-## Usage
+buildgit assumes:
 
-```
-scripts/buildgit [global-options] <command> [command-options] [arguments]
-```
+1. Your project is a git project
+2. A git push will automatically trigger a build in a Jenkins CI/CD system.
+3. The Jenkins job is setup as a pipeline job. Other types of jobs have not been tested.
+4. You have a Jenkins user with read/build permissions. It does not need to be an administrator.
+5. There are no network/sandbox restrictions to access your Jenkins server.
 
-## Global Options
+## Push and monitor a build (with failure output)
 
-| Option | Description |
-|--------|-------------|
-| `-j, --job <name>` | Specify Jenkins job name (overrides auto-detection) |
-| `-h, --help` | Show help message |
-| `--verbose` | Enable verbose output for debugging |
-
-## Commands
-
-### `buildgit status`
-
-Display Jenkins build status.
-
-**Options:**
-- `-f, --follow` — Follow builds: monitor current build if in progress, then wait indefinitely for subsequent builds. Exit with Ctrl+C.
-- `--json` — Output Jenkins status in JSON format
-
-**Examples:**
-```bash
-buildgit status              # Jenkins build status snapshot
-buildgit status -f           # Follow builds indefinitely
-buildgit status --json       # JSON format for Jenkins status
-buildgit --job myjob status --json  # Specific job, JSON output
-```
-
-**Example output (`buildgit status`):**
-```
-Jenkins Build Status: ralph1 #42
-Result: SUCCESS
-```
-
-**Example output (`buildgit status --json`):**
-```
-{"result":"SUCCESS","building":false,"number":42,"url":"http://jenkins:8080/job/ralph1/42/", ...}
-```
-
-**Example output (`buildgit status -f`):**
-```
-Monitoring build ralph1 #42...
-Stage: Build        ✓ (3s)
-Stage: Test         ✓ (12s)
-Stage: Deploy       RUNNING...
-...
-Build #42: SUCCESS
-
-Waiting for next build of ralph1...
-```
-
-### `buildgit push`
-
-Push commits to remote and monitor the resulting Jenkins build.
-
-**Options:**
-- `--no-follow` — Push only, do not monitor Jenkins build
-- Other options are passed through to `git push`
-
-**Notes:**
-- Does not commit. Users should run: `git commit -m 'message' && buildgit push`
-- If nothing to push, displays git's output and exits with git's exit code
-
-**Examples:**
-```bash
-buildgit push                        # Push + monitor build
-buildgit push --no-follow            # Push only, no monitoring
-buildgit push origin featurebranch   # Push to specific remote/branch + monitor
-buildgit --job myjob push            # Push with specific job
-```
-
-**Example output:**
-```
-[git push output]
-
-Monitoring build ralph1 #43...
-Stage: Build        ✓ (3s)
-Stage: Test         ✓ (12s)
-Build #43: SUCCESS
-```
-
-### `buildgit build`
-
-Trigger a Jenkins build and monitor it until completion.
-
-**Options:**
-- `--no-follow` — Trigger build and confirm queued, then exit without monitoring
-
-**Examples:**
-```bash
-buildgit build                       # Trigger + monitor build
-buildgit build --no-follow           # Trigger only
-buildgit --job myjob build           # Build specific job
-```
-
-### Git Passthrough
-
-Any command not explicitly handled is passed through to `git`:
+If any failures are detected in the build, any tests, or any build pipeline stage, buildgit attempts to show you what failed. It does not fill the output with meaningless log data.
+Humans don't need this most of the time. They just need to know what failed. Agents care about the same thing. They don't need their context window filled with useless logs.
 
 ```bash
-buildgit log --oneline -5    # Passes to: git log --oneline -5
-buildgit diff HEAD~1         # Passes to: git diff HEAD~1
+$ buildgit push
+To ssh://scranton2:2233/home/git/phandlemono.git
+   4ae2fc1..039301d  main -> main
+[09:13:35] ℹ Waiting for Jenkins build phandlemono-IT to start...
+
+╔════════════════════════════════════════╗
+║          BUILD IN PROGRESS             ║
+╚════════════════════════════════════════╝
+
+Job:        phandlemono-IT
+Build:      #41
+Status:     BUILDING
+Trigger:    Automated (git push)
+Started:    2026-02-21 09:13:43
+
+=== Build Info ===
+  Started by:  buildtriggerdude
+  Pipeline:    Jenkinsfile from git ssh://git@scranton2:2233/home/git/phandlemono.git
+==================
+
+Console:    http://palmer.garyclayburg.com:18080/job/phandlemono-IT/41/console
+
+
+
+=== Console Output ===
+Started by user buildtriggerdude
+Obtained Jenkinsfile from git ssh://git@scranton2:2233/home/git/phandlemono.git
+org.codehaus.groovy.control.MultipleCompilationErrorsException: startup failed:
+WorkflowScript: 59: expecting ')', found 'eSet' @ line 59, column 45.
+             for (entry in chang eSet.items
+                                 ^
+
+1 error
+
+        at org.codehaus.groovy.control.ErrorCollector.failIfErrors(ErrorCollector.java:309)
+        at org.codehaus.groovy.control.ErrorCollector.addFatalError(ErrorCollector.java:149)
+        at org.codehaus.groovy.control.ErrorCollector.addError(ErrorCollector.java:119)
+        at org.codehaus.groovy.control.ErrorCollector.addError(ErrorCollector.java:131)
+        at org.codehaus.groovy.control.SourceUnit.addError(SourceUnit.java:349)
+        at org.codehaus.groovy.antlr.AntlrParserPlugin.transformCSTIntoAST(AntlrParserPlugin.java:225)
+        at org.codehaus.groovy.antlr.AntlrParserPlugin.parseCST(AntlrParserPlugin.java:191)
+        at org.codehaus.groovy.control.SourceUnit.parse(SourceUnit.java:233)
+        at org.codehaus.groovy.control.CompilationUnit$1.call(CompilationUnit.java:189)
+        at org.codehaus.groovy.control.CompilationUnit.applyToSourceUnits(CompilationUnit.java:966)
+        at org.codehaus.groovy.control.CompilationUnit.doPhaseOperation(CompilationUnit.java:626)
+        at org.codehaus.groovy.control.CompilationUnit.processPhaseOperations(CompilationUnit.java:602)
+        at org.codehaus.groovy.control.CompilationUnit.compile(CompilationUnit.java:579)
+        at groovy.lang.GroovyClassLoader.doParseClass(GroovyClassLoader.java:323)
+        at groovy.lang.GroovyClassLoader.parseClass(GroovyClassLoader.java:293)
+        at PluginClassLoader for script-security//org.jenkinsci.plugins.scriptsecurity.sandbox.groovy.GroovySandbox$Scope.parse(GroovySandbox.java:162)
+        at PluginClassLoader for workflow-cps//org.jenkinsci.plugins.workflow.cps.CpsGroovyShell.doParse(CpsGroovyShell.java:188)
+        at PluginClassLoader for workflow-cps//org.jenkinsci.plugins.workflow.cps.CpsGroovyShell.reparse(CpsGroovyShell.java:173)
+        at PluginClassLoader for workflow-cps//org.jenkinsci.plugins.workflow.cps.CpsFlowExecution.parseScript(CpsFlowExecution.java:653)
+        at PluginClassLoader for workflow-cps//org.jenkinsci.plugins.workflow.cps.CpsFlowExecution.start(CpsFlowExecution.java:599)
+        at PluginClassLoader for workflow-job//org.jenkinsci.plugins.workflow.job.WorkflowRun.run(WorkflowRun.java:341)
+        at hudson.model.ResourceController.execute(ResourceController.java:101)
+        at hudson.model.Executor.run(Executor.java:454)
+[Checks API] No suitable checks publisher found.
+Finished: FAILURE
+======================
+
+Finished: FAILURE
+[09:13:48] ℹ Duration: 0s
 ```
 
-## Exit Codes
+## Show status for last N builds (--line)
 
-| Scenario | Exit Code |
-|----------|-----------|
-| Success (git OK, build OK) | 0 |
-| Git command fails | Git's exit code |
-| Jenkins build fails | 1 |
-| Build is in progress (`status` command) | 2 |
-| Nothing to push | Git's exit code |
-| Jenkins unavailable during push | Non-zero (after git push completes) |
+```bash
+$ buildgit status --line -n 5
+FAILURE     Job phandlemono-IT #34 Tests=?/?/? Took 3m 41s on 2026-02-14 (6 days ago)
+FAILURE     Job phandlemono-IT #35 Tests=?/?/? Took 3m 27s on 2026-02-14 (6 days ago)
+NOT_BUILT   Job phandlemono-IT #36 Tests=?/?/? Took 3m 52s on 2026-02-16 (4 days ago)
+SUCCESS     Job phandlemono-IT #37 Tests=19/0/0 Took 5m 41s on 2026-02-16 (4 days ago)
+SUCCESS     Job phandlemono-IT #38 Tests=19/0/0 Took 5m 32s on 2026-02-17 (3 days ago)
+```
 
-## Troubleshooting
+## Show last N builds then follow (--line -f)
 
-| Problem | Cause | Fix |
-|---------|-------|-----|
-| "Jenkins credentials not configured" | Missing env vars | Set `JENKINS_URL`, `JENKINS_USER_ID`, `JENKINS_API_TOKEN` |
-| "Could not determine job name" | No `JOB_NAME` in CLAUDE.md and auto-detection failed | Add `JOB_NAME=<name>` to project CLAUDE.md or use `--job` flag |
-| "Connection refused" | Jenkins server unreachable | Verify `JENKINS_URL` is correct and server is running |
-| Build monitoring hangs | Network issue or build stuck | Ctrl+C to stop, check Jenkins web UI |
+```bash
+$ buildgit status --line -n 5 -f
+FAILURE     Job phandlemono-IT #34 Tests=?/?/? Took 3m 41s on 2026-02-14 (6 days ago)
+FAILURE     Job phandlemono-IT #35 Tests=?/?/? Took 3m 27s on 2026-02-14 (6 days ago)
+NOT_BUILT   Job phandlemono-IT #36 Tests=?/?/? Took 3m 52s on 2026-02-16 (4 days ago)
+SUCCESS     Job phandlemono-IT #37 Tests=19/0/0 Took 5m 41s on 2026-02-16 (4 days ago)
+SUCCESS     Job phandlemono-IT #38 Tests=19/0/0 Took 5m 32s on 2026-02-17 (3 days ago)
+IN_PROGRESS Job phandlemono-IT #39 [>                   ] 1% 5s / ~5m 32s
+```
 
-## Per-Project Configuration
+## Full status output for a successful build
 
-Add to the project's `CLAUDE.md` or `AGENTS.md`:
+```bash
+$ buildgit status
 
-```markdown
-## Building on Jenkins CI server
+╔════════════════════════════════════════╗
+║           BUILD SUCCESSFUL             ║
+╚════════════════════════════════════════╝
 
-- JOB_NAME=my-project
-- You have env variables that represent the credentials for Jenkins:
-  - JENKINS_URL
-  - JENKINS_USER_ID
-  - JENKINS_API_TOKEN
+Job:        phandlemono-IT
+Build:      #39
+Status:     SUCCESS
+Trigger:    Manual (started by Ralph AI Read Only)
+Commit:     4ae2fc1 - "fix: resolve port 9222 conflict and remove deliberate build failures"
+            ✓ Your commit (HEAD)
+Started:    2026-02-20 20:23:56
+
+=== Build Info ===
+  Started by:  Ralph AI Read Only
+  Agent:       agent8_sixcore
+  Pipeline:    Jenkinsfile from git ssh://git@scranton2:2233/home/git/phandlemono.git
+==================
+
+Console:    http://palmer.garyclayburg.com:18080/job/phandlemono-IT/39/console
+
+[09:00:08] ℹ   Stage: [agent8_sixcore] Declarative: Checkout SCM (<1s)
+[09:00:08] ℹ   Stage: [agent8_sixcore] Checkout (<1s)
+[09:00:08] ℹ   Stage: [agent8_sixcore] Analyze Component Changes (<1s)
+[09:00:08] ℹ   Stage:   ║1 [agent8_sixcore] Build Handle->Declarative: Checkout SCM (<1s)
+[09:00:08] ℹ   Stage:   ║1 [agent8_sixcore] Build Handle->Checkout (<1s)
+[09:00:08] ℹ   Stage:   ║1 [agent8_sixcore] Build Handle->Check for Relevant Changes (<1s)
+[09:00:08] ℹ   Stage:   ║1 [agent8_sixcore] Build Handle->Clean (<1s)
+[09:00:08] ℹ   Stage:   ║1 [agent8_sixcore] Build Handle->Setup (8s)
+[09:00:08] ℹ   Stage:   ║1 [agent8_sixcore] Build Handle->Build (13s)
+[09:00:08] ℹ   Stage:   ║1 [agent8_sixcore] Build Handle->Test (2s)
+[09:00:08] ℹ   Stage:   ║1 [agent8_sixcore] Build Handle->TestContainers IT (21s)
+[09:00:08] ℹ   Stage:   ║1 [agent8_sixcore] Build Handle->Playwright e2e IT (1m 14s)
+[09:00:08] ℹ   Stage:   ║1 [agent8_sixcore] Build Handle->Coverage (2s)
+[09:00:08] ℹ   Stage:   ║1 [agent8_sixcore] Build Handle->Package (1m 40s)
+[09:00:08] ℹ   Stage:   ║1 [agent8_sixcore] Build Handle->Archive Artifacts (8s)
+[09:00:08] ℹ   Stage:   ║1 [agent8_sixcore] Build Handle->Declarative: Post Actions (<1s)
+[09:00:08] ℹ   Stage:   ║1 [agent8_sixcore] Build Handle (4m 5s)
+[09:00:08] ℹ   Stage:   ║2 [agent7        ] Build SignalBoot->Declarative: Checkout SCM (<1s)
+[09:00:08] ℹ   Stage:   ║2 [agent7        ] Build SignalBoot->Checkout (<1s)
+[09:00:08] ℹ   Stage:   ║2 [agent7        ] Build SignalBoot->Check for Relevant Changes (<1s)
+[09:00:08] ℹ   Stage:   ║2 [agent7        ] Build SignalBoot->Artifactory configuration (<1s)
+[09:00:08] ℹ   Stage:   ║2 [agent7        ] Build SignalBoot->System Diagnostics (2s)
+[09:00:08] ℹ   Stage:   ║2 [agent7        ] Build SignalBoot->Docker Diagnostics (4s)
+[09:00:08] ℹ   Stage:   ║2 [agent7        ] Build SignalBoot->main build (1m 4s)
+[09:00:09] ℹ   Stage:   ║2 [agent7        ] Build SignalBoot->Docker Build (25s)
+[09:00:09] ℹ   Stage:   ║2 [agent7        ] Build SignalBoot->Docker Push (13s)
+[09:00:09] ℹ   Stage:   ║2 [agent7        ] Build SignalBoot->Deploy registerdemo (19s)
+[09:00:09] ℹ   Stage:   ║2 [agent7        ] Build SignalBoot->Publish to Artifactory (37s)
+[09:00:09] ℹ   Stage:   ║2 [agent7        ] Build SignalBoot->Archive Artifacts (41s)
+[09:00:09] ℹ   Stage:   ║2 [agent7        ] Build SignalBoot->Publish build info (<1s)
+[09:00:09] ℹ   Stage:   ║2 [agent7        ] Build SignalBoot->Declarative: Post Actions (2s)
+[09:00:09] ℹ   Stage:   ║2 [agent8_sixcore] Build SignalBoot (3m 44s)
+[09:00:09] ℹ   Stage: [agent8_sixcore] Trigger Component Builds (4m 5s)
+[09:00:09] ℹ   Stage: [agent8_sixcore] Verify Docker Images (6s)
+[09:00:09] ℹ   Stage: [agent8_sixcore] Setup Handle (19s)
+[09:00:09] ℹ   Stage: [agent8_sixcore] Integration Tests (22s)
+[09:00:09] ℹ   Stage: [agent8_sixcore] E2E Tests (1m 14s)
+[09:00:09] ℹ   Stage: [agent8_sixcore] Declarative: Post Actions (<1s)
+
+=== Test Results ===
+  Total: 19 | Passed: 19 | Failed: 0 | Skipped: 0
+====================
+
+Finished: SUCCESS
+[09:00:09] ℹ Duration: 6m 13s
+```
+
+## Full status — build in progress (-f)
+
+```bash
+$ buildgit status -f
+
+[09:02:13] ℹ Waiting for next build of phandlemono-IT...
+
+╔════════════════════════════════════════╗
+║          BUILD IN PROGRESS             ║
+╚════════════════════════════════════════╝
+
+Job phandlemono-IT #40 has been running for unknown
+
+Job:        phandlemono-IT
+Build:      #40
+Status:     BUILDING
+Trigger:    Manual (started by Ralph AI Read Only)
+Started:    2026-02-21 09:02:43
+
+=== Build Info ===
+  Started by:  Ralph AI Read Only
+  Pipeline:    Jenkinsfile from git ssh://git@scranton2:2233/home/git/phandlemono.git
+==================
+
+Console:    http://palmer.garyclayburg.com:18080/job/phandlemono-IT/40/console
+
+Commit:     4ae2fc1 - "fix: resolve port 9222 conflict and remove deliberate build failures"
+            ✓ Your commit (HEAD)
+[09:02:49] ℹ   Stage: [agent8_sixcore] Declarative: Checkout SCM (<1s)
+[09:02:49] ℹ   Stage: [agent8_sixcore] Checkout (<1s)
+[09:02:49] ℹ   Stage: [agent8_sixcore] Analyze Component Changes (<1s)
+[09:03:01] ℹ   Stage:   ║1 [agent8_sixcore] Build Handle->Declarative: Checkout SCM (<1s)
+[09:03:07] ℹ   Stage:   ║1 [agent8_sixcore] Build Handle->Checkout (<1s)
+[09:03:07] ℹ   Stage:   ║1 [agent8_sixcore] Build Handle->Check for Relevant Changes (<1s)
+[09:03:07] ℹ   Stage:   ║1 [agent8_sixcore] Build Handle->Clean (<1s)
+[09:03:07] ℹ   Stage:   ║2 [agent7        ] Build SignalBoot->Declarative: Checkout SCM (<1s)
+[09:03:07] ℹ   Stage:   ║2 [agent7        ] Build SignalBoot->Checkout (<1s)
+[09:03:07] ℹ   Stage:   ║2 [agent7        ] Build SignalBoot->Check for Relevant Changes (<1s)
+[09:03:07] ℹ   Stage:   ║2 [agent7        ] Build SignalBoot->Artifactory configuration (<1s)
+[09:03:13] ℹ   Stage:   ║2 [agent7        ] Build SignalBoot->System Diagnostics (2s)
+[09:03:13] ℹ   Stage:   ║2 [agent7        ] Build SignalBoot->Docker Diagnostics (3s)
+[09:03:19] ℹ   Stage:   ║1 [agent8_sixcore] Build Handle->Setup (9s)
+[09:03:26] ℹ   Stage:   ║1 [agent8_sixcore] Build Handle->Build (12s)
+[09:03:33] ℹ   Stage:   ║1 [agent8_sixcore] Build Handle->Test (2s)
+[09:03:53] ℹ   Stage:   ║1 [agent8_sixcore] Build Handle->TestContainers IT (21s)
+[09:04:20] ℹ   Stage:   ║2 [agent7        ] Build SignalBoot->main build (1m 2s)
+[09:04:35] ℹ   Stage:   ║2 [agent7        ] Build SignalBoot->Docker Build (20s)
+[09:04:49] ℹ   Stage:   ║2 [agent7        ] Build SignalBoot->Docker Push (8s)
+IN_PROGRESS Job phandlemono-IT #40 [======>             ] 35% 2m 12s / ~6m 13s
 ```

@@ -217,6 +217,11 @@ buildgit diff HEAD~1
 buildgit checkout -b feature
 ```
 
+### Real-world output examples
+
+See [jbuildmon/skill/buildgit/references/reference.md](jbuildmon/skill/buildgit/references/reference.md)
+for full examples: push with failure, parallel pipeline stages, progress bars, and live follow mode.
+
 ### Multiple projects
 
 buildgit auto-detects the Jenkins job name from your project configuration. Override it with `--job`:
