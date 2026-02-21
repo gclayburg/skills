@@ -1,5 +1,6 @@
 # If we don't ignore all the locally installed skills, then tools like 'npx skills add' will pick up the skills here, instead of the real skills elsewhere in this repo
 .claude/*
 .agents/*
+skills-lock.json
 
 .DS_Store
