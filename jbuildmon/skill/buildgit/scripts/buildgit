@@ -12,6 +12,7 @@
 #   -j, --job <name>    Specify Jenkins job name
 #   -h, --help          Show help
 #   -v, --verbose       Enable verbose/debug output
+#   --version           Show version and exit
 #
 # Commands:
 #   status [build#]     Jenkins build status (latest or specific build)
@@ -21,6 +22,8 @@
 #
 
 set -euo pipefail
+
+BUILDGIT_VERSION="1.0.0"
 
 # =============================================================================
 # Script Setup
@@ -78,6 +81,7 @@ Global Options:
   -c, --console <mode>           Show console log output (auto or line count)
   -h, --help                     Show this help message
   -v, --verbose                  Enable verbose output for debugging
+  --version                      Show version number and exit
 
 Commands:
   status [build#] [-f|--follow] [--once[=N]] [-n <count>] [--json] [--line] [--all] [--no-tests]
@@ -173,6 +177,10 @@ parse_global_options() {
             -v|--verbose)
                 VERBOSE_MODE=true
                 shift
+                ;;
+            --version)
+                echo "buildgit ${BUILDGIT_VERSION}"
+                exit 0
                 ;;
             -*)
                 # Unknown option before command - error

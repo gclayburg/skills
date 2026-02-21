@@ -46,6 +46,7 @@ The `buildgit` script is bundled at `scripts/buildgit` within this skill package
 | `scripts/buildgit --console auto status` | Show default console log on failure |
 | `scripts/buildgit --console N status` | Show last N raw console lines on failure |
 | `scripts/buildgit --job <name> <cmd>` | Override auto-detected job name |
+| `scripts/buildgit --version` | Show version number and exit |
 
 ## Interpreting Output
 

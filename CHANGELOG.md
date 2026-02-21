@@ -2,9 +2,10 @@
 
 All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are documented in this file.
 
-## 2026-02-21
+## [1.0.0] - 2026-02-21
 
 ### Features
+- **`--version` global option** — Added `--version` flag to display the current buildgit version and exit. Version `1.0.0` is the initial release. Releases use git tags of the form `v<major>.<minor>.<patch>`.
 - **`-v` verbose short flag** — Added `-v` as a global option alias for `--verbose`, matching common CLI conventions.
 - **Relative `status` build references** — `buildgit status` now accepts `0`, and negative build refs (`-1`, `-2`, …) to query builds relative to the latest build number.
 

@@ -244,6 +244,7 @@ Global Options:
   -c, --console <mode>           Show console log output (auto or line count)
   -h, --help                     Show this help message
   -v, --verbose                  Enable verbose output for debugging
+  --version                      Show version number and exit
 
 Commands:
   status [build#] [-f|--follow] [--once[=N]] [-n <count>] [--json] [--line] [--all] [--no-tests]
