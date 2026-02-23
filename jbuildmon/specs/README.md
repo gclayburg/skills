@@ -47,3 +47,4 @@ These files represent completed specifications in the specs/ directory.  This li
 - 2026-02-21_expand-verbose-flag-spec.md  add `-v` short alias for `--verbose` global option
 - 2026-02-21_allow-negative-job-number-spec.md  add relative `status` build references (`0`, `-1`, `-2`), reject build-ref with `-n`, and make `-n` work in full/json snapshot mode
 - 2026-02-21_version-number-spec.md  add `--version` global option and `BUILDGIT_VERSION` variable for semantic versioning
+- 2026-02-23_status-line-template-spec.md  add `--format <fmt>` option to customize `--line` output with `%`-style placeholders including git commit SHA and branch name

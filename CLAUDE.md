@@ -25,13 +25,13 @@ Global Options:
   --version                      Show version number and exit
 
 Commands:
-  status [build#] [-f|--follow] [--once[=N]] [-n <count>] [--json] [--line] [--all] [--no-tests]
+  status [build#] [-f|--follow] [--once[=N]] [-n <count>] [--json] [--line] [--all] [--no-tests] [--format <fmt>]
                       Display Jenkins build status (latest or specific build)
                       build# can be absolute (31) or relative (0=latest, -1=previous, -2=two ago)
                       Default: full output on TTY, one-line on pipe/redirect
-  push [--no-follow] [--line] [git-push-options] [remote] [branch]
+  push [--no-follow] [--line] [--format <fmt>] [git-push-options] [remote] [branch]
                       Push commits and monitor Jenkins build
-  build [--no-follow] [--line]
+  build [--no-follow] [--line] [--format <fmt>]
                       Trigger and monitor Jenkins build
   <any-git-command>   Passed through to git
 
@@ -59,6 +59,11 @@ Monitor ongoing Jenkins build jobs:
   buildgit push --line             # Push + compact one-line monitoring with progress bar
   buildgit build --line            # Trigger + compact one-line monitoring with progress bar
   buildgit --job myjob build       # Trigger build for specific job
+
+Format placeholders for --format (use with --line):
+  %s=status  %j=job  %n=build#  %t=tests  %d=duration
+  %D=date  %I=iso8601  %r=relative  %c=commit  %b=branch  %%=literal%
+  Default: "%s Job %j #%n Tests=%t Took %d on %D (%r)"
 
 Passthrough:
   buildgit log --oneline -5        # Passed through to git

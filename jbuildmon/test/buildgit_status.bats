@@ -1564,3 +1564,268 @@ WRAPPER
     tests_unknown_count="$(printf "%s\n" "$output" | grep -Ec 'Tests=\?/\?/\?' || true)"
     [ "$tests_unknown_count" -eq 3 ]
 }
+
+# =============================================================================
+# --format option tests
+# Spec: 2026-02-23_status-line-template-spec.md
+# =============================================================================
+
+# Helper: create a wrapper with build JSON that has no git SCM data
+create_format_test_wrapper() {
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER_START
+#!/usr/bin/env bash
+set -euo pipefail
+
+export PROJECT_DIR="${PROJECT_DIR}"
+export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
+
+_BUILDGIT_TESTING=1
+source "\${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+verify_jenkins_connection() { return 0; }
+verify_job_exists() {
+    JOB_URL="\${JENKINS_URL}/job/\${1}"
+    return 0
+}
+get_last_build_number() { echo "55"; }
+get_build_info() {
+    echo '{"number":55,"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":340000}'
+}
+get_console_output() { echo "Started by user testuser"; }
+fetch_test_results() {
+    echo '{"passCount":19,"failCount":0,"skipCount":0}'
+}
+get_all_stages() { echo "[]"; }
+get_failed_stage() { echo ""; }
+
+cmd_status "\$@"
+WRAPPER_START
+    chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+}
+
+# Helper: create a wrapper with build JSON containing git SCM action data
+create_format_git_test_wrapper() {
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER_START
+#!/usr/bin/env bash
+set -euo pipefail
+
+export PROJECT_DIR="${PROJECT_DIR}"
+export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
+
+_BUILDGIT_TESTING=1
+source "\${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+verify_jenkins_connection() { return 0; }
+verify_job_exists() {
+    JOB_URL="\${JENKINS_URL}/job/\${1}"
+    return 0
+}
+get_last_build_number() { echo "55"; }
+get_build_info() {
+    echo '{"number":55,"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":340000,"actions":[{"_class":"hudson.plugins.git.util.BuildData","lastBuiltRevision":{"SHA1":"9b9d481abcdef1234567","branch":[{"name":"refs/remotes/origin/main"}]}}]}'
+}
+get_console_output() { echo "Started by user testuser"; }
+fetch_test_results() {
+    echo '{"passCount":19,"failCount":0,"skipCount":0}'
+}
+get_all_stages() { echo "[]"; }
+get_failed_stage() { echo ""; }
+
+cmd_status "\$@"
+WRAPPER_START
+    chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+}
+
+@test "status_format_default_produces_current_output" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR TEST_TEMP_DIR
+    create_status_test_wrapper "SUCCESS" "false"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line
+
+    assert_success
+    assert_output --regexp "^SUCCESS[[:space:]]+Job test-repo #42 Tests=120/0/0 Took 2m 0s on [0-9]{4}-[0-9]{2}-[0-9]{2} \(.*\)$"
+}
+
+@test "status_format_custom_string" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR TEST_TEMP_DIR
+    create_format_git_test_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --format '%s #%n %c'
+
+    assert_success
+    # Output should contain status, #55, and first 7 chars of SHA
+    assert_output --partial "#55"
+    assert_output --partial "9b9d481"
+    # Should NOT contain 'Job' or 'Tests=' or 'Took'
+    refute_output --partial "Job"
+    refute_output --partial "Tests="
+    refute_output --partial "Took"
+}
+
+@test "status_format_literal_percent" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR TEST_TEMP_DIR
+    create_format_test_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --format '100%% #%n'
+
+    assert_success
+    assert_output --partial "100% #55"
+}
+
+@test "status_format_unknown_placeholder_passthrough" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR TEST_TEMP_DIR
+    create_format_test_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --format '%s %Z'
+
+    assert_success
+    # %Z is unknown, passes through literally
+    assert_output --partial "%Z"
+    # Status field still substituted
+    assert_output --regexp "SUCCESS[[:space:]]+ %Z$"
+}
+
+@test "status_format_commit_sha_extraction" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR TEST_TEMP_DIR
+    create_format_git_test_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --format '%c'
+
+    assert_success
+    # Should output first 7 chars of SHA1 "9b9d481abcdef1234567"
+    assert_output "9b9d481"
+}
+
+@test "status_format_branch_extraction" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR TEST_TEMP_DIR
+    create_format_git_test_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --format '%b'
+
+    assert_success
+    # refs/remotes/origin/ prefix should be stripped
+    assert_output "main"
+}
+
+@test "status_format_missing_git_data_outputs_unknown" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR TEST_TEMP_DIR
+    create_format_test_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --format '%c %b'
+
+    assert_success
+    assert_output "unknown unknown"
+}
+
+@test "status_format_iso8601_date" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR TEST_TEMP_DIR
+    create_format_test_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --format '%I'
+
+    assert_success
+    # ISO 8601 format: YYYY-MM-DDTHH:MM:SS+HHMM or similar
+    assert_output --regexp "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{4}$"
+}
+
+@test "status_format_implies_line_mode" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR TEST_TEMP_DIR
+    create_format_test_wrapper
+
+    # No --line flag, but --format implies it
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --format '%s #%n'
+
+    assert_success
+    # Output should be a single line (line mode)
+    line_count="$(printf "%s\n" "$output" | wc -l | tr -d ' ')"
+    [ "$line_count" -eq 1 ]
+    assert_output --partial "#55"
+}
+
+@test "status_format_json_conflict" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR TEST_TEMP_DIR
+    create_format_test_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --format '%s #%n' --json
+
+    assert_failure
+    assert_output --partial "cannot combine --format with --json"
+}
+
+@test "status_format_no_tests_shows_unknown" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR TEST_TEMP_DIR
+    create_status_no_tests_guard_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --format 'Tests=%t' --no-tests
+
+    assert_success
+    assert_output "Tests=?/?/?"
+}
+
+@test "status_format_skips_git_extraction_when_not_needed" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR TEST_TEMP_DIR
+
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER_START
+#!/usr/bin/env bash
+set -euo pipefail
+
+export PROJECT_DIR="${PROJECT_DIR}"
+export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
+
+_BUILDGIT_TESTING=1
+source "\${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+verify_jenkins_connection() { return 0; }
+verify_job_exists() {
+    JOB_URL="\${JENKINS_URL}/job/\${1}"
+    return 0
+}
+get_last_build_number() { echo "55"; }
+get_build_info() {
+    echo '{"number":55,"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":340000}'
+}
+get_console_output() { echo "Started by user testuser"; }
+fetch_test_results() { echo '{"passCount":19,"failCount":0,"skipCount":0}'; }
+get_all_stages() { echo "[]"; }
+get_failed_stage() { echo ""; }
+
+# Override _extract_git_info_from_build to fail loudly if called
+_extract_git_info_from_build() {
+    echo "ERROR: _extract_git_info_from_build called unexpectedly" >&2
+    return 99
+}
+
+cmd_status "\$@"
+WRAPPER_START
+    chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+
+    # Format string without %c or %b — git extraction should not be called
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --format '%s #%n Tests=%t'
+
+    assert_success
+    refute_output --partial "ERROR: _extract_git_info_from_build"
+}

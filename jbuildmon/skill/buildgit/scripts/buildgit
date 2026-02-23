@@ -42,6 +42,12 @@ CONSOLE_MODE=""
 COMMAND=""
 COMMAND_ARGS=()
 
+# Default format string for --line output (see spec: 2026-02-23_status-line-template-spec.md)
+_DEFAULT_LINE_FORMAT="%s Job %j #%n Tests=%t Took %d on %D (%r)"
+
+# Active line format string (set by option parsers; defaults to _DEFAULT_LINE_FORMAT)
+_LINE_FORMAT_STRING="${_DEFAULT_LINE_FORMAT}"
+
 # Follow mode configuration (matches pushmon.sh)
 POLL_INTERVAL="${POLL_INTERVAL:-5}"
 MAX_BUILD_TIME="${MAX_BUILD_TIME:-1800}"
@@ -84,13 +90,13 @@ Global Options:
   --version                      Show version number and exit
 
 Commands:
-  status [build#] [-f|--follow] [--once[=N]] [-n <count>] [--json] [--line] [--all] [--no-tests]
+  status [build#] [-f|--follow] [--once[=N]] [-n <count>] [--json] [--line] [--all] [--no-tests] [--format <fmt>]
                       Display Jenkins build status (latest or specific build)
                       build# can be absolute (31) or relative (0=latest, -1=previous, -2=two ago)
                       Default: full output on TTY, one-line on pipe/redirect
-  push [--no-follow] [--line] [git-push-options] [remote] [branch]
+  push [--no-follow] [--line] [--format <fmt>] [git-push-options] [remote] [branch]
                       Push commits and monitor Jenkins build
-  build [--no-follow] [--line]
+  build [--no-follow] [--line] [--format <fmt>]
                       Trigger and monitor Jenkins build
   <any-git-command>   Passed through to git
 
@@ -118,6 +124,11 @@ Monitor ongoing Jenkins build jobs:
   buildgit push --line             # Push + compact one-line monitoring with progress bar
   buildgit build --line            # Trigger + compact one-line monitoring with progress bar
   buildgit --job myjob build       # Trigger build for specific job
+
+Format placeholders for --format (use with --line):
+  %s=status  %j=job  %n=build#  %t=tests  %d=duration
+  %D=date  %I=iso8601  %r=relative  %c=commit  %b=branch  %%=literal%
+  Default: "%s Job %j #%n Tests=%t Took %d on %D (%r)"
 
 Passthrough:
   buildgit log --oneline -5        # Passed through to git
@@ -219,6 +230,8 @@ _parse_status_options() {
     STATUS_ALL_MODE=false
     STATUS_NO_TESTS=false
     STATUS_BUILD_NUMBER=""
+    STATUS_FORMAT_EXPLICIT=false
+    _LINE_FORMAT_STRING="$_DEFAULT_LINE_FORMAT"
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -282,6 +295,22 @@ _parse_status_options() {
                 STATUS_NO_TESTS=true
                 shift
                 ;;
+            --format)
+                shift
+                if [[ -z "${1:-}" ]]; then
+                    _usage_error "--format requires a format string argument"
+                fi
+                _LINE_FORMAT_STRING="$1"
+                STATUS_LINE_MODE=true
+                STATUS_FORMAT_EXPLICIT=true
+                shift
+                ;;
+            --format=*)
+                _LINE_FORMAT_STRING="${1#--format=}"
+                STATUS_LINE_MODE=true
+                STATUS_FORMAT_EXPLICIT=true
+                shift
+                ;;
             -*)
                 _usage_error "Unknown option for status command: $1"
                 ;;
@@ -329,6 +358,22 @@ _format_local_datetime_minute() {
         date -r "$epoch_seconds" "+%Y-%m-%d %H:%M" 2>/dev/null || echo "unknown"
     else
         date -d "@$epoch_seconds" "+%Y-%m-%d %H:%M" 2>/dev/null || echo "unknown"
+    fi
+}
+
+# Format epoch milliseconds as local ISO 8601 with timezone offset
+_format_local_datetime_iso8601() {
+    local epoch_ms="$1"
+    if [[ -z "$epoch_ms" || "$epoch_ms" == "null" || ! "$epoch_ms" =~ ^[0-9]+$ ]]; then
+        echo "unknown"
+        return
+    fi
+
+    local epoch_seconds=$((epoch_ms / 1000))
+    if [[ "$(uname)" == "Darwin" ]]; then
+        date -r "$epoch_seconds" "+%Y-%m-%dT%H:%M:%S%z" 2>/dev/null || echo "unknown"
+    else
+        date -d "@$epoch_seconds" "+%Y-%m-%dT%H:%M:%S%z" 2>/dev/null || echo "unknown"
     fi
 }
 
@@ -388,6 +433,106 @@ _format_relative_time() {
     fi
 }
 
+# Extract git commit SHA and branch name from build JSON actions array.
+# Sets globals: _LINE_COMMIT_SHA (7-char short SHA or "unknown")
+#               _LINE_BRANCH_NAME (short branch name, refs/remotes/origin/ stripped, or "unknown")
+# Spec: 2026-02-23_status-line-template-spec.md
+_extract_git_info_from_build() {
+    local build_json="$1"
+    _LINE_COMMIT_SHA="unknown"
+    _LINE_BRANCH_NAME="unknown"
+
+    # Primary: class-based git SCM action
+    local sha
+    sha=$(echo "$build_json" | jq -r '
+        .actions[]? |
+        select(._class? | test("hudson.plugins.git"; "i") // false) |
+        .lastBuiltRevision?.SHA1 // empty
+    ' 2>/dev/null | head -1) || true
+
+    # Fallback: any action that has lastBuiltRevision
+    if [[ -z "$sha" ]]; then
+        sha=$(echo "$build_json" | jq -r '
+            .actions[]? |
+            select(.lastBuiltRevision?) |
+            .lastBuiltRevision.SHA1 // empty
+        ' 2>/dev/null | head -1) || true
+    fi
+
+    if [[ -n "$sha" && "$sha" != "null" && "${#sha}" -ge 7 ]]; then
+        _LINE_COMMIT_SHA="${sha:0:7}"
+    fi
+
+    # Primary: class-based git SCM action for branch
+    local branch
+    branch=$(echo "$build_json" | jq -r '
+        .actions[]? |
+        select(._class? | test("hudson.plugins.git"; "i") // false) |
+        .lastBuiltRevision?.branch[0]?.name // empty
+    ' 2>/dev/null | head -1) || true
+
+    # Fallback: any action with lastBuiltRevision.branch
+    if [[ -z "$branch" ]]; then
+        branch=$(echo "$build_json" | jq -r '
+            .actions[]? |
+            select(.lastBuiltRevision?) |
+            .lastBuiltRevision.branch[0].name // empty
+        ' 2>/dev/null | head -1) || true
+    fi
+
+    if [[ -n "$branch" && "$branch" != "null" ]]; then
+        branch="${branch#refs/remotes/origin/}"
+        _LINE_BRANCH_NAME="$branch"
+    fi
+}
+
+# Apply a format string with status-line placeholder substitution.
+# Arguments: format_string status job_name build_number tests_display duration
+#            date iso8601 relative commit_sha branch_name
+# Spec: 2026-02-23_status-line-template-spec.md
+_apply_line_format() {
+    local fmt="$1"
+    local val_s="$2"
+    local val_j="$3"
+    local val_n="$4"
+    local val_t="$5"
+    local val_d="$6"
+    local val_D="$7"
+    local val_I="$8"
+    local val_r="$9"
+    local val_c="${10}"
+    local val_b="${11}"
+
+    local result=""
+    local i=0
+    local len="${#fmt}"
+    while [[ "$i" -lt "$len" ]]; do
+        local ch="${fmt:$i:1}"
+        if [[ "$ch" == "%" && "$((i + 1))" -lt "$len" ]]; then
+            local next="${fmt:$((i+1)):1}"
+            case "$next" in
+                s) result+="$val_s" ;;
+                j) result+="$val_j" ;;
+                n) result+="$val_n" ;;
+                t) result+="$val_t" ;;
+                d) result+="$val_d" ;;
+                D) result+="$val_D" ;;
+                I) result+="$val_I" ;;
+                r) result+="$val_r" ;;
+                c) result+="$val_c" ;;
+                b) result+="$val_b" ;;
+                %) result+="%" ;;
+                *) result+="%${next}" ;;
+            esac
+            i=$((i + 2))
+        else
+            result+="$ch"
+            i=$((i + 1))
+        fi
+    done
+    echo "$result"
+}
+
 # Fast one-line status output for snapshot mode.
 # Returns: 0 for SUCCESS, 1 for non-SUCCESS or in-progress.
 _format_status_line_field() {
@@ -419,6 +564,7 @@ _status_line_for_build_json() {
     local build_json="$3"
     local no_tests="${4:-false}"
     local status_raw status_display
+    local fmt="${_LINE_FORMAT_STRING:-${_DEFAULT_LINE_FORMAT}}"
 
     local json_build_number
     json_build_number=$(echo "$build_json" | jq -r '.number // empty')
@@ -444,10 +590,27 @@ _status_line_for_build_json() {
         fi
 
         elapsed_display=$(format_duration "$elapsed_ms")
-        start_display=$(_format_local_datetime_minute "$timestamp_ms")
         status_raw="IN_PROGRESS"
         status_display=$(_format_status_line_field "$status_raw")
-        echo "${status_display} Job ${job_name} #${build_number} Tests=?/?/? running for ${elapsed_display} (started ${start_display})"
+
+        if [[ "$fmt" == "$_DEFAULT_LINE_FORMAT" ]]; then
+            # Default format: preserve existing "running for ... (started ...)" wording
+            start_display=$(_format_local_datetime_minute "$timestamp_ms")
+            echo "${status_display} Job ${job_name} #${build_number} Tests=?/?/? running for ${elapsed_display} (started ${start_display})"
+        else
+            # Custom format: apply format string; %D/%I/%r are start-time values
+            local date_val iso_val rel_val commit_val="unknown" branch_val="unknown"
+            date_val=$(_format_local_date "$timestamp_ms")
+            iso_val=$(_format_local_datetime_iso8601 "$timestamp_ms")
+            rel_val=$(_format_relative_time "$((timestamp_ms / 1000))")
+            if [[ "$fmt" == *"%c"* || "$fmt" == *"%b"* ]]; then
+                _extract_git_info_from_build "$build_json"
+                commit_val="$_LINE_COMMIT_SHA"
+                branch_val="$_LINE_BRANCH_NAME"
+            fi
+            _apply_line_format "$fmt" "$status_display" "$job_name" "$build_number" "?/?/?" \
+                "$elapsed_display" "$date_val" "$iso_val" "$rel_val" "$commit_val" "$branch_val"
+        fi
         return 1
     fi
 
@@ -468,17 +631,6 @@ _status_line_for_build_json() {
         fi
     fi
 
-    tests_field="Tests=${tests_display}"
-    if [[ "$tests_display" != "?/?/?" ]]; then
-        tests_color="${COLOR_GREEN}"
-        if [[ "$tests_fail_count" =~ ^[0-9]+$ && "$tests_fail_count" -gt 0 ]]; then
-            tests_color="${COLOR_YELLOW}"
-        fi
-        if [[ -n "$tests_color" ]]; then
-            tests_field="${tests_color}${tests_field}${COLOR_RESET}"
-        fi
-    fi
-
     local completion_ms completion_seconds duration_display date_display relative_display
     completion_ms="$timestamp_ms"
     if [[ "$timestamp_ms" =~ ^[0-9]+$ && "$duration_ms" =~ ^[0-9]+$ ]]; then
@@ -491,7 +643,43 @@ _status_line_for_build_json() {
 
     status_raw="$result"
     status_display=$(_format_status_line_field "$status_raw")
-    echo "${status_display} Job ${job_name} #${build_number} ${tests_field} Took ${duration_display} on ${date_display} (${relative_display})"
+
+    if [[ "$fmt" == "$_DEFAULT_LINE_FORMAT" ]]; then
+        # Default format: preserve existing colorized Tests=label/value output
+        tests_field="Tests=${tests_display}"
+        if [[ "$tests_display" != "?/?/?" ]]; then
+            tests_color="${COLOR_GREEN}"
+            if [[ "$tests_fail_count" =~ ^[0-9]+$ && "$tests_fail_count" -gt 0 ]]; then
+                tests_color="${COLOR_YELLOW}"
+            fi
+            if [[ -n "$tests_color" ]]; then
+                tests_field="${tests_color}${tests_field}${COLOR_RESET}"
+            fi
+        fi
+        echo "${status_display} Job ${job_name} #${build_number} ${tests_field} Took ${duration_display} on ${date_display} (${relative_display})"
+    else
+        # Custom format: %t outputs colorized value only (label is part of format string)
+        local tests_colorized="$tests_display"
+        if [[ "$tests_display" != "?/?/?" ]]; then
+            tests_color="${COLOR_GREEN}"
+            if [[ "$tests_fail_count" =~ ^[0-9]+$ && "$tests_fail_count" -gt 0 ]]; then
+                tests_color="${COLOR_YELLOW}"
+            fi
+            if [[ -n "$tests_color" ]]; then
+                tests_colorized="${tests_color}${tests_display}${COLOR_RESET}"
+            fi
+        fi
+        local iso_display commit_val="unknown" branch_val="unknown"
+        iso_display=$(_format_local_datetime_iso8601 "$completion_ms")
+        if [[ "$fmt" == *"%c"* || "$fmt" == *"%b"* ]]; then
+            _extract_git_info_from_build "$build_json"
+            commit_val="$_LINE_COMMIT_SHA"
+            branch_val="$_LINE_BRANCH_NAME"
+        fi
+        _apply_line_format "$fmt" "$status_display" "$job_name" "$build_number" "$tests_colorized" \
+            "$duration_display" "$date_display" "$iso_display" "$relative_display" "$commit_val" "$branch_val"
+    fi
+
     if [[ "$result" == "SUCCESS" ]]; then
         return 0
     fi
@@ -1673,6 +1861,14 @@ cmd_status() {
     # Parse status-specific options
     _parse_status_options "$@"
 
+    # Validate incompatible option combinations for --format
+    if [[ "${STATUS_FORMAT_EXPLICIT:-false}" == "true" && "$STATUS_JSON_MODE" == "true" ]]; then
+        _usage_error "cannot combine --format with --json"
+    fi
+    if [[ "${STATUS_FORMAT_EXPLICIT:-false}" == "true" && "$STATUS_ALL_MODE" == "true" ]]; then
+        _usage_error "cannot combine --format with --all"
+    fi
+
     # Validate incompatible option combinations for --line mode
     if [[ "$STATUS_LINE_MODE" == "true" && "$STATUS_ALL_MODE" == "true" ]]; then
         _usage_error "Cannot use --line with --all"
@@ -1769,6 +1965,7 @@ _parse_push_options() {
     PUSH_NO_FOLLOW=false
     PUSH_LINE_MODE=false
     PUSH_GIT_ARGS=()
+    _LINE_FORMAT_STRING="$_DEFAULT_LINE_FORMAT"
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -1777,6 +1974,20 @@ _parse_push_options() {
                 shift
                 ;;
             --line)
+                PUSH_LINE_MODE=true
+                shift
+                ;;
+            --format)
+                shift
+                if [[ -z "${1:-}" ]]; then
+                    _usage_error "--format requires a format string argument"
+                fi
+                _LINE_FORMAT_STRING="$1"
+                PUSH_LINE_MODE=true
+                shift
+                ;;
+            --format=*)
+                _LINE_FORMAT_STRING="${1#--format=}"
                 PUSH_LINE_MODE=true
                 shift
                 ;;
@@ -2013,6 +2224,7 @@ cmd_push() {
 _parse_build_options() {
     BUILD_NO_FOLLOW=false
     BUILD_LINE_MODE=false
+    _LINE_FORMAT_STRING="$_DEFAULT_LINE_FORMAT"
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -2025,6 +2237,20 @@ _parse_build_options() {
                 shift
                 ;;
             --line)
+                BUILD_LINE_MODE=true
+                shift
+                ;;
+            --format)
+                shift
+                if [[ -z "${1:-}" ]]; then
+                    _usage_error "--format requires a format string argument"
+                fi
+                _LINE_FORMAT_STRING="$1"
+                BUILD_LINE_MODE=true
+                shift
+                ;;
+            --format=*)
+                _LINE_FORMAT_STRING="${1#--format=}"
                 BUILD_LINE_MODE=true
                 shift
                 ;;

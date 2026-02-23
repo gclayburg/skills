@@ -49,6 +49,7 @@ push the staged changes and monitor the build.  fix any errors you find.
 | `scripts/buildgit status -n <N>` | Full snapshot output for latest N builds (oldest first) |
 | `scripts/buildgit status -n <N> --json` | JSONL snapshot output for latest N builds |
 | `scripts/buildgit status -n <N> --no-tests` | One-line status while skipping test-report API calls |
+| `scripts/buildgit status --format '<fmt>'` | One-line status with custom format string (implies --line) |
 | `scripts/buildgit status --all` | Force full snapshot output |
 | `scripts/buildgit status -f --once` | Follow current/next build to completion, then exit (10s timeout) |
 | `scripts/buildgit status -f --once=N` | Same, but wait up to N seconds for a build to start |
@@ -59,9 +60,11 @@ push the staged changes and monitor the build.  fix any errors you find.
 | `scripts/buildgit push` | git push + monitor Jenkins build until complete |
 | `scripts/buildgit push --no-follow` | git push only, no build monitoring |
 | `scripts/buildgit push --line` | git push + compact one-line monitoring (TTY shows progress bar) |
+| `scripts/buildgit push --format '<fmt>'` | git push + compact one-line monitoring with custom format |
 | `scripts/buildgit build` | Trigger a new build + monitor until complete |
 | `scripts/buildgit build --no-follow` | Trigger only, no monitoring |
 | `scripts/buildgit build --line` | Trigger + compact one-line monitoring (TTY shows progress bar) |
+| `scripts/buildgit build --format '<fmt>'` | Trigger + compact one-line monitoring with custom format |
 | `scripts/buildgit --console auto status` | Show default console log on failure |
 | `scripts/buildgit --console N status` | Show last N raw console lines on failure |
 | `scripts/buildgit --job <name> <cmd>` | Override auto-detected job name |

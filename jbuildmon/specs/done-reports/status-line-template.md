@@ -1,0 +1,12 @@
+We have this now for `status --line -n 5`
+
+```
+$ buildgit status --line -n 5
+SUCCESS     Job phandlemono-IT #51 Tests=19/0/0 Took 5m 58s on 2026-02-22 (10 hours ago)
+FAILURE     Job phandlemono-IT #52 Tests=?/?/? Took 3m 27s on 2026-02-22 (10 hours ago)
+FAILURE     Job phandlemono-IT #53 Tests=?/?/? Took 3m 29s on 2026-02-22 (10 hours ago)
+SUCCESS     Job phandlemono-IT #54 Tests=19/0/0 Took 5m 38s on 2026-02-22 (10 hours ago)
+SUCCESS     Job phandlemono-IT #55 Tests=19/0/0 Took 5m 40s on 2026-02-23 (8 hours ago)
+```
+
+ what I'd like to do is expand the status – – line output so that the user can run build get status and specify a template for what kind of fields to include in the status line so we still want to show just one line per job but we want to be able to specify like what columns to show like for example, now we show job space the name the number the test output how long it took and the date and how long ago that was those are several different columns there I'd like to be able to do is run the command and specify that I wanna show not the job name but instead I wanna show something like the get commit ID that was used in that bill instead of the job name, but I still wanna show the rest of the things so I'm thinking at command an option of something like – – FMT for format and then we'll specify on that line kind of like the columns that we wanna show like commit ID job number test output, etc. so let's come up with a schema that we can use that makes sense too. I can specify a number of different columns so right now we've got several there. I wanna add at least one more for and get commit ID because in certain cases, the user might want to show what get commit ID was being built at the time we might also wanna that's another one add one more so that the column could be something like what exactly what remote branch was built like refs/remotes/origin/main that's used quite often, but it might've been something else too, so I wanna be able to be able to specify what branch name was built so that needs to be a column choice, the user can make so so what I want to do is come up with a strategy for the name of the option to the status command and the columns we used today and the columns we want that can be specified when the user run to the command

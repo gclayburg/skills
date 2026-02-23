@@ -81,6 +81,23 @@ Finished: FAILURE
 [09:13:48] ℹ Duration: 0s
 ```
 
+## Custom format string (--format)
+
+```bash
+$ buildgit status --format '%s #%n %c'
+SUCCESS     #55 9b9d481
+
+$ buildgit status --format '%s Job %j #%n commit=%c branch=%b'
+SUCCESS     Job phandlemono-IT #55 commit=9b9d481 branch=main
+
+$ buildgit status -n 3 --format '%s #%n %d'
+FAILURE     #53 3m 41s
+SUCCESS     #54 5m 40s
+SUCCESS     #55 5m 38s
+```
+
+Format placeholders: `%s`=status `%j`=job `%n`=build# `%t`=tests `%d`=duration `%D`=date `%I`=iso8601 `%r`=relative `%c`=commit `%b`=branch `%%`=literal%
+
 ## Show status for last N builds (--line)
 
 ```bash
