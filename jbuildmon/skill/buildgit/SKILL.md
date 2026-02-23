@@ -6,16 +6,37 @@ license: MIT
 
 # buildgit
 
-A unified CLI for git operations and monitoring Jenkins CI/CD build pipelines.
-## Prerequisites
+A CLI for git operations and monitoring Jenkins CI/CD build pipelines.
 
-Before running any command, verify:
-1. Jenkins env vars are set: `JENKINS_URL`, `JENKINS_USER_ID`, `JENKINS_API_TOKEN`
-2. Project has `JOB_NAME=<name>` in its root level CLAUDE.md or AGENTS.md
+## When to Use This Skill
 
-If any prerequisite is missing, tell the user what's needed instead of attempting the command.
+- monitoring the status of a Jenkins build job for your project
+- pushing your git changes and monitoring the Jenkins build
+- triggerring a Jenkins build
+- showing any Jenkins pipeline build errors 
+- determining what failed in a build so it can be fixed
+
+## What this skill does
+
+- replacement for `git push` command.  Instead of `git push` use `buildgit push`
+- uses git to push changes then expects a Jenkins build to automatically start, then monitors it
+- shows Jenkins build status in many different ways
+- uses Jenkins REST api to monitor and track a Jenkins pipeline build job
+- any command unknown to `buildgit` is delegated to `git`, e.g. `buildgit log` would run `git log`
 
 The `buildgit` script is bundled at `scripts/buildgit` within this skill package.
+
+## How to use
+
+```
+what is the build status
+```
+
+```
+push the staged changes and monitor the build.  fix any errors you find.
+```
+
+
 
 ## Commands
 
@@ -29,17 +50,15 @@ The `buildgit` script is bundled at `scripts/buildgit` within this skill package
 | `scripts/buildgit status -n <N> --json` | JSONL snapshot output for latest N builds |
 | `scripts/buildgit status -n <N> --no-tests` | One-line status while skipping test-report API calls |
 | `scripts/buildgit status --all` | Force full snapshot output |
-| `scripts/buildgit status -f` | Follow builds in real-time (Ctrl+C to stop) |
 | `scripts/buildgit status -f --once` | Follow current/next build to completion, then exit (10s timeout) |
 | `scripts/buildgit status -f --once=N` | Same, but wait up to N seconds for a build to start |
-| `scripts/buildgit status -n N -f` | Show N prior completed builds then follow indefinitely |
 | `scripts/buildgit status -n N -f --once` | Show N prior builds then follow once with timeout |
-| `scripts/buildgit status -f --line` | Follow builds with compact one-line output (TTY shows progress bar) |
-| `scripts/buildgit status -n N -f --line` | Show N prior one-line rows then follow in one-line mode |
+| `scripts/buildgit status -f --line --once` | Follow builds with compact one-line output (TTY shows progress bar) |
+| `scripts/buildgit status -n N -f --line --once` | Show N prior one-line rows then follow in one-line mode |
 | `scripts/buildgit status --json` | Machine-readable Jenkins build status |
-| `scripts/buildgit push` | Push + monitor Jenkins build until complete |
-| `scripts/buildgit push --no-follow` | Push only, no build monitoring |
-| `scripts/buildgit push --line` | Push + compact one-line monitoring (TTY shows progress bar) |
+| `scripts/buildgit push` | git push + monitor Jenkins build until complete |
+| `scripts/buildgit push --no-follow` | git push only, no build monitoring |
+| `scripts/buildgit push --line` | git push + compact one-line monitoring (TTY shows progress bar) |
 | `scripts/buildgit build` | Trigger a new build + monitor until complete |
 | `scripts/buildgit build --no-follow` | Trigger only, no monitoring |
 | `scripts/buildgit build --line` | Trigger + compact one-line monitoring (TTY shows progress bar) |
@@ -58,11 +77,15 @@ The `buildgit` script is bundled at `scripts/buildgit` within this skill package
 | 1 | Build failed, or an error occurred |
 | 2 | Build is currently in progress |
 
-**Build states:**
+**Build states:**  as reported by Jenkins
 - `SUCCESS` — build passed, all tests green
 - `FAILURE` — build failed; output includes failed stage and error details
 - `BUILDING` — build is still running
 - `ABORTED` — build was manually cancelled
+- `UNSTABLE` — build completed with test failures or marked warnings (common for flaky tests)
+- `NOT_BUILT` — build was skipped or not executed (e.g., due to upstream failure or explicit skip)
+- `UNKNOWN` — the state could not be determined (e.g., API error, incomplete data)
+- `QUEUED` — build is waiting in the Jenkins queue and hasn't started running yet
 
 For failures, summarize the failed stage name, error logs, and test failure details for the user.
 
@@ -83,17 +106,17 @@ On failed builds, buildgit shows a curated error summary by default.
 
 For agent-safe follow mode, prefer:
 - `scripts/buildgit status -f --once` to follow exactly one build and exit
-- `scripts/buildgit status -f` only when you intentionally want indefinite monitoring
 
 ## Dynamic Context
 
 To inject live build state into context before reasoning about build issues:
 
 ```
-!`scripts/buildgit status --json 2>/dev/null`
+`scripts/buildgit status --json 2>/dev/null`
 ```
 
-## Examples
+## References
 
+See [references/buildgit-setup.md](references/buildgit-setup.md) for setup instructions (required tools, permissions,project setup)
 See [references/reference.md](references/reference.md) for real-world output examples
 (push failures, parallel pipelines, progress bars, live follow mode).
