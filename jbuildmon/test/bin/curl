@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Mock curl for unit tests — prevents all real network connections.
+# Returns empty body + HTTP code 000 (connection refused), matching what real
+# curl returns when it cannot reach the server.
+# Tests that need specific curl behavior can prepend their own mock to PATH
+# (e.g., buildgit_errors.bats does this via setup_invalid_jenkins).
+printf '\n000'
+exit 7

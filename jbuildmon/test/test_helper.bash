@@ -14,6 +14,12 @@ load "${TEST_DIR}/test_helper/bats-file/load"
 # when bats spawns buildgit as a child process.
 unset BASH_ENV
 
+# Prepend test/bin to PATH so the mock curl script intercepts all network calls.
+# This runs at load time (not inside setup()), so it applies regardless of whether
+# a test file defines its own setup(). Tests needing specific curl behavior can
+# prepend their own mock earlier in PATH (e.g., buildgit_errors.bats).
+export PATH="${TEST_DIR}/bin:${PATH}"
+
 # Common setup for all tests
 setup() {
     # Create a temporary directory for test artifacts
