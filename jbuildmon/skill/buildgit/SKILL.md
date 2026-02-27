@@ -24,7 +24,7 @@ A CLI for git operations and monitoring Jenkins CI/CD build pipelines.
 - uses Jenkins REST api to monitor and track a Jenkins pipeline build job
 - any command unknown to `buildgit` is delegated to `git`, e.g. `buildgit log` would run `git log`
 
-The `buildgit` script is bundled at `scripts/buildgit` within this skill package.
+All paths in this document are relative to this SKILL.md file's directory, not the project root.
 
 ## How to use
 
@@ -120,6 +120,6 @@ To inject live build state into context before reasoning about build issues:
 
 ## References
 
-See [references/buildgit-setup.md](references/buildgit-setup.md) for setup instructions (required tools, permissions,project setup)
+See [references/buildgit-setup.md](references/buildgit-setup.md) for setup instructions (required tools, fixing permission errors,project setup, needed network access, docker sandbox instructions)
 See [references/reference.md](references/reference.md) for real-world output examples
 (push failures, parallel pipelines, progress bars, live follow mode).

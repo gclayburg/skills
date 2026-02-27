@@ -1,4 +1,3 @@
-
 # Prerequisites
 
 `buildgit` sits on top of an existing git + Jenkins setup. You'll need:
@@ -46,3 +45,55 @@ To override this inferred jobname, override it with `--job`:
 ```bash
 buildgit --job jenkins-job-name status
 ```
+
+### Using with docker sandbox
+
+This tool can be used within a Docker sandbox: https://docs.docker.com/ai/sandboxes/
+You'll need to expand your sandbox to be able to use this tool within the sandbox to access the Jenkins server on the outside.
+
+Make sure your Docker sandbox has the JENKINS env variables set up in each microVM container.
+Here is how to do it with Claude:
+
+1. `cd <your-project>`
+2. Run your sandbox of choice:
+$ `docker sandbox run claude .`
+3. Go through any authentication steps needed — subscription or API key. Exit Claude Code.
+4. Make sure the JENKINS env variables are set in your shell.  
+5. Run this prompt through the agent running in the container. It will persist the env values for next time: 
+
+```
+$ docker sandbox run claude . -- --model haiku -p "
+add these env settings to your context in /etc/sandbox-persistent.sh:
+export JENKINS_URL=$JENKINS_URL
+export JENKINS_USER_ID=$JENKINS_USER_ID
+export JENKINS_API_TOKEN=$JENKINS_API_TOKEN
+"
+```
+
+If you are using Codex, you'll need to go through similar auth steps as above. Set the env variables like this:
+
+```
+$ docker sandbox run codex . -- exec --model gpt-5.1-codex-mini "
+add these env settings to your context in /etc/sandbox-persistent.sh:
+export JENKINS_URL=$JENKINS_URL
+export JENKINS_USER_ID=$JENKINS_USER_ID
+export JENKINS_API_TOKEN=$JENKINS_API_TOKEN
+"
+```
+
+
+6. Optional — check that these settings are saved in the container under `/etc/sandbox-persistent.sh`.
+
+Check the build status:
+
+```
+$ docker sandbox run codex . -- exec --model gpt-5.1-codex-mini 'what is the build status'
+$ docker sandbox run claude . -- --model haiku -p  'what is the build status'
+```
+
+**Fix Docker sandbox proxy errors.** Allow access for your `JENKINS_URL` host:
+
+```
+$ docker sandbox network proxy codex-phandlemono --policy allow --allow-host palmer.garyclayburg.com
+```
+
