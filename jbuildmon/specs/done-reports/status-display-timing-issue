@@ -1,0 +1,61 @@
+
+commit information is not always printed in the header section 
+
+This output was from a `buildgit push` command:
+
+```bash
+[15:34:54] ℹ Starting
+
+╔════════════════════════════════════════╗
+║          BUILD IN PROGRESS             ║
+╚════════════════════════════════════════╝
+
+Job:        ralph1
+Build:      #213
+Status:     BUILDING
+Trigger:    Automated (git push)
+Started:    2026-02-27 15:34:54
+
+=== Build Info ===
+  Started by:  buildtriggerdude
+  Pipeline:    Jenkinsfile from git ssh://git@scranton2:2233/home/git/ralph1.git
+==================
+
+Console:    http://palmer.garyclayburg.com:18080/job/ralph1/213/console
+
+Commit:     28ed879 - "test123"
+            ✓ Your commit (HEAD)
+```
+
+In another window, we run `buildgit status -f` and we get this output:
+
+```bash
+[15:34:57] ℹ Starting
+
+╔════════════════════════════════════════╗
+║          BUILD IN PROGRESS             ║
+╚════════════════════════════════════════╝
+
+Job ralph1 #213 has been running for 2s
+
+Job:        ralph1
+Build:      #213
+Status:     BUILDING
+Trigger:    Automated (git push)
+Commit:     28ed879 - "test123"
+            ✓ Your commit (HEAD)
+Started:    2026-02-27 15:34:54
+
+=== Build Info ===
+  Started by:  buildtriggerdude
+  Agent:       agent8_sixcore
+  Pipeline:    Jenkinsfile from git ssh://git@scranton2:2233/home/git/ralph1.git
+==================
+
+Console:    http://palmer.garyclayburg.com:18080/job/ralph1/213/console
+```
+
+The output from the status -f command is more correct.  The commit infomration is in the right place.  Also, the Agent information is shown and in the right place.  You can see the agent information 
+does not show up in the buildgit push command.
+
+You need to analyze if there are other inconsistencies in the output between the buildgit monitoring style commands and the snapshot status commands.  We need to make the output look consistent where it makes sense.

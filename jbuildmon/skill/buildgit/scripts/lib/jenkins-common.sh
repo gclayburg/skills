@@ -1402,6 +1402,17 @@ _detect_parallel_branches() {
 # Parse build metadata from console output
 # Usage: _parse_build_metadata "$console_output"
 # Sets: _META_STARTED_BY, _META_AGENT, _META_PIPELINE
+_extract_running_agent_from_console() {
+    local console_output="$1"
+    local stripped_console
+
+    # Remove ANSI escape sequences so matching works on colorized console text.
+    stripped_console=$(printf "%s\n" "$console_output" | sed -E 's/\x1B\[[0-9;]*[[:alpha:]]//g')
+
+    printf "%s\n" "$stripped_console" | grep -m1 "Running on " | \
+        sed -E 's/.*Running on[[:space:]]+([^[:space:]]+).*/\1/' || true
+}
+
 _parse_build_metadata() {
     local console_output="$1"
 
@@ -1409,7 +1420,7 @@ _parse_build_metadata() {
     _META_STARTED_BY=$(echo "$console_output" | grep -m1 "^Started by user " | sed 's/^Started by user //') || true
 
     # Extract Jenkins agent
-    _META_AGENT=$(echo "$console_output" | grep -m1 "^Running on " | sed 's/^Running on \([^ ]*\).*/\1/') || true
+    _META_AGENT=$(_extract_running_agent_from_console "$console_output") || true
 
     # Extract pipeline source (pipeline name + git URL)
     # Format: "Obtained <pipeline-name> from git <url>"
@@ -2731,8 +2742,9 @@ display_building_output() {
         display_build_metadata "$console_output"
     fi
 
-    # Display Console URL only if console output is available (skip when deferred)
-    if [[ -n "$console_output" || ( -n "$commit_sha" && "$commit_sha" != "unknown" ) ]]; then
+    # Display Console URL only when Commit is already known.
+    # If Commit is deferred, Console URL is printed later after deferred fields.
+    if [[ -n "$commit_sha" && "$commit_sha" != "unknown" ]]; then
         echo ""
         echo "Console:    ${url}console"
     fi
@@ -3234,7 +3246,7 @@ _build_info_json() {
 # Returns: agent name string, or empty
 _extract_agent_name() {
     local console_output="$1"
-    echo "$console_output" | grep -m1 "^Running on " | sed 's/^Running on \([^ ]*\).*/\1/' || true
+    _extract_running_agent_from_console "$console_output" || true
 }
 
 # Map parent stages to their downstream builds

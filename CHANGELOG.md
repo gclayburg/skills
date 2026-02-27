@@ -11,6 +11,7 @@ All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are do
 - **`status --line` default format** - Changed the default one-line format to `%s #%n id=%c Tests=%t Took %d on %I (%r)` to drop redundant job name output and include commit id with ISO 8601 timestamp
 - **`--prior-jobs <N>` for `status`, `push`, and `build`** - Added prior-build context blocks in snapshot and monitoring flows with default `N=3`, oldest-first one-line rows, `N=0` suppression, and validation for missing/invalid values
 - **Monitoring preamble estimate line** - `push`, `build`, and `status -f` now print `Estimated build time = ...` from Jenkins `lastSuccessfulBuild` duration (or `unknown` when unavailable)
+- **Monitoring header field order consistency** - `push`, `build`, and `status -f` now keep header ordering aligned: `Commit` appears before `Started`, `Agent` reliably appears in Build Info, and `Console:` is printed last (including deferred-header cases)
 
 ## [1.0.0] - 2026-02-21
 

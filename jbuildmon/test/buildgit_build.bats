@@ -71,6 +71,7 @@ create_build_test_wrapper() {
     # Initialize state files for tracking call counts
     echo "0" > "${TEST_TEMP_DIR}/build_info_calls"
     echo "0" > "${TEST_TEMP_DIR}/queue_item_calls"
+    echo "0" > "${TEST_TEMP_DIR}/console_calls"
 
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << 'WRAPPER_END'
 #!/usr/bin/env bash
@@ -139,8 +140,17 @@ get_build_info() {
 }
 
 get_console_output() {
-    echo "Started by user testuser"
-    echo "Checking out Revision abc1234567890"
+    local count
+    count=$(cat "${TEST_TEMP_DIR}/console_calls")
+    count=$((count + 1))
+    echo "$count" > "${TEST_TEMP_DIR}/console_calls"
+
+    echo "Started by user buildtriggerdude"
+    echo "Running on agent8_sixcore in /var/jenkins/workspace/test-repo"
+    echo "Obtained Jenkinsfile from git ssh://git@scranton2:2233/home/git/test-repo.git"
+    if [[ $count -gt 1 ]]; then
+        echo "Checking out Revision abc1234567890"
+    fi
 }
 
 get_current_stage() {
@@ -252,6 +262,39 @@ WRAPPER
     # Should complete successfully with build result
     [ "$status" -eq 0 ]
     [[ "$output" == *"SUCCESS"* ]] || [[ "$output" == *"Build"* ]]
+}
+
+@test "build_commit_before_console_when_deferred" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_build_test_wrapper "SUCCESS" "2" "true"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 2>&1
+
+    assert_success
+    assert_output --regexp "Commit:[[:space:]]+[[:alnum:]]{7}"
+    assert_output --partial "Console:    http://jenkins.example.com/job/test-repo/43/console"
+
+    local commit_line console_line
+    commit_line=$(echo "$output" | grep -n "Commit:" | head -1 | cut -d: -f1)
+    console_line=$(echo "$output" | grep -n "Console:" | head -1 | cut -d: -f1)
+    [[ "$commit_line" -lt "$console_line" ]]
+}
+
+@test "build_agent_in_build_info" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_build_test_wrapper "SUCCESS" "2" "true"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 2>&1
+
+    assert_success
+    assert_output --partial "=== Build Info ==="
+    assert_output --partial "Agent:       agent8_sixcore"
 }
 
 # -----------------------------------------------------------------------------

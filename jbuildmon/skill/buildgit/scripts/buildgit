@@ -1260,7 +1260,7 @@ _print_deferred_header_fields() {
     local job_name="$1"
     local build_number="$2"
     local build_json="$3"
-    local deferred_build_info="${_DEFERRED_BUILD_INFO:-false}"
+    local max_attempts="${DEFERRED_HEADER_MAX_ATTEMPTS:-6}"
 
     # Need console output to resolve deferred fields
     local console_output
@@ -1272,6 +1272,7 @@ _print_deferred_header_fields() {
 
     # Re-extract build context with console output
     _extract_build_context "$job_name" "$build_number" "$console_output"
+    _DEFERRED_HEADER_ATTEMPTS=$(( ${_DEFERRED_HEADER_ATTEMPTS:-0} + 1 ))
 
     # Print Commit line if it was deferred and now available
     if [[ "$_DEFERRED_COMMIT" == "true" && -n "$_BC_COMMIT_SHA" && "$_BC_COMMIT_SHA" != "unknown" ]]; then
@@ -1291,14 +1292,18 @@ _print_deferred_header_fields() {
         printed_something=true
     fi
 
-    # Print Console URL only if Build Info was deferred (Console URL was skipped
-    # when both commit unknown and no console output in the initial header)
-    if [[ "$deferred_build_info" == "true" ]]; then
+    # Print Console URL last, after deferred Commit/Build Info.
+    # If Commit never resolves, print Console after a small retry window.
+    if [[ "${_DEFERRED_CONSOLE:-false}" == "true" ]]; then
+        if [[ "${_DEFERRED_COMMIT:-false}" != "true" && "${_DEFERRED_BUILD_INFO:-false}" != "true" ]] || \
+           [[ "${_DEFERRED_HEADER_ATTEMPTS:-0}" -ge "$max_attempts" ]]; then
         local url
         url=$(echo "$build_json" | jq -r '.url // empty')
         if [[ -n "$url" ]]; then
             echo ""
             echo "Console:    ${url}console"
+        fi
+            _DEFERRED_CONSOLE=false
         fi
     fi
 
@@ -1368,7 +1373,7 @@ _monitor_build() {
 
         # Print deferred header fields when data becomes available
         # Spec: bug-build-monitoring-header-spec.md - deferred header fields
-        if [[ "${_DEFERRED_COMMIT:-false}" == "true" || "${_DEFERRED_BUILD_INFO:-false}" == "true" ]]; then
+        if [[ "${_DEFERRED_COMMIT:-false}" == "true" || "${_DEFERRED_BUILD_INFO:-false}" == "true" || "${_DEFERRED_CONSOLE:-false}" == "true" ]]; then
             _print_deferred_header_fields "$job_name" "$build_number" "${_DEFERRED_BUILD_JSON:-$build_info}" || true
         fi
 
@@ -1446,6 +1451,9 @@ _display_build_in_progress_banner() {
     local job_name="$1"
     local build_number="$2"
     local running_msg="${3:-}"
+    local preferred_commit_sha="${4:-}"
+    local preferred_commit_msg="${5:-}"
+    local preferred_correlation_status="${6:-}"
 
     # Get build info
     local build_json
@@ -1462,6 +1470,15 @@ _display_build_in_progress_banner() {
 
     # Extract trigger, commit, and correlation context
     _extract_build_context "$job_name" "$build_number" "$console_output"
+    if [[ -n "$preferred_commit_sha" && "$preferred_commit_sha" != "unknown" ]]; then
+        _BC_COMMIT_SHA="$preferred_commit_sha"
+        _BC_COMMIT_MSG="$preferred_commit_msg"
+        if [[ -n "$preferred_correlation_status" ]]; then
+            _BC_CORRELATION_STATUS="$preferred_correlation_status"
+        else
+            _BC_CORRELATION_STATUS=$(correlate_commit "$preferred_commit_sha")
+        fi
+    fi
 
     # Get current stage
     local current_stage
@@ -1479,14 +1496,21 @@ _display_build_in_progress_banner() {
     # Spec: bug-build-monitoring-header-spec.md - deferred header fields
     _DEFERRED_COMMIT=false
     _DEFERRED_BUILD_INFO=false
+    _DEFERRED_CONSOLE=false
     _DEFERRED_BUILD_JSON=""
+    _DEFERRED_HEADER_ATTEMPTS=0
     if [[ -z "$_BC_COMMIT_SHA" || "$_BC_COMMIT_SHA" == "unknown" ]]; then
         _DEFERRED_COMMIT=true
     fi
     if [[ -z "$console_output" ]]; then
         _DEFERRED_BUILD_INFO=true
     fi
-    if [[ "$_DEFERRED_COMMIT" == "true" || "$_DEFERRED_BUILD_INFO" == "true" ]]; then
+    local banner_url
+    banner_url=$(echo "$build_json" | jq -r '.url // empty')
+    if [[ -n "$banner_url" ]] && [[ "$_DEFERRED_COMMIT" == "true" || "$_DEFERRED_BUILD_INFO" == "true" ]]; then
+        _DEFERRED_CONSOLE=true
+    fi
+    if [[ "$_DEFERRED_COMMIT" == "true" || "$_DEFERRED_BUILD_INFO" == "true" || "$_DEFERRED_CONSOLE" == "true" ]]; then
         _DEFERRED_BUILD_JSON="$build_json"
     fi
 
@@ -2281,6 +2305,25 @@ _handle_build_completion() {
     fi
 }
 
+# Resolve local HEAD commit context for push-triggered builds.
+# Outputs two lines:
+#   line 1: short SHA (or "unknown")
+#   line 2: subject line message (or empty)
+_get_local_head_commit_context() {
+    local sha="unknown"
+    local msg=""
+
+    if sha=$(git rev-parse --short=7 HEAD 2>/dev/null); then
+        msg=$(git log -1 --pretty=%s 2>/dev/null || true)
+        echo "$sha"
+        echo "$msg"
+        return 0
+    fi
+
+    echo "unknown"
+    echo ""
+}
+
 # Push command handler
 # Pushes commits and monitors the resulting Jenkins build
 # Spec reference: buildgit-spec.md, buildgit push
@@ -2362,7 +2405,14 @@ cmd_push() {
         return 1
     fi
 
-    _display_build_in_progress_banner "$job_name" "$new_build_number"
+    local push_commit_info push_commit_sha push_commit_msg push_correlation_status
+    push_commit_info=$(_get_local_head_commit_context)
+    push_commit_sha=$(echo "$push_commit_info" | head -1)
+    push_commit_msg=$(echo "$push_commit_info" | tail -1)
+    push_correlation_status=$(correlate_commit "$push_commit_sha")
+
+    _display_build_in_progress_banner "$job_name" "$new_build_number" "" \
+        "$push_commit_sha" "$push_commit_msg" "$push_correlation_status"
 
     # Monitor build until completion
     if ! _monitor_build "$job_name" "$new_build_number" "true"; then

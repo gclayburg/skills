@@ -69,6 +69,14 @@ Running on buildagent9 in /var/jenkins/workspace/myjob
     [[ "$agent" == "orchestrator1" ]]
 }
 
+@test "extract_agent_name_with_ansi_prefix" {
+    local console=$'\x1b[0mRunning on agent8_sixcore in /var/jenkins/workspace/ralph1'
+
+    local agent
+    agent=$(_extract_agent_name "$console")
+    [[ "$agent" == "agent8_sixcore" ]]
+}
+
 # =============================================================================
 # Test Cases: _map_stages_to_downstream
 # =============================================================================

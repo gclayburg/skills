@@ -51,3 +51,4 @@ These files represent completed specifications in the specs/ directory.  This li
 - 2026-02-27_change-default-oneline-status-spec.md  change default one-line output to `%s #%n id=%c Tests=%t Took %d on %I (%r)` and remove job name from default line mode
 - 2026-02-27_estimated-build-time-and-old-jobs-spec.md  add monitoring preamble with prior completed builds (`--prior-jobs`, default 3) and estimated build time for `push`, `build`, and `status -f`
 - 2026-02-27_add-prior-jobs-to-snapshot-status-spec.md  add prior-jobs block to snapshot `status` output (including `status <build#>` and `status -n`) with strict prior-to-target selection
+- 2026-02-27_status-display-timing-issue-spec.md  fix monitoring header consistency so push/build/status -f align on Commit/Agent placement and always print Console last
