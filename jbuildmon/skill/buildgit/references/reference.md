@@ -15,6 +15,20 @@ buildgit assumes:
 If any failures are detected in the build, any tests, or any build pipeline stage, buildgit attempts to show you what failed. It does not fill the output with meaningless log data.
 Humans don't need this most of the time. They just need to know what failed. Agents care about the same thing. They don't need their context window filled with useless logs.
 
+Monitoring commands now include a preamble before active monitoring:
+
+```bash
+[10:23:48] ℹ Waiting for Jenkins build ralph1 to start...
+[10:23:48] ℹ Prior 3 Jobs
+SUCCESS     #54 id=6685a31 Tests=19/0/0 Took 5m 38s on 2026-02-22T22:37:21-0700 (4 days ago)
+SUCCESS     #55 id=46f85cb Tests=19/0/0 Took 5m 40s on 2026-02-23T00:10:00-0700 (4 days ago)
+SUCCESS     #56 id=0046c54 Tests=19/0/0 Took 6m 39s on 2026-02-24T10:14:10-0700 (3 days ago)
+[10:23:48] ℹ Estimated build time = 6m 39s
+[10:23:58] ℹ Starting
+```
+
+Use `--prior-jobs 0` to suppress the prior-jobs block.
+
 ```bash
 $ buildgit push
 To ssh://scranton2:2233/home/git/phandlemono.git

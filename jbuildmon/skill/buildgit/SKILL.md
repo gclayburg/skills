@@ -46,6 +46,7 @@ push the staged changes and monitor the build.  fix any errors you find.
 | `scripts/buildgit status <build#>` | Status of one build (`31`, `0`, `-1`, `-2`) |
 | `scripts/buildgit status --line` | One-line status for latest build |
 | `scripts/buildgit status -n <N> --line` | One-line status for latest N builds (oldest first) |
+| `scripts/buildgit status --prior-jobs <N>` | Snapshot with N prior one-line builds before target build |
 | `scripts/buildgit status -n <N>` | Full snapshot output for latest N builds (oldest first) |
 | `scripts/buildgit status -n <N> --json` | JSONL snapshot output for latest N builds |
 | `scripts/buildgit status -n <N> --no-tests` | One-line status while skipping test-report API calls |
@@ -53,20 +54,23 @@ push the staged changes and monitor the build.  fix any errors you find.
 | `scripts/buildgit status --all` | Force full snapshot output |
 | `scripts/buildgit status -f --once` | Follow current/next build to completion, then exit (10s timeout) |
 | `scripts/buildgit status -f --once=N` | Same, but wait up to N seconds for a build to start |
-| `scripts/buildgit status -n N -f --once` | Show N prior builds then follow once with timeout |
+| `scripts/buildgit status -n <N> -f --once` | Show N prior builds then follow once with timeout |
 | `scripts/buildgit status -f --line --once` | Follow builds with compact one-line output (TTY shows progress bar) |
-| `scripts/buildgit status -n N -f --line --once` | Show N prior one-line rows then follow in one-line mode |
+| `scripts/buildgit status -f --prior-jobs <N>` | Follow with N prior one-line builds + estimate preamble |
+| `scripts/buildgit status -n <N> -f --line --once` | Show N prior one-line rows then follow in one-line mode |
 | `scripts/buildgit status --json` | Machine-readable Jenkins build status |
 | `scripts/buildgit push` | git push + monitor Jenkins build until complete |
+| `scripts/buildgit push --prior-jobs <N>` | git push + preamble with N prior builds + estimate |
 | `scripts/buildgit push --no-follow` | git push only, no build monitoring |
 | `scripts/buildgit push --line` | git push + compact one-line monitoring (TTY shows progress bar) |
 | `scripts/buildgit push --format '<fmt>'` | git push + compact one-line monitoring with custom format |
 | `scripts/buildgit build` | Trigger a new build + monitor until complete |
+| `scripts/buildgit build --prior-jobs <N>` | Trigger + preamble with N prior builds + estimate |
 | `scripts/buildgit build --no-follow` | Trigger only, no monitoring |
 | `scripts/buildgit build --line` | Trigger + compact one-line monitoring (TTY shows progress bar) |
 | `scripts/buildgit build --format '<fmt>'` | Trigger + compact one-line monitoring with custom format |
 | `scripts/buildgit --console auto status` | Show default console log on failure |
-| `scripts/buildgit --console N status` | Show last N raw console lines on failure |
+| `scripts/buildgit --console <N> status` | Show last N raw console lines on failure |
 | `scripts/buildgit --job <name> <cmd>` | Override auto-detected job name |
 | `scripts/buildgit --version` | Show version number and exit |
 
@@ -99,6 +103,8 @@ For snapshot mode defaults, `scripts/buildgit status` is TTY-aware:
 - TTY stdout: full output
 - non-TTY stdout (pipe/redirect): one-line output
 - Exception: when `-n` is provided without `--line`, snapshot output is full multi-build mode.
+- Snapshot also prints a prior-jobs block by default (`--prior-jobs 3`); use `--prior-jobs 0` to suppress
+- Monitoring commands (`push`, `build`, `status -f`) print prior-jobs + estimated build time before monitoring starts
 
 Build reference rules:
 - `0` and `-0` mean latest/current build

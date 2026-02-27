@@ -168,7 +168,7 @@ fetch_test_results() {
 JOB_NAME="test-repo"
 
 # Call the build command
-cmd_build "$@"
+cmd_build --prior-jobs 0 "$@"
 WRAPPER_END
 
     # Replace placeholders with actual values (portable: temp file + mv works on both macOS and Linux)
@@ -206,7 +206,7 @@ discover_job_name() {
 }
 
 # Don't set JOB_NAME - let it try auto-detection which will fail
-cmd_build "$@"
+cmd_build --prior-jobs 0 "$@"
 WRAPPER
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
@@ -476,4 +476,32 @@ WRAPPER
     assert_failure
     assert_output --partial "Unknown option for build command: --junk"
     assert_output --partial "Usage: buildgit"
+}
+
+@test "build_preamble_prior_jobs_and_estimate" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_build_test_wrapper "SUCCESS" "2" "true"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --prior-jobs 2
+
+    assert_success
+    assert_output --partial "Prior 2 Jobs"
+    assert_output --partial "Estimated build time ="
+    assert_output --partial "Starting"
+}
+
+@test "build_prior_jobs_invalid_value" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_build_test_wrapper "SUCCESS" "1" "true"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --prior-jobs -1
+
+    assert_failure
+    assert_output --partial "--prior-jobs value must be a non-negative integer"
 }

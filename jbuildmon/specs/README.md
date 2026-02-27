@@ -49,3 +49,5 @@ These files represent completed specifications in the specs/ directory.  This li
 - 2026-02-21_version-number-spec.md  add `--version` global option and `BUILDGIT_VERSION` variable for semantic versioning
 - 2026-02-23_status-line-template-spec.md  add `--format <fmt>` option to customize `--line` output with `%`-style placeholders including git commit SHA and branch name
 - 2026-02-27_change-default-oneline-status-spec.md  change default one-line output to `%s #%n id=%c Tests=%t Took %d on %I (%r)` and remove job name from default line mode
+- 2026-02-27_estimated-build-time-and-old-jobs-spec.md  add monitoring preamble with prior completed builds (`--prior-jobs`, default 3) and estimated build time for `push`, `build`, and `status -f`
+- 2026-02-27_add-prior-jobs-to-snapshot-status-spec.md  add prior-jobs block to snapshot `status` output (including `status <build#>` and `status -n`) with strict prior-to-target selection

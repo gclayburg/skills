@@ -180,7 +180,7 @@ fetch_test_results() {
 JOB_NAME="test-repo"
 
 # Call the push command
-cmd_push "$@"
+cmd_push --prior-jobs 0 "$@"
 WRAPPER_END
 
     # Replace placeholders with actual values (portable: temp file + mv works on both macOS and Linux)
@@ -205,7 +205,7 @@ _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
 
 JOB_NAME="test-repo"
-cmd_push "$@"
+cmd_push --prior-jobs 0 "$@"
 WRAPPER
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
@@ -524,4 +524,36 @@ WRAPPER
     [ "$status" -eq 0 ]
     # Git push typically shows branch info or "Everything up-to-date"
     [[ -n "$output" ]]
+}
+
+@test "push_preamble_prior_jobs_and_estimate" {
+    cd "${TEST_REPO}"
+
+    echo "Prior jobs test" >> README.md
+    git add README.md
+    git commit --quiet -m "Prior jobs test commit"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_push_test_wrapper "SUCCESS" "2"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --prior-jobs 2
+
+    assert_success
+    assert_output --partial "Prior 2 Jobs"
+    assert_output --partial "Estimated build time ="
+    assert_output --partial "Starting"
+}
+
+@test "push_prior_jobs_invalid_value" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_push_test_wrapper "SUCCESS" "1"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --prior-jobs foo
+
+    assert_failure
+    assert_output --partial "--prior-jobs value must be a non-negative integer"
 }

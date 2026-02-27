@@ -152,7 +152,7 @@ get_current_stage() {
 JOB_NAME="test-repo"
 
 # Call the status command with follow mode
-cmd_status -f "$@"
+cmd_status -f --prior-jobs 0 "$@"
 WRAPPER_END
 
     # Replace placeholders with actual values (portable: temp file + mv works on both macOS and Linux)
@@ -310,7 +310,7 @@ fetch_test_results() {
 }
 
 JOB_NAME="test-repo"
-cmd_status -f "$@"
+cmd_status -f --prior-jobs 0 "$@"
 WRAPPER_END
 
     sed -e "s|__LATEST_BUILD__|${latest_build}|g" \
@@ -395,7 +395,7 @@ fetch_test_results() {
 }
 
 JOB_NAME="test-repo"
-cmd_status -f "$@"
+cmd_status -f --prior-jobs 0 "$@"
 WRAPPER
 
     # Substitute paths (portable: temp file + mv works on both macOS and Linux)
@@ -508,7 +508,7 @@ get_failed_stage() { echo ""; }
 fetch_test_results() { echo ""; }
 
 JOB_NAME="test-repo"
-cmd_status -f "$@"
+cmd_status -f --prior-jobs 0 "$@"
 WRAPPER_END
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
@@ -602,7 +602,7 @@ get_failed_stage() { echo ""; }
 fetch_test_results() { echo ""; }
 
 JOB_NAME="test-repo"
-cmd_status --follow "$@"
+cmd_status --follow --prior-jobs 0 "$@"
 WRAPPER
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
@@ -1099,7 +1099,7 @@ _clear_follow_line_progress() {
 }
 
 JOB_NAME="test-repo"
-cmd_status -f --once
+cmd_status -f --once --prior-jobs 0
 WRAPPER_END
     chmod +x "${TEST_TEMP_DIR}/follow_footer_probe.sh"
 
@@ -1207,4 +1207,18 @@ WRAPPER_END
 
     assert_failure
     assert_output --partial "no new build detected for 1 seconds"
+}
+
+@test "status_follow_preamble_shows_prior_jobs_and_estimate" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_test_wrapper "true" "SUCCESS" "2"
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once --prior-jobs 2 2>&1"
+
+    assert_success
+    assert_output --partial "Prior 2 Jobs"
+    assert_output --partial "Estimated build time ="
+    assert_output --partial "Starting"
 }

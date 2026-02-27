@@ -123,7 +123,7 @@ get_failed_stage() {
 }
 
 # Call the status command
-cmd_status "\$@"
+cmd_status --prior-jobs 0 "\$@"
 WRAPPER_START
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
@@ -174,7 +174,7 @@ fetch_test_results() {
 get_all_stages() { echo "[]"; }
 get_failed_stage() { echo ""; }
 
-cmd_status "\$@"
+cmd_status --prior-jobs 0 "\$@"
 WRAPPER_START
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
@@ -217,7 +217,7 @@ fetch_test_results() { echo '{"passCount":10,"failCount":0,"skipCount":0}'; }
 get_all_stages() { echo "[]"; }
 get_failed_stage() { echo ""; }
 
-cmd_status "\$@"
+cmd_status --prior-jobs 0 "\$@"
 WRAPPER_START
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
@@ -266,7 +266,7 @@ fetch_test_results() {
 get_all_stages() { echo "[]"; }
 get_failed_stage() { echo ""; }
 
-cmd_status "\$@"
+cmd_status --prior-jobs 0 "\$@"
 WRAPPER_START
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
@@ -312,7 +312,7 @@ fetch_test_results() {
 get_all_stages() { echo "[]"; }
 get_failed_stage() { echo ""; }
 
-cmd_status "\$@"
+cmd_status --prior-jobs 0 "\$@"
 WRAPPER_START
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
@@ -358,7 +358,7 @@ fetch_test_results() {
 get_all_stages() { echo "[]"; }
 get_failed_stage() { echo ""; }
 
-cmd_status "\$@"
+cmd_status --prior-jobs 0 "\$@"
 WRAPPER_START
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
@@ -397,7 +397,7 @@ fetch_test_results() {
 get_all_stages() { echo "[]"; }
 get_failed_stage() { echo ""; }
 
-cmd_status "\$@"
+cmd_status --prior-jobs 0 "\$@"
 WRAPPER_START
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
@@ -443,7 +443,7 @@ fetch_test_results() {
 get_all_stages() { echo "[]"; }
 get_failed_stage() { echo ""; }
 
-cmd_status "\$@"
+cmd_status --prior-jobs 0 "\$@"
 WRAPPER_START
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
@@ -476,7 +476,7 @@ verify_jenkins_connection() {
 }
 
 # Call the status command
-cmd_status "\$@"
+cmd_status --prior-jobs 0 "\$@"
 WRAPPER
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
@@ -575,7 +575,7 @@ get_failed_stage() { echo ""; }
 
 # Set the global JOB_NAME as if it came from global option parsing
 JOB_NAME="custom-job"
-cmd_status "\$@"
+cmd_status --prior-jobs 0 "\$@"
 WRAPPER
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
@@ -624,7 +624,7 @@ get_all_stages() { echo "[]"; }
 get_failed_stage() { echo ""; }
 
 JOB_NAME="custom-job"
-cmd_status "\$@"
+cmd_status --prior-jobs 0 "\$@"
 WRAPPER
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
@@ -754,7 +754,7 @@ fetch_test_results() { echo '{"passCount":120,"failCount":0,"skipCount":0}'; }
 get_all_stages() { echo "[]"; }
 get_failed_stage() { echo ""; }
 
-cmd_status "\$@"
+cmd_status --prior-jobs 0 "\$@"
 WRAPPER
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 }
@@ -792,7 +792,7 @@ fetch_test_results() { echo ""; }
 get_all_stages() { echo "[]"; }
 get_failed_stage() { echo ""; }
 
-cmd_status "\$@"
+cmd_status --prior-jobs 0 "\$@"
 WRAPPER
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 }
@@ -1614,7 +1614,7 @@ fetch_test_results() {
 get_all_stages() { echo "[]"; }
 get_failed_stage() { echo ""; }
 
-cmd_status "\$@"
+cmd_status --prior-jobs 0 "\$@"
 WRAPPER_START
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 }
@@ -1651,7 +1651,7 @@ fetch_test_results() {
 get_all_stages() { echo "[]"; }
 get_failed_stage() { echo ""; }
 
-cmd_status "\$@"
+cmd_status --prior-jobs 0 "\$@"
 WRAPPER_START
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 }
@@ -1831,7 +1831,7 @@ _extract_git_info_from_build() {
     return 99
 }
 
-cmd_status "\$@"
+cmd_status --prior-jobs 0 "\$@"
 WRAPPER_START
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
@@ -1840,4 +1840,117 @@ WRAPPER_START
 
     assert_success
     refute_output --partial "ERROR: _extract_git_info_from_build"
+}
+
+create_status_prior_jobs_wrapper() {
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << 'WRAPPER_START'
+#!/usr/bin/env bash
+set -euo pipefail
+
+_BUILDGIT_TESTING=1
+source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+verify_jenkins_connection() { return 0; }
+verify_job_exists() {
+    JOB_URL="${JENKINS_URL}/job/$1"
+    return 0
+}
+jenkins_api() { echo ""; return 1; }
+get_last_build_number() { echo "201"; }
+get_build_info() {
+    local build_num="$2"
+    echo '{"number":'"${build_num}"',"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/test-repo/'"${build_num}"'/"}'
+}
+get_console_output() {
+    echo "Started by user testuser"
+    echo "Checking out Revision abc1234567890"
+}
+fetch_test_results() {
+    echo '{"passCount":120,"failCount":0,"skipCount":0}'
+}
+get_all_stages() { echo "[]"; }
+get_failed_stage() { echo ""; }
+
+cmd_status "$@"
+WRAPPER_START
+
+    chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+}
+
+@test "snapshot_default_prior_jobs" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR TEST_TEMP_DIR
+    create_status_prior_jobs_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line
+
+    assert_success
+    assert_output --partial "Prior 3 Jobs"
+    assert_output --partial "#198"
+    assert_output --partial "#199"
+    assert_output --partial "#200"
+    assert_output --partial "#201"
+    refute_output --partial "Estimated build time ="
+}
+
+@test "snapshot_prior_jobs_specific_build" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR TEST_TEMP_DIR
+    create_status_prior_jobs_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line --prior-jobs 5 201
+
+    assert_success
+    assert_output --partial "Prior 5 Jobs"
+    assert_output --partial "#196"
+    assert_output --partial "#200"
+    assert_output --partial "#201"
+}
+
+@test "snapshot_json_ignores_prior_jobs" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR TEST_TEMP_DIR
+    create_status_prior_jobs_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --json --prior-jobs 3
+
+    assert_success
+    refute_output --partial "Prior 3 Jobs"
+}
+
+@test "status_prior_jobs_invalid_negative" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR TEST_TEMP_DIR
+    create_status_test_wrapper "SUCCESS" "false"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --prior-jobs -1
+
+    assert_failure
+    assert_output --partial "--prior-jobs value must be a non-negative integer"
+}
+
+@test "status_prior_jobs_invalid_non_integer" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR TEST_TEMP_DIR
+    create_status_test_wrapper "SUCCESS" "false"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --prior-jobs foo
+
+    assert_failure
+    assert_output --partial "--prior-jobs value must be a non-negative integer"
+}
+
+@test "status_prior_jobs_requires_value" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR TEST_TEMP_DIR
+    create_status_test_wrapper "SUCCESS" "false"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --prior-jobs
+
+    assert_failure
+    assert_output --partial "--prior-jobs requires a value"
 }

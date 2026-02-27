@@ -89,13 +89,13 @@ Global Options:
   --version                      Show version number and exit
 
 Commands:
-  status [build#] [-f|--follow] [--once[=N]] [-n <count>] [--json] [--line] [--all] [--no-tests] [--format <fmt>]
+  status [build#] [-f|--follow] [--once[=N]] [-n <count>] [--json] [--line] [--all] [--no-tests] [--format <fmt>] [--prior-jobs <N>]
                       Display Jenkins build status (latest or specific build)
                       build# can be absolute (31) or relative (0=latest, -1=previous, -2=two ago)
                       Default: full output on TTY, one-line on pipe/redirect
-  push [--no-follow] [--line] [--format <fmt>] [git-push-options] [remote] [branch]
+  push [--no-follow] [--line] [--format <fmt>] [--prior-jobs <N>] [git-push-options] [remote] [branch]
                       Push commits and monitor Jenkins build
-  build [--no-follow] [--line] [--format <fmt>]
+  build [--no-follow] [--line] [--format <fmt>] [--prior-jobs <N>]
                       Trigger and monitor Jenkins build
   <any-git-command>   Passed through to git
 
@@ -107,6 +107,9 @@ Snapshot status of completed Jenkins build jobs:
   buildgit status --line           # One-line status with test results
   buildgit status -n 5 --line      # Last 5 builds, oldest first, one line each
   buildgit status -n 10 --no-tests # Last 10 builds, skip test fetch
+  buildgit status --prior-jobs 5   # Latest build + 5 prior one-line builds
+  buildgit status --prior-jobs 5 201  # Build #201 + 5 prior one-line builds
+  buildgit status --prior-jobs 0   # Latest build, suppress prior-jobs display
   buildgit status --all | less     # Full status piped to pager
   buildgit push --no-follow        # Push only, no monitoring
 
@@ -120,8 +123,11 @@ Monitor ongoing Jenkins build jobs:
   buildgit status -f --once --line # Follow one build in one-line mode, then exit
   buildgit status -n 5 -f --line   # Show 5 prior one-line rows, then follow in one-line mode
   buildgit push                    # Push + monitor build
+  buildgit push --prior-jobs 5     # Push + show last 5 builds before monitoring
+  buildgit push --prior-jobs 0     # Push + suppress prior-jobs display
   buildgit push --line             # Push + compact one-line monitoring with progress bar
   buildgit build --line            # Trigger + compact one-line monitoring with progress bar
+  buildgit status -f --prior-jobs 5  # Follow with last 5 builds shown first
   buildgit --job myjob build       # Trigger build for specific job
 
 Format placeholders for --format (use with --line):
@@ -151,6 +157,21 @@ _usage_error() {
     echo "" >&2
     show_usage >&2
     exit 1
+}
+
+# Parse and validate --prior-jobs values.
+# Accepts non-negative integers only.
+# Usage: _parse_prior_jobs_value "<value>" "<option-name>"
+_parse_prior_jobs_value() {
+    local value="$1"
+    local option_name="${2:---prior-jobs}"
+    if [[ -z "$value" ]]; then
+        _usage_error "${option_name} requires a value"
+    fi
+    if ! [[ "$value" =~ ^[0-9]+$ ]]; then
+        _usage_error "${option_name} value must be a non-negative integer"
+    fi
+    echo "$value"
 }
 
 # =============================================================================
@@ -230,6 +251,7 @@ _parse_status_options() {
     STATUS_NO_TESTS=false
     STATUS_BUILD_NUMBER=""
     STATUS_FORMAT_EXPLICIT=false
+    STATUS_PRIOR_JOBS=3
     _LINE_FORMAT_STRING="$_DEFAULT_LINE_FORMAT"
 
     while [[ $# -gt 0 ]]; do
@@ -308,6 +330,15 @@ _parse_status_options() {
                 _LINE_FORMAT_STRING="${1#--format=}"
                 STATUS_LINE_MODE=true
                 STATUS_FORMAT_EXPLICIT=true
+                shift
+                ;;
+            --prior-jobs)
+                shift
+                STATUS_PRIOR_JOBS=$(_parse_prior_jobs_value "${1:-}" "--prior-jobs")
+                shift
+                ;;
+            --prior-jobs=*)
+                STATUS_PRIOR_JOBS=$(_parse_prior_jobs_value "${1#--prior-jobs=}" "--prior-jobs")
                 shift
                 ;;
             -*)
@@ -881,6 +912,7 @@ _status_line_check() {
     local start_build_number="${2:-}"
     local line_count="${3:-1}"
     local no_tests="${4:-false}"
+    local prior_jobs_count="${5:-0}"
     local first_build_number="$start_build_number"
 
     if [[ -z "$first_build_number" ]]; then
@@ -918,6 +950,11 @@ _status_line_check() {
     while [[ "$j" -gt 0 ]]; do
         j=$((j - 1))
         local bn="${build_numbers[$j]}"
+
+        if [[ "$j" -eq 0 && "$prior_jobs_count" -gt 0 ]]; then
+            local max_prior_build=$((bn - 1))
+            _display_prior_jobs_block "$job_name" "$prior_jobs_count" "$no_tests" "$max_prior_build"
+        fi
 
         local build_json
         build_json=$(get_build_info "$job_name" "$bn")
@@ -1001,6 +1038,8 @@ _status_multi_build_check() {
     local start_build_number="${2:-}"
     local line_count="${3:-1}"
     local json_mode="${4:-false}"
+    local prior_jobs_count="${5:-0}"
+    local no_tests="${6:-false}"
     local first_build_number="$start_build_number"
 
     if [[ -z "$first_build_number" ]]; then
@@ -1034,6 +1073,11 @@ _status_multi_build_check() {
         j=$((j - 1))
         local bn="${build_numbers[$j]}"
         local build_exit=1
+
+        if [[ "$json_mode" != "true" && "$j" -eq 0 && "$prior_jobs_count" -gt 0 ]]; then
+            local max_prior_build=$((bn - 1))
+            _display_prior_jobs_block "$job_name" "$prior_jobs_count" "$no_tests" "$max_prior_build"
+        fi
 
         if [[ "$json_mode" == "true" ]]; then
             local json_object
@@ -1503,25 +1547,36 @@ _follow_wait_for_new_build_timeout() {
     done
 }
 
-# Display N most recently completed builds, oldest first
-# Arguments: job_name, count, [line_mode], [no_tests]
-# In-progress builds are skipped and do not count toward N
-_display_n_prior_builds() {
+# Collect N most recently completed build numbers.
+# Arguments: job_name, count, [max_build_number]
+# Sets global array: _PRIOR_COMPLETED_BUILD_NUMS (newest first)
+# In-progress builds are skipped and do not count toward N.
+_collect_n_prior_completed_build_numbers() {
     local job_name="$1"
     local count="$2"
-    local line_mode="${3:-false}"
-    local no_tests="${4:-false}"
+    local max_build_number="${3:-}"
+    _PRIOR_COMPLETED_BUILD_NUMS=()
+
+    if [[ "$count" -le 0 ]]; then
+        return 0
+    fi
 
     local latest_build
     latest_build=$(get_last_build_number "$job_name")
-
     if [[ "$latest_build" == "0" || -z "$latest_build" ]]; then
         return 0
     fi
 
+    local start_build="$latest_build"
+    if [[ -n "$max_build_number" ]]; then
+        start_build="$max_build_number"
+    fi
+    if [[ "$start_build" -lt 1 ]]; then
+        return 0
+    fi
+
     # Walk backwards collecting completed build numbers
-    local build_nums=()
-    local build_num=$latest_build
+    local build_num="$start_build"
     local collected=0
 
     while [[ $collected -lt $count && $build_num -gt 0 ]]; do
@@ -1531,17 +1586,37 @@ _display_n_prior_builds() {
             local is_building
             is_building=$(echo "$binfo" | jq -r '.building // false')
             if [[ "$is_building" != "true" ]]; then
-                build_nums+=("$build_num")
+                _PRIOR_COMPLETED_BUILD_NUMS+=("$build_num")
                 collected=$((collected + 1))
             fi
         fi
         build_num=$((build_num - 1))
     done
+}
+
+# Display N most recently completed builds, oldest first
+# Arguments: job_name, count, [line_mode], [no_tests], [max_build_number], [emit_output]
+# In-progress builds are skipped and do not count toward N.
+# Sets global: _DISPLAY_N_PRIOR_LAST_COUNT
+_display_n_prior_builds() {
+    local job_name="$1"
+    local count="$2"
+    local line_mode="${3:-false}"
+    local no_tests="${4:-false}"
+    local max_build_number="${5:-}"
+    local emit_output="${6:-true}"
+
+    _collect_n_prior_completed_build_numbers "$job_name" "$count" "$max_build_number"
+    _DISPLAY_N_PRIOR_LAST_COUNT="${#_PRIOR_COMPLETED_BUILD_NUMS[@]}"
+
+    if [[ "$emit_output" != "true" ]]; then
+        return 0
+    fi
 
     # Display oldest first (reverse order of collection)
     local i
-    for (( i=${#build_nums[@]}-1; i>=0; i-- )); do
-        local bnum="${build_nums[$i]}"
+    for (( i=${#_PRIOR_COMPLETED_BUILD_NUMS[@]}-1; i>=0; i-- )); do
+        local bnum="${_PRIOR_COMPLETED_BUILD_NUMS[$i]}"
         local bjson
         bjson=$(get_build_info "$job_name" "$bnum")
         if [[ "$line_mode" == "true" ]]; then
@@ -1550,6 +1625,46 @@ _display_n_prior_builds() {
             _display_completed_build "$job_name" "$bnum" "$bjson" || true
         fi
     done
+}
+
+# Display the prior-jobs one-line block (header + rows) when rows exist.
+# Arguments: job_name, prior_jobs_count, [no_tests], [max_build_number]
+_display_prior_jobs_block() {
+    local job_name="$1"
+    local prior_jobs_count="$2"
+    local no_tests="${3:-false}"
+    local max_build_number="${4:-}"
+
+    if [[ "$prior_jobs_count" -le 0 ]]; then
+        return 0
+    fi
+
+    _display_n_prior_builds "$job_name" "$prior_jobs_count" "true" "$no_tests" "$max_build_number" "false"
+    if [[ "${_DISPLAY_N_PRIOR_LAST_COUNT:-0}" -le 0 ]]; then
+        return 0
+    fi
+
+    log_info "Prior ${prior_jobs_count} Jobs"
+    _display_n_prior_builds "$job_name" "$prior_jobs_count" "true" "$no_tests" "$max_build_number" "true"
+}
+
+# Display prior jobs and estimated build time before monitoring starts.
+# Arguments: job_name, prior_jobs_count, [no_tests], [max_build_number]
+_display_monitoring_preamble() {
+    local job_name="$1"
+    local prior_jobs_count="$2"
+    local no_tests="${3:-false}"
+    local max_build_number="${4:-}"
+
+    _display_prior_jobs_block "$job_name" "$prior_jobs_count" "$no_tests" "$max_build_number"
+
+    local estimate_ms
+    estimate_ms=$(_get_last_successful_build_duration "$job_name")
+    if [[ "$estimate_ms" =~ ^[1-9][0-9]*$ ]]; then
+        log_info "Estimated build time = $(format_duration "$estimate_ms")"
+    else
+        log_info "Estimated build time = unknown"
+    fi
 }
 
 # Display completed build with full header (for follow mode)
@@ -1606,6 +1721,7 @@ _cmd_status_follow() {
     local once_timeout="${4:-10}"
     local line_mode="${5:-false}"
     local no_tests="${6:-false}"
+    local prior_jobs_count="${7:-3}"
 
     # Store job name for cleanup handler
     _FOLLOW_JOB_NAME="$job_name"
@@ -1625,6 +1741,8 @@ _cmd_status_follow() {
     # On the first check, if the latest build is already completed, skip it
     # (no stale replay) and wait for the next new build instead.
     local first_check=true
+    local preamble_printed=false
+    local starting_notified=false
 
     while true; do
         # Get current build number and info
@@ -1632,6 +1750,11 @@ _cmd_status_follow() {
         build_number=$(get_last_build_number "$job_name")
 
         if [[ "$build_number" == "0" || -z "$build_number" ]]; then
+            if [[ "$json_mode" != "true" && "$preamble_printed" != "true" ]]; then
+                log_info "Waiting for Jenkins build ${job_name} to start..."
+                _display_monitoring_preamble "$job_name" "$prior_jobs_count" "$no_tests"
+                preamble_printed=true
+            fi
             # No builds exist yet
             if [[ "$first_check" == "true" && "$once_mode" == "true" ]]; then
                 if [[ "$once_timeout" == "0" ]]; then
@@ -1665,8 +1788,22 @@ _cmd_status_follow() {
         local building
         building=$(echo "$build_json" | jq -r '.building // false')
 
+        if [[ "$json_mode" != "true" && "$preamble_printed" != "true" ]]; then
+            local preamble_max_build=""
+            if [[ "$building" == "true" ]]; then
+                preamble_max_build=$((build_number - 1))
+            fi
+            log_info "Waiting for Jenkins build ${job_name} to start..."
+            _display_monitoring_preamble "$job_name" "$prior_jobs_count" "$no_tests" "$preamble_max_build"
+            preamble_printed=true
+        fi
+
         # If build is in progress, display banner and monitor until completion
         if [[ "$building" == "true" ]]; then
+            if [[ "$json_mode" != "true" && "$starting_notified" != "true" ]]; then
+                log_info "Starting"
+                starting_notified=true
+            fi
             first_check=false
             local build_exit_code
             if [[ "$line_mode" == "true" && "$json_mode" != "true" ]]; then
@@ -1797,6 +1934,7 @@ _cmd_status_follow() {
         fi
 
         # Wait for a new build to start
+        starting_notified=false
         local new_build_number
         new_build_number=$(_follow_wait_for_new_build "$job_name" "$build_number")
 
@@ -1902,7 +2040,7 @@ cmd_status() {
         fi
 
         # Enter follow mode loop (never returns normally)
-        _cmd_status_follow "$_VALIDATED_JOB_NAME" "$STATUS_JSON_MODE" "$STATUS_ONCE_MODE" "$STATUS_ONCE_TIMEOUT" "$STATUS_LINE_MODE" "$STATUS_NO_TESTS"
+        _cmd_status_follow "$_VALIDATED_JOB_NAME" "$STATUS_JSON_MODE" "$STATUS_ONCE_MODE" "$STATUS_ONCE_TIMEOUT" "$STATUS_LINE_MODE" "$STATUS_NO_TESTS" "$STATUS_PRIOR_JOBS"
         # Should not reach here
         return 0
     fi
@@ -1943,13 +2081,23 @@ cmd_status() {
     fi
 
     if [[ "$use_line_mode" == "true" ]]; then
-        _status_line_check "$_VALIDATED_JOB_NAME" "$resolved_status_build_number" "$line_count" "$STATUS_NO_TESTS"
+        _status_line_check "$_VALIDATED_JOB_NAME" "$resolved_status_build_number" "$line_count" "$STATUS_NO_TESTS" "$STATUS_PRIOR_JOBS"
         return $?
     fi
 
     if [[ "${STATUS_N_SET:-false}" == "true" ]]; then
-        _status_multi_build_check "$_VALIDATED_JOB_NAME" "$resolved_status_build_number" "$line_count" "false"
+        _status_multi_build_check "$_VALIDATED_JOB_NAME" "$resolved_status_build_number" "$line_count" "false" "$STATUS_PRIOR_JOBS" "$STATUS_NO_TESTS"
         return $?
+    fi
+
+    if [[ "$STATUS_PRIOR_JOBS" -gt 0 ]]; then
+        local target_build_number="$resolved_status_build_number"
+        if [[ -z "$target_build_number" ]]; then
+            target_build_number=$(get_last_build_number "$_VALIDATED_JOB_NAME")
+        fi
+        if [[ "$target_build_number" =~ ^[0-9]+$ && "$target_build_number" -gt 0 ]]; then
+            _display_prior_jobs_block "$_VALIDATED_JOB_NAME" "$STATUS_PRIOR_JOBS" "$STATUS_NO_TESTS" "$((target_build_number - 1))"
+        fi
     fi
 
     _jenkins_status_check "$_VALIDATED_JOB_NAME" "$STATUS_JSON_MODE" "$resolved_status_build_number"
@@ -1965,6 +2113,7 @@ cmd_status() {
 _parse_push_options() {
     PUSH_NO_FOLLOW=false
     PUSH_LINE_MODE=false
+    PUSH_PRIOR_JOBS=3
     PUSH_GIT_ARGS=()
     _LINE_FORMAT_STRING="$_DEFAULT_LINE_FORMAT"
 
@@ -1990,6 +2139,15 @@ _parse_push_options() {
             --format=*)
                 _LINE_FORMAT_STRING="${1#--format=}"
                 PUSH_LINE_MODE=true
+                shift
+                ;;
+            --prior-jobs)
+                shift
+                PUSH_PRIOR_JOBS=$(_parse_prior_jobs_value "${1:-}" "--prior-jobs")
+                shift
+                ;;
+            --prior-jobs=*)
+                PUSH_PRIOR_JOBS=$(_parse_prior_jobs_value "${1#--prior-jobs=}" "--prior-jobs")
                 shift
                 ;;
             *)
@@ -2192,6 +2350,9 @@ cmd_push() {
         return 1
     fi
 
+    _display_monitoring_preamble "$job_name" "$PUSH_PRIOR_JOBS" "false" "$((new_build_number - 1))"
+    log_info "Starting"
+
     # Display unified build header before monitoring
     # Spec: unify-follow-log-spec.md, Section 5 (buildgit push)
     if [[ "$PUSH_LINE_MODE" == "true" ]]; then
@@ -2225,6 +2386,7 @@ cmd_push() {
 _parse_build_options() {
     BUILD_NO_FOLLOW=false
     BUILD_LINE_MODE=false
+    BUILD_PRIOR_JOBS=3
     _LINE_FORMAT_STRING="$_DEFAULT_LINE_FORMAT"
 
     while [[ $# -gt 0 ]]; do
@@ -2253,6 +2415,15 @@ _parse_build_options() {
             --format=*)
                 _LINE_FORMAT_STRING="${1#--format=}"
                 BUILD_LINE_MODE=true
+                shift
+                ;;
+            --prior-jobs)
+                shift
+                BUILD_PRIOR_JOBS=$(_parse_prior_jobs_value "${1:-}" "--prior-jobs")
+                shift
+                ;;
+            --prior-jobs=*)
+                BUILD_PRIOR_JOBS=$(_parse_prior_jobs_value "${1#--prior-jobs=}" "--prior-jobs")
                 shift
                 ;;
             *)
@@ -2323,6 +2494,9 @@ cmd_build() {
         bg_log_essential "Suggestion: Check Jenkins queue at ${JENKINS_URL}/queue/"
         return 1
     fi
+
+    _display_monitoring_preamble "$job_name" "$BUILD_PRIOR_JOBS" "false" "$((build_number - 1))"
+    log_info "Starting"
 
     # Display unified build header before monitoring
     # Spec: unify-follow-log-spec.md, Section 5 (buildgit build)

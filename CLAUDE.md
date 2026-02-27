@@ -25,13 +25,13 @@ Global Options:
   --version                      Show version number and exit
 
 Commands:
-  status [build#] [-f|--follow] [--once[=N]] [-n <count>] [--json] [--line] [--all] [--no-tests] [--format <fmt>]
+  status [build#] [-f|--follow] [--once[=N]] [-n <count>] [--json] [--line] [--all] [--no-tests] [--format <fmt>] [--prior-jobs <N>]
                       Display Jenkins build status (latest or specific build)
                       build# can be absolute (31) or relative (0=latest, -1=previous, -2=two ago)
                       Default: full output on TTY, one-line on pipe/redirect
-  push [--no-follow] [--line] [--format <fmt>] [git-push-options] [remote] [branch]
+  push [--no-follow] [--line] [--format <fmt>] [--prior-jobs <N>] [git-push-options] [remote] [branch]
                       Push commits and monitor Jenkins build
-  build [--no-follow] [--line] [--format <fmt>]
+  build [--no-follow] [--line] [--format <fmt>] [--prior-jobs <N>]
                       Trigger and monitor Jenkins build
   <any-git-command>   Passed through to git
 
@@ -43,6 +43,9 @@ Snapshot status of completed Jenkins build jobs:
   buildgit status --line           # One-line status with test results
   buildgit status -n 5 --line      # Last 5 builds, oldest first, one line each
   buildgit status -n 10 --no-tests # Last 10 builds, skip test fetch
+  buildgit status --prior-jobs 5   # Latest build + 5 prior one-line builds
+  buildgit status --prior-jobs 5 201  # Build #201 + 5 prior one-line builds
+  buildgit status --prior-jobs 0   # Latest build, suppress prior-jobs display
   buildgit status --all | less     # Full status piped to pager
   buildgit push --no-follow        # Push only, no monitoring
 
@@ -56,8 +59,11 @@ Monitor ongoing Jenkins build jobs:
   buildgit status -f --once --line # Follow one build in one-line mode, then exit
   buildgit status -n 5 -f --line   # Show 5 prior one-line rows, then follow in one-line mode
   buildgit push                    # Push + monitor build
+  buildgit push --prior-jobs 5     # Push + show last 5 builds before monitoring
+  buildgit push --prior-jobs 0     # Push + suppress prior-jobs display
   buildgit push --line             # Push + compact one-line monitoring with progress bar
   buildgit build --line            # Trigger + compact one-line monitoring with progress bar
+  buildgit status -f --prior-jobs 5  # Follow with last 5 builds shown first
   buildgit --job myjob build       # Trigger build for specific job
 
 Format placeholders for --format (use with --line):
