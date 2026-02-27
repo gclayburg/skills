@@ -70,6 +70,9 @@ push the staged changes and monitor the build.  fix any errors you find.
 | `scripts/buildgit --job <name> <cmd>` | Override auto-detected job name |
 | `scripts/buildgit --version` | Show version number and exit |
 
+Default one-line format (`status --line`, `push --line`, `build --line`) is:
+`%s #%n id=%c Tests=%t Took %d on %I (%r)`
+
 ## Interpreting Output
 
 **Exit codes:**

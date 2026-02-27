@@ -97,16 +97,17 @@ SUCCESS     #55 5m 38s
 ```
 
 Format placeholders: `%s`=status `%j`=job `%n`=build# `%t`=tests `%d`=duration `%D`=date `%I`=iso8601 `%r`=relative `%c`=commit `%b`=branch `%%`=literal%
+Default line format: `%s #%n id=%c Tests=%t Took %d on %I (%r)`
 
 ## Show status for last N builds (--line)
 
 ```bash
 $ buildgit status --line -n 5
-FAILURE     Job phandlemono-IT #34 Tests=?/?/? Took 3m 41s on 2026-02-14 (6 days ago)
-FAILURE     Job phandlemono-IT #35 Tests=?/?/? Took 3m 27s on 2026-02-14 (6 days ago)
-NOT_BUILT   Job phandlemono-IT #36 Tests=?/?/? Took 3m 52s on 2026-02-16 (4 days ago)
-SUCCESS     Job phandlemono-IT #37 Tests=19/0/0 Took 5m 41s on 2026-02-16 (4 days ago)
-SUCCESS     Job phandlemono-IT #38 Tests=19/0/0 Took 5m 32s on 2026-02-17 (3 days ago)
+FAILURE     #34 id=09a1b2c Tests=?/?/? Took 3m 41s on 2026-02-14T09:41:10-0700 (6 days ago)
+FAILURE     #35 id=1bc2d3e Tests=?/?/? Took 3m 27s on 2026-02-14T09:52:58-0700 (6 days ago)
+NOT_BUILT   #36 id=2cd3e4f Tests=?/?/? Took 3m 52s on 2026-02-16T11:07:44-0700 (4 days ago)
+SUCCESS     #37 id=3de4f5a Tests=19/0/0 Took 5m 41s on 2026-02-16T12:26:03-0700 (4 days ago)
+SUCCESS     #38 id=4ef5a6b Tests=19/0/0 Took 5m 32s on 2026-02-17T08:14:52-0700 (3 days ago)
 ```
 
 ## Show one relative build
@@ -132,11 +133,11 @@ $ buildgit status -n 3 --json
 
 ```bash
 $ buildgit status --line -n 5 -f
-FAILURE     Job phandlemono-IT #34 Tests=?/?/? Took 3m 41s on 2026-02-14 (6 days ago)
-FAILURE     Job phandlemono-IT #35 Tests=?/?/? Took 3m 27s on 2026-02-14 (6 days ago)
-NOT_BUILT   Job phandlemono-IT #36 Tests=?/?/? Took 3m 52s on 2026-02-16 (4 days ago)
-SUCCESS     Job phandlemono-IT #37 Tests=19/0/0 Took 5m 41s on 2026-02-16 (4 days ago)
-SUCCESS     Job phandlemono-IT #38 Tests=19/0/0 Took 5m 32s on 2026-02-17 (3 days ago)
+FAILURE     #34 id=09a1b2c Tests=?/?/? Took 3m 41s on 2026-02-14T09:41:10-0700 (6 days ago)
+FAILURE     #35 id=1bc2d3e Tests=?/?/? Took 3m 27s on 2026-02-14T09:52:58-0700 (6 days ago)
+NOT_BUILT   #36 id=2cd3e4f Tests=?/?/? Took 3m 52s on 2026-02-16T11:07:44-0700 (4 days ago)
+SUCCESS     #37 id=3de4f5a Tests=19/0/0 Took 5m 41s on 2026-02-16T12:26:03-0700 (4 days ago)
+SUCCESS     #38 id=4ef5a6b Tests=19/0/0 Took 5m 32s on 2026-02-17T08:14:52-0700 (3 days ago)
 IN_PROGRESS Job phandlemono-IT #39 [>                   ] 1% 5s / ~5m 32s
 ```
 

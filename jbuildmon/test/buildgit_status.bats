@@ -1146,9 +1146,21 @@ WRAPPER
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line
 
     assert_success
-    assert_output --regexp "^SUCCESS[[:space:]]+Job test-repo #42 Tests=120/0/0 Took 2m 0s on [0-9]{4}-[0-9]{2}-[0-9]{2} \\(.*\\)$"
+    assert_output --regexp "^SUCCESS[[:space:]]+#42 id=[[:alnum:]]{7} Tests=120/0/0 Took 2m 0s on [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[-+][0-9]{4} \\(.*\\)$"
     line_count="$(printf "%s\n" "$output" | wc -l | tr -d ' ')"
     [ "$line_count" -eq 1 ]
+}
+
+@test "status_line_default_format_no_job_name" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_test_wrapper "SUCCESS" "false"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line
+
+    assert_success
+    refute_output --partial "Job"
+    assert_output --regexp "^SUCCESS[[:space:]]+#42 id=[[:alnum:]]{7} Tests="
 }
 
 @test "status_line_in_progress" {
@@ -1159,7 +1171,7 @@ WRAPPER
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line
 
     assert_failure
-    assert_output --regexp "^IN_PROGRESS Job test-repo #42 Tests=\\?/\\?/\\? running for .* \\(started [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}\\)$"
+    assert_output --regexp "^IN_PROGRESS #42 id=[[:alnum:]]{7} Tests=\\?/\\?/\\? running for .* \\(started [0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}\\)$"
     line_count="$(printf "%s\n" "$output" | wc -l | tr -d ' ')"
     [ "$line_count" -eq 1 ]
 }
@@ -1172,7 +1184,7 @@ WRAPPER
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -l
 
     assert_success
-    assert_output --partial "SUCCESS     Job test-repo #42 Tests=120/0/0 Took 2m 0s"
+    assert_output --partial "SUCCESS     #42 id="
 }
 
 @test "status_all_short_flag_forces_full_output" {
@@ -1194,7 +1206,7 @@ WRAPPER
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
     assert_success
-    assert_output --regexp "^SUCCESS[[:space:]]+Job test-repo #42 Tests=120/0/0 Took 2m 0s on [0-9]{4}-[0-9]{2}-[0-9]{2} \\(.*\\)$"
+    assert_output --regexp "^SUCCESS[[:space:]]+#42 id=[[:alnum:]]{7} Tests=120/0/0 Took 2m 0s on [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[-+][0-9]{4} \\(.*\\)$"
 }
 
 @test "status_line_with_specific_build_number" {
@@ -1205,7 +1217,7 @@ WRAPPER
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 31 --line
 
     assert_success
-    assert_output --partial "SUCCESS     Job test-repo #31 Tests=120/0/0 Took 2m 0s"
+    assert_output --partial "SUCCESS     #31 id="
 }
 
 @test "status_line_with_relative_build_number" {
@@ -1216,7 +1228,7 @@ WRAPPER
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -1 --line
 
     assert_success
-    assert_output --partial "SUCCESS     Job test-repo #41 Tests=120/0/0 Took 2m 0s"
+    assert_output --partial "SUCCESS     #41 id="
     line_count="$(printf "%s\n" "$output" | wc -l | tr -d ' ')"
     [ "$line_count" -eq 1 ]
 }
@@ -1265,8 +1277,8 @@ WRAPPER
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -n 2 --line
 
     assert_success
-    assert_output --partial "SUCCESS     Job test-repo #42"
-    assert_output --partial "FAILURE     Job test-repo #41"
+    assert_output --partial "SUCCESS     #42 id="
+    assert_output --partial "FAILURE     #41 id="
     line_count="$(printf "%s\n" "$output" | wc -l | tr -d ' ')"
     [ "$line_count" -eq 2 ]
 }
@@ -1279,9 +1291,9 @@ WRAPPER
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -n 10 --line
 
     assert_success
-    assert_output --partial "SUCCESS     Job test-repo #42"
-    assert_output --partial "FAILURE     Job test-repo #41"
-    assert_output --partial "SUCCESS     Job test-repo #40"
+    assert_output --partial "SUCCESS     #42 id="
+    assert_output --partial "FAILURE     #41 id="
+    assert_output --partial "SUCCESS     #40 id="
     line_count="$(printf "%s\n" "$output" | wc -l | tr -d ' ')"
     [ "$line_count" -eq 3 ]
 }
@@ -1359,9 +1371,9 @@ WRAPPER
     line1="$(printf "%s\n" "$output" | sed -n '1p')"
     line2="$(printf "%s\n" "$output" | sed -n '2p')"
     line3="$(printf "%s\n" "$output" | sed -n '3p')"
-    [ "${line1#*Job test-repo #40}" != "$line1" ]
-    [ "${line2#*Job test-repo #41}" != "$line2" ]
-    [ "${line3#*Job test-repo #42}" != "$line3" ]
+    [ "${line1#*#40 id=}" != "$line1" ]
+    [ "${line2#*#41 id=}" != "$line2" ]
+    [ "${line3#*#42 id=}" != "$line3" ]
 }
 
 @test "status_n_without_line_mode_uses_full_mode" {
@@ -1426,9 +1438,9 @@ WRAPPER
 
     # Last line is newest (#42, SUCCESS), so overall exit should be success
     assert_success
-    assert_output --partial "FAILURE     Job test-repo #41"
+    assert_output --partial "FAILURE     #41 id="
     last_line="$(printf "%s\n" "$output" | tail -n 1)"
-    [ "${last_line#SUCCESS     Job test-repo #42}" != "$last_line" ]
+    [ "${last_line#SUCCESS     #42 id=}" != "$last_line" ]
 }
 
 @test "status_line_result_padded" {
@@ -1439,7 +1451,7 @@ WRAPPER
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line
 
     assert_success
-    status_field="$(printf "%s\n" "$output" | awk -F' Job ' '{print $1}')"
+    status_field="$(printf "%s\n" "$output" | awk -F' #' '{print $1}')"
     [ "$status_field" = "SUCCESS    " ]
     [ "${#status_field}" -eq 11 ]
 }
@@ -1454,8 +1466,8 @@ WRAPPER
     assert_failure
     line1="$(printf "%s\n" "$output" | sed -n '1p')"
     line2="$(printf "%s\n" "$output" | sed -n '2p')"
-    prefix1="${line1%%Job*}"
-    prefix2="${line2%%Job*}"
+    prefix1="${line1%% #*}"
+    prefix2="${line2%% #*}"
     col1=$(( ${#prefix1} + 1 ))
     col2=$(( ${#prefix2} + 1 ))
     [ "$col1" -eq "$col2" ]
@@ -1482,7 +1494,7 @@ WRAPPER
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line
 
     assert_success
-    if ! printf "%s" "$output" | grep -Fq $'\033[32mSUCCESS    \033[0m Job test-repo #42'; then
+    if ! printf "%s" "$output" | grep -Eq $'\033\\[32mSUCCESS    \033\\[0m #42 id=[[:alnum:]]{7}'; then
         fail "Expected SUCCESS status field to be colored and padded"
     fi
     if ! printf "%s" "$output" | grep -Fq $' \033[32mTests=120/0/0\033[0m Took '; then
@@ -1498,7 +1510,7 @@ WRAPPER
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line
 
     assert_success
-    assert_output --partial "SUCCESS     Job test-repo #42 Tests=?/?/? Took 2m 0s"
+    assert_output --regexp "^SUCCESS[[:space:]]+#42 id=[[:alnum:]]{7} Tests=\\?/\\?/\\? Took 2m 0s"
 }
 
 @test "status_line_took_wording" {
@@ -1548,7 +1560,7 @@ WRAPPER
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line --no-tests
 
     assert_success
-    assert_output --partial "SUCCESS     Job test-repo #42 Tests=?/?/? Took 2m 0s"
+    assert_output --regexp "^SUCCESS[[:space:]]+#42 id=[[:alnum:]]{7} Tests=\\?/\\?/\\? Took 2m 0s"
 }
 
 @test "status_line_no_tests_with_count" {
@@ -1652,7 +1664,7 @@ WRAPPER_START
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line
 
     assert_success
-    assert_output --regexp "^SUCCESS[[:space:]]+Job test-repo #42 Tests=120/0/0 Took 2m 0s on [0-9]{4}-[0-9]{2}-[0-9]{2} \(.*\)$"
+    assert_output --regexp "^SUCCESS[[:space:]]+#42 id=[[:alnum:]]{7} Tests=120/0/0 Took 2m 0s on [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[-+][0-9]{4} \\(.*\\)$"
 }
 
 @test "status_format_custom_string" {

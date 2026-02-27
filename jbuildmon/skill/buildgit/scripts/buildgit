@@ -22,7 +22,6 @@
 #
 
 set -euo pipefail
-
 BUILDGIT_VERSION="1.1.0-dev"
 
 # =============================================================================
@@ -43,7 +42,7 @@ COMMAND=""
 COMMAND_ARGS=()
 
 # Default format string for --line output (see spec: 2026-02-23_status-line-template-spec.md)
-_DEFAULT_LINE_FORMAT="%s Job %j #%n Tests=%t Took %d on %D (%r)"
+_DEFAULT_LINE_FORMAT="%s #%n id=%c Tests=%t Took %d on %I (%r)"
 
 # Active line format string (set by option parsers; defaults to _DEFAULT_LINE_FORMAT)
 _LINE_FORMAT_STRING="${_DEFAULT_LINE_FORMAT}"
@@ -128,7 +127,7 @@ Monitor ongoing Jenkins build jobs:
 Format placeholders for --format (use with --line):
   %s=status  %j=job  %n=build#  %t=tests  %d=duration
   %D=date  %I=iso8601  %r=relative  %c=commit  %b=branch  %%=literal%
-  Default: "%s Job %j #%n Tests=%t Took %d on %D (%r)"
+  Default: "%s #%n id=%c Tests=%t Took %d on %I (%r)"
 
 Passthrough:
   buildgit log --oneline -5        # Passed through to git
@@ -573,6 +572,7 @@ _status_line_for_build_json() {
     fi
 
     local result building timestamp_ms duration_ms
+    local commit_val="unknown" branch_val="unknown"
     result=$(echo "$build_json" | jq -r '.result // empty')
     building=$(echo "$build_json" | jq -r '.building // false')
     timestamp_ms=$(echo "$build_json" | jq -r '.timestamp // 0')
@@ -593,21 +593,22 @@ _status_line_for_build_json() {
         status_raw="IN_PROGRESS"
         status_display=$(_format_status_line_field "$status_raw")
 
+        if [[ "$fmt" == "$_DEFAULT_LINE_FORMAT" || "$fmt" == *"%c"* || "$fmt" == *"%b"* ]]; then
+            _extract_git_info_from_build "$build_json"
+            commit_val="$_LINE_COMMIT_SHA"
+            branch_val="$_LINE_BRANCH_NAME"
+        fi
+
         if [[ "$fmt" == "$_DEFAULT_LINE_FORMAT" ]]; then
             # Default format: preserve existing "running for ... (started ...)" wording
             start_display=$(_format_local_datetime_minute "$timestamp_ms")
-            echo "${status_display} Job ${job_name} #${build_number} Tests=?/?/? running for ${elapsed_display} (started ${start_display})"
+            echo "${status_display} #${build_number} id=${commit_val} Tests=?/?/? running for ${elapsed_display} (started ${start_display})"
         else
             # Custom format: apply format string; %D/%I/%r are start-time values
-            local date_val iso_val rel_val commit_val="unknown" branch_val="unknown"
+            local date_val iso_val rel_val
             date_val=$(_format_local_date "$timestamp_ms")
             iso_val=$(_format_local_datetime_iso8601 "$timestamp_ms")
             rel_val=$(_format_relative_time "$((timestamp_ms / 1000))")
-            if [[ "$fmt" == *"%c"* || "$fmt" == *"%b"* ]]; then
-                _extract_git_info_from_build "$build_json"
-                commit_val="$_LINE_COMMIT_SHA"
-                branch_val="$_LINE_BRANCH_NAME"
-            fi
             _apply_line_format "$fmt" "$status_display" "$job_name" "$build_number" "?/?/?" \
                 "$elapsed_display" "$date_val" "$iso_val" "$rel_val" "$commit_val" "$branch_val"
         fi
@@ -631,7 +632,7 @@ _status_line_for_build_json() {
         fi
     fi
 
-    local completion_ms completion_seconds duration_display date_display relative_display
+    local completion_ms completion_seconds duration_display date_display iso_display relative_display
     completion_ms="$timestamp_ms"
     if [[ "$timestamp_ms" =~ ^[0-9]+$ && "$duration_ms" =~ ^[0-9]+$ ]]; then
         completion_ms=$((timestamp_ms + duration_ms))
@@ -639,10 +640,17 @@ _status_line_for_build_json() {
     completion_seconds=$((completion_ms / 1000))
     duration_display=$(format_duration "$duration_ms")
     date_display=$(_format_local_date "$completion_ms")
+    iso_display=$(_format_local_datetime_iso8601 "$completion_ms")
     relative_display=$(_format_relative_time "$completion_seconds")
 
     status_raw="$result"
     status_display=$(_format_status_line_field "$status_raw")
+
+    if [[ "$fmt" == "$_DEFAULT_LINE_FORMAT" || "$fmt" == *"%c"* || "$fmt" == *"%b"* ]]; then
+        _extract_git_info_from_build "$build_json"
+        commit_val="$_LINE_COMMIT_SHA"
+        branch_val="$_LINE_BRANCH_NAME"
+    fi
 
     if [[ "$fmt" == "$_DEFAULT_LINE_FORMAT" ]]; then
         # Default format: preserve existing colorized Tests=label/value output
@@ -656,7 +664,7 @@ _status_line_for_build_json() {
                 tests_field="${tests_color}${tests_field}${COLOR_RESET}"
             fi
         fi
-        echo "${status_display} Job ${job_name} #${build_number} ${tests_field} Took ${duration_display} on ${date_display} (${relative_display})"
+        echo "${status_display} #${build_number} id=${commit_val} ${tests_field} Took ${duration_display} on ${iso_display} (${relative_display})"
     else
         # Custom format: %t outputs colorized value only (label is part of format string)
         local tests_colorized="$tests_display"
@@ -668,13 +676,6 @@ _status_line_for_build_json() {
             if [[ -n "$tests_color" ]]; then
                 tests_colorized="${tests_color}${tests_display}${COLOR_RESET}"
             fi
-        fi
-        local iso_display commit_val="unknown" branch_val="unknown"
-        iso_display=$(_format_local_datetime_iso8601 "$completion_ms")
-        if [[ "$fmt" == *"%c"* || "$fmt" == *"%b"* ]]; then
-            _extract_git_info_from_build "$build_json"
-            commit_val="$_LINE_COMMIT_SHA"
-            branch_val="$_LINE_BRANCH_NAME"
         fi
         _apply_line_format "$fmt" "$status_display" "$job_name" "$build_number" "$tests_colorized" \
             "$duration_display" "$date_display" "$iso_display" "$relative_display" "$commit_val" "$branch_val"

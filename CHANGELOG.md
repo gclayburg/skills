@@ -5,7 +5,10 @@ All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are do
 ## [Unreleased] - 1.1.0-dev
 
 ### Features
-- **`--format <fmt>` option for `status`, `push --line`, and `build --line`** — Added a `--format` option to customize the one-line output format. Format strings use `%`-style placeholders: `%s` (status), `%j` (job), `%n` (build number), `%t` (tests), `%d` (duration), `%D` (date), `%I` (ISO 8601 datetime), `%r` (relative time), `%c` (git commit SHA, 7 chars), `%b` (git branch), `%%` (literal `%`). Unknown placeholders are passed through unchanged. The default format reproduces the existing `--line` output exactly: `%s Job %j #%n Tests=%t Took %d on %D (%r)`. Specifying `--format` implies `--line`. Conflicts with `--json` and `--all` are reported as errors.
+- **`--format <fmt>` option for `status`, `push --line`, and `build --line`** - Added a `--format` option to customize the one-line output format. Format strings use `%`-style placeholders: `%s` (status), `%j` (job), `%n` (build number), `%t` (tests), `%d` (duration), `%D` (date), `%I` (ISO 8601 datetime), `%r` (relative time), `%c` (git commit SHA, 7 chars), `%b` (git branch), `%%` (literal `%`). Unknown placeholders are passed through unchanged. Specifying `--format` implies `--line`. Conflicts with `--json` and `--all` are reported as errors
+
+### Changed
+- **`status --line` default format** - Changed the default one-line format to `%s #%n id=%c Tests=%t Took %d on %I (%r)` to drop redundant job name output and include commit id with ISO 8601 timestamp
 
 ## [1.0.0] - 2026-02-21
 

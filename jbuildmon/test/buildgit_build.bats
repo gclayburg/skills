@@ -309,7 +309,7 @@ WRAPPER
     assert_success
     refute_output --partial "IN_PROGRESS Job test-repo #43 ["
     assert_output --partial "SUCCESS"
-    assert_output --partial "Job test-repo #43"
+    assert_output --regexp "#43 id=[[:alnum:]]{7}"
 }
 
 @test "build_line_no_follow_matches_no_follow_behavior" {

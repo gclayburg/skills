@@ -1010,7 +1010,7 @@ WRAPPER
 
     assert_success
     assert_output --partial "SUCCESS"
-    assert_output --partial "Job test-repo #42"
+    assert_output --regexp "#42 id=[[:alnum:]]{7}"
     assert_output --partial "Tests=?/?/? Took"
 }
 
@@ -1024,7 +1024,7 @@ WRAPPER
 
     assert_failure
     assert_output --partial "FAILURE"
-    assert_output --partial "Job test-repo #42"
+    assert_output --regexp "#42 id=[[:alnum:]]{7}"
 }
 
 @test "status_follow_line_non_tty" {
@@ -1036,7 +1036,7 @@ WRAPPER
     run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line --once 2>&1"
 
     assert_success
-    refute_output --partial "IN_PROGRESS Job test-repo #42 ["
+    refute_output --partial "IN_PROGRESS #42 id="
     assert_output --partial "SUCCESS"
 }
 
@@ -1120,9 +1120,9 @@ WRAPPER_END
     run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" -n 3 --line --once=0 2>&1"
 
     assert_failure
-    assert_output --partial "Job test-repo #40"
-    assert_output --partial "Job test-repo #41"
-    assert_output --partial "Job test-repo #42"
+    assert_output --regexp "#40 id=[[:alnum:]]{7}"
+    assert_output --regexp "#41 id=[[:alnum:]]{7}"
+    assert_output --regexp "#42 id=[[:alnum:]]{7}"
     refute_output --partial "BUILD FAILED"
 }
 
