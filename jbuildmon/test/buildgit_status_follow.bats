@@ -192,6 +192,24 @@ jenkins_api() {
         fi
         return 0
     fi
+    if [[ "${1:-}" == *"/job/ralph1/api/json?tree=builds[number,building,timestamp,result]{0,10}" ]]; then
+        if [[ "${MOCK_RUNNING_BUILDS:-single}" == "two" ]]; then
+            echo '{"builds":[{"number":42,"building":true,"timestamp":1706700000000},{"number":43,"building":true,"timestamp":1706700010000}]}'
+        elif [[ "${MOCK_RUNNING_BUILDS:-single}" == "mixed-order" ]]; then
+            echo '{"builds":[{"number":44,"building":true,"timestamp":1706700020000},{"number":42,"building":true,"timestamp":1706700000000},{"number":43,"building":true,"timestamp":1706700010000}]}'
+        else
+            echo '{"builds":[{"number":42,"building":true,"timestamp":1706700000000}]}'
+        fi
+        return 0
+    fi
+    if [[ "${1:-}" == "/queue/api/json" ]]; then
+        if [[ "${MOCK_QUEUE_STATE:-none}" == "queued" ]]; then
+            echo '{"items":[{"id":910,"task":{"name":"ralph1"},"blocked":true,"buildable":false,"why":"Build #218 is already in progress  ETA: 1m 34s","inQueueSince":1706700000000}]}'
+        else
+            echo '{"items":[]}'
+        fi
+        return 0
+    fi
     echo ""
     return 1
 }
@@ -208,6 +226,22 @@ case "${1:-}" in
     over)
         FAKE_NOW_SECONDS=1706700180
         _display_follow_line_progress "ralph1" "42" '{"timestamp":1706700000000}' "120000" "0"
+        ;;
+    two_builds)
+        FAKE_NOW_SECONDS=1706700035
+        MOCK_RUNNING_BUILDS=two
+        _display_follow_line_progress "ralph1" "42" '{"timestamp":1706700000000,"building":true}' "100000" "0"
+        ;;
+    queued)
+        FAKE_NOW_SECONDS=1706700035
+        MOCK_RUNNING_BUILDS=two
+        MOCK_QUEUE_STATE=queued
+        _display_follow_line_progress "ralph1" "42" '{"timestamp":1706700000000,"building":true}' "100000" "3" "true"
+        ;;
+    mixed_order)
+        FAKE_NOW_SECONDS=1706700035
+        MOCK_RUNNING_BUILDS=mixed-order
+        _display_follow_line_progress "ralph1" "43" '{"timestamp":1706700010000,"building":true}' "100000" "0"
         ;;
     estimate)
         _get_last_successful_build_duration "ralph1"
@@ -1195,6 +1229,47 @@ WRAPPER_END
 
     assert_success
     assert_output --partial "[====================] 150% 3m 0s / ~2m 0s"
+}
+
+@test "status_follow_line_multi_build_two_bars" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" two_builds
+
+    assert_success
+    assert_output --partial "IN_PROGRESS Job ralph1 #42 ["
+    assert_output --partial "IN_PROGRESS Job ralph1 #43 ["
+}
+
+@test "status_follow_line_primary_build_stays_first" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" mixed_order
+
+    assert_success
+    local before_primary before_secondary
+    before_primary="${output%%IN_PROGRESS Job ralph1 #43*}"
+    before_secondary="${output%%IN_PROGRESS Job ralph1 #42*}"
+    [[ ${#before_primary} -lt ${#before_secondary} ]]
+}
+
+@test "status_follow_line_queue_bar_includes_elapsed_and_estimate" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" queued
+
+    assert_success
+    assert_output --partial "QUEUED      Job ralph1 #44 ["
+    assert_output --partial "35s in queue / ~1m 40s"
 }
 
 @test "status_follow_line_once_timeout" {

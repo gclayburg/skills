@@ -115,9 +115,13 @@ jenkins_api() {
         echo '{"duration":120000}'
         return 0
     fi
-    # Mock queue API - return empty queue
+    # Mock queue API - return queued secondary build when requested.
     if [[ "$1" == "/queue/api/json" ]]; then
-        echo '{"items":[]}'
+        if [[ "${MOCK_QUEUE_STATE:-none}" == "queued" ]]; then
+            echo '{"items":[{"id":910,"task":{"name":"test-repo"},"blocked":true,"buildable":false,"why":"Build #43 is already in progress  ETA: 1m 34s","inQueueSince":1706700000000}]}'
+        else
+            echo '{"items":[]}'
+        fi
         return 0
     fi
     echo ""
@@ -254,6 +258,58 @@ WRAPPER
     [[ "$remote_log" == *"New commit"* ]]
 }
 
+@test "queue_push_no_timeout" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/queue_wait_wrapper.sh" << 'WRAPPER'
+#!/usr/bin/env bash
+set -euo pipefail
+_BUILDGIT_TESTING=1
+source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+POLL_INTERVAL=1
+BUILD_START_TIMEOUT=2
+echo "0" > "${TEST_TEMP_DIR}/build_num_calls"
+
+get_last_build_number() {
+    local count
+    count=$(cat "${TEST_TEMP_DIR}/build_num_calls")
+    count=$((count + 1))
+    echo "$count" > "${TEST_TEMP_DIR}/build_num_calls"
+    if [[ $count -gt 5 ]]; then
+        echo "43"
+    else
+        echo "42"
+    fi
+}
+
+jenkins_api() {
+    if [[ "$1" == "/queue/api/json" ]]; then
+        echo '{"items":[{"id":777,"task":{"name":"test-repo"},"blocked":true,"buildable":false,"why":"Build #42 is already in progress  ETA: 1m 34s","inQueueSince":1706700000000}]}'
+        return 0
+    fi
+    echo ""
+    return 1
+}
+
+_wait_for_build_start "test-repo" "42" ""
+echo "BN=${_WAIT_FOR_BUILD_RESULT}"
+WRAPPER
+    chmod +x "${TEST_TEMP_DIR}/queue_wait_wrapper.sh"
+
+    run bash "${TEST_TEMP_DIR}/queue_wait_wrapper.sh" 2>&1
+
+    assert_success
+    assert_output --partial "Build #43 is QUEUED"
+    assert_output --partial "ETA: 1m 34s"
+    assert_output --partial "BN=43"
+}
+
 # -----------------------------------------------------------------------------
 # Test Case: Push monitors Jenkins build after push
 # Spec: "If push succeeds, monitor Jenkins build until completion"
@@ -372,6 +428,23 @@ WRAPPER
     assert_output --partial "SUCCESS"
     refute_output --partial "BUILD IN PROGRESS"
     refute_output --partial "Finished:"
+}
+
+@test "push_line_shows_queued_secondary_build" {
+    cd "${TEST_REPO}"
+
+    echo "Line mode queued secondary test" >> README.md
+    git add README.md
+    git commit --quiet -m "Line mode queued secondary test"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_push_test_wrapper "SUCCESS" "2"
+
+    run bash -c "MOCK_QUEUE_STATE=queued BUILDGIT_FORCE_TTY=1 bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line 2>&1"
+
+    assert_success
+    assert_output --partial "QUEUED      Job test-repo #44 ["
 }
 
 @test "push_line_non_tty_silent_until_summary" {

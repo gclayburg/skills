@@ -52,3 +52,6 @@ These files represent completed specifications in the specs/ directory.  This li
 - 2026-02-27_estimated-build-time-and-old-jobs-spec.md  add monitoring preamble with prior completed builds (`--prior-jobs`, default 3) and estimated build time for `push`, `build`, and `status -f`
 - 2026-02-27_add-prior-jobs-to-snapshot-status-spec.md  add prior-jobs block to snapshot `status` output (including `status <build#>` and `status -n`) with strict prior-to-target selection
 - 2026-02-27_status-display-timing-issue-spec.md  fix monitoring header consistency so push/build/status -f align on Commit/Agent placement and always print Console last
+- 2026-02-27_multiple-builds-at-once-spec.md  eliminate follow progress redraw flash, show concurrent running build rows, and surface queued builds/queue wait behavior in status/build/push monitoring
+- 2026-02-27_enhance-multiple-builds-at-once-spec.md  reduce queue wait log noise with transition-based sticky/throttled updates, extend queued secondary rows to push/build monitoring, and tighten redraw sequencing to reduce flash
+- 2026-02-27_bug-progressbar-missing-on-queued-build-spec.md  fix queue wait progress bar never showing on TTY for build/push due to command substitution breaking TTY detection

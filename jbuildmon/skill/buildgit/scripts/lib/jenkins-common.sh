@@ -577,8 +577,14 @@ trigger_build() {
 wait_for_queue_item() {
     local queue_url="$1"
     local timeout="${2:-120}"
+    local expected_build_number="${3:-}"
     local elapsed=0
     local poll_interval=2
+    local queue_confirmed=false
+    local queue_line_active=false
+    WAIT_FOR_QUEUE_ITEM_WHY=""
+    WAIT_FOR_QUEUE_ITEM_IN_QUEUE_SINCE=""
+    WAIT_FOR_QUEUE_ITEM_ID=""
 
     # Extract queue item ID from URL and construct API endpoint
     local queue_api_url
@@ -589,25 +595,26 @@ wait_for_queue_item() {
         queue_api_url="${queue_url%/}/api/json"
     fi
 
-    while [[ $elapsed -lt $timeout ]]; do
+    while true; do
         local response
         response=$(curl -s -f -u "${JENKINS_USER_ID}:${JENKINS_API_TOKEN}" "$queue_api_url" 2>/dev/null) || true
 
         if [[ -n "$response" ]]; then
+            queue_confirmed=true
+            WAIT_FOR_QUEUE_ITEM_WHY=$(echo "$response" | jq -r '.why // empty' 2>/dev/null)
+            WAIT_FOR_QUEUE_ITEM_IN_QUEUE_SINCE=$(echo "$response" | jq -r '.inQueueSince // empty' 2>/dev/null)
+            WAIT_FOR_QUEUE_ITEM_ID=$(echo "$response" | jq -r '.id // empty' 2>/dev/null)
+
             # Check if build has started (has executable.number)
             local build_number
             build_number=$(echo "$response" | jq -r '.executable.number // empty' 2>/dev/null)
 
             if [[ -n "$build_number" && "$build_number" != "null" ]]; then
+                if [[ "$queue_line_active" == "true" ]]; then
+                    printf '\r\033[K\n' >&2
+                fi
                 echo "$build_number"
                 return 0
-            fi
-
-            # Check if still waiting (show why if verbose)
-            local why
-            why=$(echo "$response" | jq -r '.why // empty' 2>/dev/null)
-            if [[ -n "$why" && "$why" != "null" ]]; then
-                bg_log_info "Waiting in queue: $why" >&2
             fi
 
             # Check if cancelled
@@ -617,14 +624,37 @@ wait_for_queue_item() {
                 log_error "Build was cancelled while in queue"
                 return 1
             fi
+
+            if [[ -n "$WAIT_FOR_QUEUE_ITEM_WHY" ]]; then
+                local msg
+                if [[ -n "$expected_build_number" && "$expected_build_number" =~ ^[0-9]+$ ]]; then
+                    msg="Build #${expected_build_number} is QUEUED — ${WAIT_FOR_QUEUE_ITEM_WHY}"
+                else
+                    msg="Build is QUEUED — ${WAIT_FOR_QUEUE_ITEM_WHY}"
+                fi
+                local queue_is_tty=false
+                if [[ "${BUILDGIT_FORCE_TTY:-}" == "1" ]]; then
+                    queue_is_tty=true
+                elif [[ "${BUILDGIT_FORCE_TTY:-}" != "0" && -t 1 ]]; then
+                    queue_is_tty=true
+                fi
+                if [[ "$queue_is_tty" == "true" ]]; then
+                    printf '\r\033[K[%s] ℹ %s' "$(date +%H:%M:%S)" "$msg" >&2
+                    queue_line_active=true
+                else
+                    log_info "$msg" >&2
+                fi
+            fi
+        fi
+
+        if [[ "$queue_confirmed" != "true" && "$elapsed" -ge "$timeout" ]]; then
+            log_error "Timeout: Build did not start within ${timeout} seconds"
+            return 1
         fi
 
         sleep "$poll_interval"
         elapsed=$((elapsed + poll_interval))
     done
-
-    log_error "Timeout: Build did not start within ${timeout} seconds"
-    return 1
 }
 
 # =============================================================================

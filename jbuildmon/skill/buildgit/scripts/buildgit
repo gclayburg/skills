@@ -52,6 +52,7 @@ POLL_INTERVAL="${POLL_INTERVAL:-5}"
 MAX_BUILD_TIME="${MAX_BUILD_TIME:-1800}"
 MONITOR_SETTLE_MAX_SECONDS="${MONITOR_SETTLE_MAX_SECONDS:-45}"
 MONITOR_SETTLE_STABLE_POLLS="${MONITOR_SETTLE_STABLE_POLLS:-3}"
+_PROGRESS_BAR_LINE_COUNT=0
 
 # =============================================================================
 # Interrupt Handler for Follow Mode
@@ -792,15 +793,64 @@ _render_follow_line_progress_bar_unknown() {
     echo "[${prefix}<===>${suffix}]"
 }
 
-_display_follow_line_progress() {
+_get_running_builds_for_progress() {
+    local job_name="$1"
+    local primary_build_number="$2"
+    local primary_build_json="$3"
+
+    local response running_builds primary_running primary_timestamp
+    response=$(jenkins_api "/job/${job_name}/api/json?tree=builds[number,building,timestamp,result]{0,10}" 2>/dev/null) || true
+    if [[ -n "$response" ]]; then
+        running_builds=$(echo "$response" | jq -c '[.builds[]? | select(.building == true) | {number: (.number // 0), timestamp: (.timestamp // 0)}]' 2>/dev/null) || running_builds="[]"
+    else
+        running_builds="[]"
+    fi
+
+    primary_running=$(echo "$primary_build_json" | jq -r '.building // false' 2>/dev/null) || primary_running=false
+    primary_timestamp=$(echo "$primary_build_json" | jq -r '.timestamp // 0' 2>/dev/null) || primary_timestamp=0
+    if [[ "$primary_running" == "true" ]]; then
+        running_builds=$(echo "$running_builds" | jq -c \
+            --argjson pnum "$primary_build_number" \
+            --argjson pts "$primary_timestamp" \
+            'if any(.[]; .number == $pnum) then . else . + [{number: $pnum, timestamp: $pts}] end' 2>/dev/null) || running_builds="[]"
+    fi
+
+    echo "$running_builds" | jq -c --argjson pnum "$primary_build_number" \
+        '(map(select(.number == $pnum)) | sort_by(.number)) + (map(select(.number != $pnum)) | sort_by(.number))' 2>/dev/null || echo "[]"
+}
+
+_get_queued_builds_for_progress() {
+    local job_name="$1"
+    local max_running_build="$2"
+
+    local queue_response queued
+    queue_response=$(jenkins_api "/queue/api/json" 2>/dev/null) || true
+    if [[ -z "$queue_response" ]]; then
+        echo "[]"
+        return 0
+    fi
+
+    queued=$(echo "$queue_response" | jq -c --arg job "$job_name" --argjson base "$max_running_build" '
+        [.items[]?
+         | select((.task.name // "") == $job)
+         | select((.cancelled // false) != true)
+         | select((.executable.number? // null) == null)
+         | {id: (.id // 0), why: (.why // ""), inQueueSince: (.inQueueSince // 0)}
+        ]
+        | sort_by(.inQueueSince)
+        | to_entries
+        | map(.value + {number: ($base + .key + 1)})
+    ' 2>/dev/null) || queued="[]"
+    echo "$queued"
+}
+
+_render_follow_line_in_progress() {
     local job_name="$1"
     local build_number="$2"
-    local build_json="$3"
+    local timestamp_ms="$3"
     local estimate_ms="$4"
     local frame="${5:-0}"
 
-    local timestamp_ms
-    timestamp_ms=$(echo "$build_json" | jq -r '.timestamp // 0')
     local now_ms elapsed_ms
     now_ms=$(($(date +%s) * 1000))
     elapsed_ms=0
@@ -827,17 +877,169 @@ _display_follow_line_progress() {
         fi
         bar=$(_render_follow_line_progress_bar_determinate "$pct_clamped")
         estimate_display=$(format_duration "$estimate_ms")
-        line="IN_PROGRESS Job ${job_name} #${build_number} ${bar} ${pct_raw}% ${elapsed_display} / ~${estimate_display}"
+        local status_label
+        status_label=$(printf '%-12s' "IN_PROGRESS")
+        line="${status_label}Job ${job_name} #${build_number} ${bar} ${pct_raw}% ${elapsed_display} / ~${estimate_display}"
     else
+        local status_label
+        status_label=$(printf '%-12s' "IN_PROGRESS")
         bar=$(_render_follow_line_progress_bar_unknown "$frame")
-        line="IN_PROGRESS Job ${job_name} #${build_number} ${bar} ${elapsed_display} / ~unknown"
+        line="${status_label}Job ${job_name} #${build_number} ${bar} ${elapsed_display} / ~unknown"
     fi
 
-    printf '\r\033[K%s' "$line"
+    echo "$line"
+}
+
+_render_follow_line_queued() {
+    local job_name="$1"
+    local build_number="$2"
+    local in_queue_since_ms="$3"
+    local estimate_ms="$4"
+    local frame="${5:-0}"
+
+    local now_ms queue_elapsed_ms
+    now_ms=$(($(date +%s) * 1000))
+    queue_elapsed_ms=0
+    if [[ "$in_queue_since_ms" =~ ^[0-9]+$ && "$in_queue_since_ms" -gt 0 ]]; then
+        queue_elapsed_ms=$((now_ms - in_queue_since_ms))
+        if [[ "$queue_elapsed_ms" -lt 0 ]]; then
+            queue_elapsed_ms=0
+        fi
+    fi
+
+    local queue_elapsed_display
+    queue_elapsed_display=$(format_duration "$queue_elapsed_ms")
+
+    local bar estimate_display status_label
+    bar=$(_render_follow_line_progress_bar_unknown "$frame")
+    status_label=$(printf '%-12s' "QUEUED")
+    if [[ "$estimate_ms" =~ ^[1-9][0-9]*$ ]]; then
+        estimate_display=$(format_duration "$estimate_ms")
+        echo "${status_label}Job ${job_name} #${build_number} ${bar} ${queue_elapsed_display} in queue / ~${estimate_display}"
+    else
+        echo "${status_label}Job ${job_name} #${build_number} ${bar} ${queue_elapsed_display} in queue / ~unknown"
+    fi
+}
+
+_redraw_follow_line_progress_lines() {
+    local old_count="${_PROGRESS_BAR_LINE_COUNT:-0}"
+    local new_lines=("$@")
+    local new_count="${#new_lines[@]}"
+    local max_count="$old_count"
+    if [[ "$new_count" -gt "$max_count" ]]; then
+        max_count="$new_count"
+    fi
+    if [[ "$max_count" -le 0 ]]; then
+        return 0
+    fi
+
+    local payload=""
+    if [[ "$old_count" -gt 0 ]]; then
+        payload+=$'\r'
+        if [[ "$old_count" -gt 1 ]]; then
+            payload+=$(printf '\033[%sA' "$((old_count - 1))")
+        fi
+    fi
+
+    local idx
+    for ((idx=0; idx<max_count; idx++)); do
+        local line=""
+        if [[ "$idx" -lt "$new_count" ]]; then
+            line="${new_lines[$idx]}"
+        fi
+        payload+=$'\033[K'"$line"
+        if [[ "$idx" -lt $((max_count - 1)) ]]; then
+            payload+=$'\n'
+        fi
+    done
+
+    if [[ "$old_count" -gt "$new_count" && "$new_count" -gt 0 ]]; then
+        payload+=$(printf '\033[%sA' "$((old_count - new_count))")
+    fi
+
+    printf '%b' "$payload"
+    _PROGRESS_BAR_LINE_COUNT="$new_count"
+}
+
+_display_follow_line_progress() {
+    local job_name="$1"
+    local build_number="$2"
+    local build_json="$3"
+    local estimate_ms="$4"
+    local frame="${5:-0}"
+    local include_queue_lines="${6:-false}"
+
+    local primary_ts
+    primary_ts=$(echo "$build_json" | jq -r '.timestamp // 0' 2>/dev/null) || primary_ts=0
+
+    local running_builds running_count max_running_build queued_builds
+    running_builds=$(_get_running_builds_for_progress "$job_name" "$build_number" "$build_json")
+    running_count=$(echo "$running_builds" | jq -r 'length' 2>/dev/null) || running_count=0
+    max_running_build=$(echo "$running_builds" | jq -r 'if length == 0 then 0 else (map(.number) | max) end' 2>/dev/null) || max_running_build=0
+
+    local lines=()
+    local primary_line
+    primary_line=$(_render_follow_line_in_progress "$job_name" "$build_number" "$primary_ts" "$estimate_ms" "$frame")
+    lines+=("$primary_line")
+
+    if [[ "$running_count" -gt 0 ]]; then
+        local running_lines
+        running_lines=$(echo "$running_builds" | jq -r --argjson pnum "$build_number" '
+            map(select(.number != $pnum) | .number as $n | .timestamp as $ts | "\($n)\t\($ts)")
+            | .[]
+        ' 2>/dev/null) || running_lines=""
+
+        local running_line running_num running_ts
+        while IFS=$'\t' read -r running_num running_ts; do
+            if [[ -z "$running_num" ]]; then
+                continue
+            fi
+            running_line=$(_render_follow_line_in_progress "$job_name" "$running_num" "$running_ts" "$estimate_ms" "$frame")
+            lines+=("$running_line")
+        done <<< "$running_lines"
+    fi
+
+    if [[ "$include_queue_lines" == "true" ]]; then
+        queued_builds=$(_get_queued_builds_for_progress "$job_name" "$max_running_build")
+        local queued_lines
+        queued_lines=$(echo "$queued_builds" | jq -r '.[] | "\(.number)\t\(.inQueueSince)"' 2>/dev/null) || queued_lines=""
+        local queued_line queued_num queued_since
+        while IFS=$'\t' read -r queued_num queued_since; do
+            if [[ -z "$queued_num" ]]; then
+                continue
+            fi
+            queued_line=$(_render_follow_line_queued "$job_name" "$queued_num" "$queued_since" "$estimate_ms" "$frame")
+            lines+=("$queued_line")
+        done <<< "$queued_lines"
+    fi
+
+    _redraw_follow_line_progress_lines "${lines[@]}"
 }
 
 _clear_follow_line_progress() {
-    printf '\r\033[K'
+    local old_count="${_PROGRESS_BAR_LINE_COUNT:-0}"
+    if [[ "$old_count" -le 0 ]]; then
+        return 0
+    fi
+
+    local payload=$'\r'
+    if [[ "$old_count" -gt 1 ]]; then
+        payload+=$(printf '\033[%sA' "$((old_count - 1))")
+    fi
+
+    local idx
+    for ((idx=0; idx<old_count; idx++)); do
+        payload+=$'\033[K'
+        if [[ "$idx" -lt $((old_count - 1)) ]]; then
+            payload+=$'\n'
+        fi
+    done
+
+    if [[ "$old_count" -gt 1 ]]; then
+        payload+=$(printf '\033[%sA' "$((old_count - 1))")
+    fi
+    printf '%b' "$payload"
+    _PROGRESS_BAR_LINE_COUNT=0
 }
 
 # Compact line-mode monitor for in-progress builds.
@@ -849,6 +1051,7 @@ _monitor_build_line_mode() {
     local job_name="$1"
     local build_number="$2"
     local no_tests="${3:-false}"
+    local include_queue_lines="${4:-false}"
     local interactive_line_mode=false
     if _status_stdout_is_tty; then
         interactive_line_mode=true
@@ -879,7 +1082,7 @@ _monitor_build_line_mode() {
         fi
 
         if [[ "$interactive_line_mode" == "true" ]]; then
-            _display_follow_line_progress "$job_name" "$build_number" "$build_json" "$estimate_ms" "$line_frame"
+            _display_follow_line_progress "$job_name" "$build_number" "$build_json" "$estimate_ms" "$line_frame" "$include_queue_lines"
             showed_progress=true
         fi
 
@@ -1319,6 +1522,7 @@ _monitor_build() {
     local job_name="$1"
     local build_number="$2"
     local show_progress_footer="${3:-false}"
+    local include_queue_lines="${4:-false}"
     local elapsed=0
     local consecutive_failures=0
     local last_time_report=0
@@ -1326,10 +1530,14 @@ _monitor_build() {
     local showed_progress=false
     local estimate_ms=""
     local render_progress=false
+    local stage_log_file=""
+    local deferred_log_file=""
     if [[ "$show_progress_footer" == "true" ]]; then
         if _status_stdout_is_tty; then
             render_progress=true
             estimate_ms=$(_get_last_successful_build_duration "$job_name")
+            stage_log_file="$(mktemp "${TMPDIR:-/tmp}/buildgit-stage-log.XXXXXX")"
+            deferred_log_file="$(mktemp "${TMPDIR:-/tmp}/buildgit-deferred-log.XXXXXX")"
         fi
     fi
 
@@ -1352,6 +1560,8 @@ _monitor_build() {
                 showed_progress=false
             fi
             if [[ $consecutive_failures -ge 5 ]]; then
+                rm -f "$stage_log_file" 2>/dev/null || true
+                rm -f "$deferred_log_file" 2>/dev/null || true
                 bg_log_error "Too many consecutive API failures ($consecutive_failures)"
                 return 1
             fi
@@ -1364,24 +1574,32 @@ _monitor_build() {
 
         consecutive_failures=0
 
-        # Keep the footer progress line as the final line by clearing it before
-        # printing any new monitoring content above it.
-        if [[ "$showed_progress" == "true" ]]; then
-            _clear_follow_line_progress
-            showed_progress=false
-        fi
+        local deferred_output=""
+        local stage_output=""
+        local emit_verbose_progress=false
 
-        # Print deferred header fields when data becomes available
-        # Spec: bug-build-monitoring-header-spec.md - deferred header fields
+        # Collect deferred-header output first so API calls complete before clear+redraw.
         if [[ "${_DEFERRED_COMMIT:-false}" == "true" || "${_DEFERRED_BUILD_INFO:-false}" == "true" || "${_DEFERRED_CONSOLE:-false}" == "true" ]]; then
-            _print_deferred_header_fields "$job_name" "$build_number" "${_DEFERRED_BUILD_JSON:-$build_info}" || true
+            if [[ "$render_progress" == "true" && -n "$deferred_log_file" ]]; then
+                _print_deferred_header_fields "$job_name" "$build_number" "${_DEFERRED_BUILD_JSON:-$build_info}" >"$deferred_log_file" 2>&1 || true
+                deferred_output=$(cat "$deferred_log_file")
+                : > "$deferred_log_file"
+            else
+                _print_deferred_header_fields "$job_name" "$build_number" "${_DEFERRED_BUILD_JSON:-$build_info}" || true
+            fi
         fi
 
         # Track stage changes BEFORE checking completion
         # This ensures the final iteration still catches stage transitions
         # Spec: bug-show-all-stages.md - all stages must be shown
         # Spec: nested-jobs-display-spec.md - track downstream builds in real-time
-        stage_state=$(_track_nested_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE")
+        if [[ "$render_progress" == "true" && -n "$stage_log_file" ]]; then
+            stage_state=$(_track_nested_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE" 2>"$stage_log_file")
+            stage_output=$(cat "$stage_log_file")
+            : > "$stage_log_file"
+        else
+            stage_state=$(_track_nested_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE")
+        fi
 
         local building result
         building=$(echo "$build_info" | jq -r '.building')
@@ -1414,18 +1632,37 @@ _monitor_build() {
                 fi
                 settle_elapsed=$((settle_elapsed + 1))
             done
+            rm -f "$stage_log_file" 2>/dev/null || true
+            rm -f "$deferred_log_file" 2>/dev/null || true
             return 0
         fi
 
         # Verbose-only elapsed time messages
         # Spec: full-stage-print-spec.md, Verbose mode
         if [[ "$VERBOSE_MODE" == "true" && $((elapsed - last_time_report)) -ge 30 ]]; then
-            bg_log_progress "Build in progress... (${elapsed}s elapsed)"
+            emit_verbose_progress=true
             last_time_report=$elapsed
         fi
 
+        if [[ "$showed_progress" == "true" ]]; then
+            if [[ -n "$deferred_output" || -n "$stage_output" || "$emit_verbose_progress" == "true" ]]; then
+                _clear_follow_line_progress
+                showed_progress=false
+            fi
+        fi
+
+        if [[ -n "$deferred_output" ]]; then
+            printf '%s\n' "$deferred_output"
+        fi
+        if [[ -n "$stage_output" ]]; then
+            printf '%s\n' "$stage_output" >&2
+        fi
+        if [[ "$emit_verbose_progress" == "true" ]]; then
+            bg_log_progress "Build in progress... (${elapsed}s elapsed)"
+        fi
+
         if [[ "$render_progress" == "true" ]]; then
-            _display_follow_line_progress "$job_name" "$build_number" "$build_info" "$estimate_ms" "$line_frame"
+            _display_follow_line_progress "$job_name" "$build_number" "$build_info" "$estimate_ms" "$line_frame" "$include_queue_lines"
             showed_progress=true
         fi
 
@@ -1438,6 +1675,8 @@ _monitor_build() {
         _clear_follow_line_progress
         echo ""
     fi
+    rm -f "$stage_log_file" 2>/dev/null || true
+    rm -f "$deferred_log_file" 2>/dev/null || true
     bg_log_error "Build timeout: exceeded ${MAX_BUILD_TIME} seconds"
     bg_log_info "Build may still be running - check Jenkins console" >&2
     return 1
@@ -1831,7 +2070,7 @@ _cmd_status_follow() {
             first_check=false
             local build_exit_code
             if [[ "$line_mode" == "true" && "$json_mode" != "true" ]]; then
-                if _monitor_build_line_mode "$job_name" "$build_number" "$no_tests"; then
+                if _monitor_build_line_mode "$job_name" "$build_number" "$no_tests" "true"; then
                     build_exit_code=0
                 else
                     build_exit_code=$?
@@ -1883,7 +2122,7 @@ _cmd_status_follow() {
                 # Display build info banner before entering monitoring loop
                 # Spec: unify-follow-log-spec.md, Section 5 (buildgit status -f)
                 _display_build_in_progress_banner "$job_name" "$build_number" "$running_msg"
-                _monitor_build "$job_name" "$build_number" "true"
+                _monitor_build "$job_name" "$build_number" "true" "true"
                 # Display build completion (test results if applicable + Finished line)
                 # Spec: unify-follow-log-spec.md, Section 4 (Build Completion)
                 if _handle_build_completion "$job_name" "$build_number"; then
@@ -2188,60 +2427,247 @@ _parse_push_options() {
 # When queue_url is provided, tries the queue API first (for triggered builds).
 # Otherwise, or on queue API failure, falls back to polling by build number.
 # Returns: new build number on stdout, 1 on timeout
+_QUEUE_WAIT_LINE_ACTIVE=false
+_QUEUE_WAIT_LAST_MESSAGE=""
+_QUEUE_WAIT_STICKY_LINE_COUNT=0
+
+_queue_wait_phase_prefix() {
+    local why="$1"
+    if [[ -z "$why" ]]; then
+        echo ""
+        return 0
+    fi
+    if [[ "$why" =~ ^([^0-9]*)[0-9].*$ ]]; then
+        echo "${BASH_REMATCH[1]}"
+    else
+        echo "$why"
+    fi
+}
+
+_redraw_queue_wait_sticky_lines() {
+    local old_count="${_QUEUE_WAIT_STICKY_LINE_COUNT:-0}"
+    local new_lines=("$@")
+    local new_count="${#new_lines[@]}"
+    local max_count="$old_count"
+    if [[ "$new_count" -gt "$max_count" ]]; then
+        max_count="$new_count"
+    fi
+    if [[ "$max_count" -le 0 ]]; then
+        return 0
+    fi
+
+    local payload=""
+    if [[ "$old_count" -gt 0 ]]; then
+        payload+=$'\r'
+        if [[ "$old_count" -gt 1 ]]; then
+            payload+=$(printf '\033[%sA' "$((old_count - 1))")
+        fi
+    fi
+
+    local idx
+    for ((idx=0; idx<max_count; idx++)); do
+        local line=""
+        if [[ "$idx" -lt "$new_count" ]]; then
+            line="${new_lines[$idx]}"
+        fi
+        payload+=$'\033[K'"$line"
+        if [[ "$idx" -lt $((max_count - 1)) ]]; then
+            payload+=$'\n'
+        fi
+    done
+
+    if [[ "$old_count" -gt "$new_count" && "$new_count" -gt 0 ]]; then
+        payload+=$(printf '\033[%sA' "$((old_count - new_count))")
+    fi
+
+    printf '%b' "$payload" >&2
+    _QUEUE_WAIT_STICKY_LINE_COUNT="$new_count"
+}
+
+_clear_queue_wait_status() {
+    local old_count="${_QUEUE_WAIT_STICKY_LINE_COUNT:-0}"
+    if [[ "$old_count" -gt 0 ]]; then
+        local payload=$'\r'
+        if [[ "$old_count" -gt 1 ]]; then
+            payload+=$(printf '\033[%sA' "$((old_count - 1))")
+        fi
+
+        local idx
+        for ((idx=0; idx<old_count; idx++)); do
+            payload+=$'\033[K'
+            if [[ "$idx" -lt $((old_count - 1)) ]]; then
+                payload+=$'\n'
+            fi
+        done
+
+        if [[ "$old_count" -gt 1 ]]; then
+            payload+=$(printf '\033[%sA' "$((old_count - 1))")
+        fi
+        payload+=$'\r'
+        printf '%b' "$payload" >&2
+        _QUEUE_WAIT_STICKY_LINE_COUNT=0
+        _QUEUE_WAIT_LINE_ACTIVE=false
+        _QUEUE_WAIT_LAST_MESSAGE=""
+    fi
+}
+
+_queue_item_path_from_url() {
+    local queue_url="$1"
+    if [[ "$queue_url" =~ /queue/item/([0-9]+) ]]; then
+        echo "/queue/item/${BASH_REMATCH[1]}/api/json"
+        return 0
+    fi
+    echo ""
+}
+
+_get_queue_item_for_job() {
+    local job_name="$1"
+    local queue_response
+    queue_response=$(jenkins_api "/queue/api/json" 2>/dev/null) || true
+    if [[ -z "$queue_response" ]]; then
+        echo ""
+        return 0
+    fi
+
+    echo "$queue_response" | jq -c --arg job "$job_name" '
+        [.items[]?
+         | select((.task.name // "") == $job)
+         | select((.cancelled // false) != true)
+        ]
+        | sort_by(.inQueueSince // 0)
+        | .[0] // empty
+    ' 2>/dev/null || echo ""
+}
+
+_WAIT_FOR_BUILD_RESULT=""
+
 _wait_for_build_start() {
     local job_name="$1"
     local baseline="$2"
     local queue_url="${3:-}"
+    _WAIT_FOR_BUILD_RESULT=""
     local build_start_timeout="${BUILD_START_TIMEOUT:-120}"
+    local queue_item_path queue_confirmed=false elapsed=0
+    local pending_build_number=$((baseline + 1))
+    local queue_detected=false
+    local last_queue_phase=""
+    local last_non_tty_log_epoch=0
+    local queue_frame=0
+    local queue_estimate_ms=""
 
     bg_log_progress "Waiting for Jenkins build $job_name to start..."
 
-    # If queue_url provided, try queue API first
-    if [[ -n "$queue_url" ]]; then
-        local build_number
-        build_number=$(wait_for_queue_item "$queue_url" "$build_start_timeout")
-        if [[ -n "$build_number" ]]; then
-            bg_log_success "Build #${build_number} started"
-            echo "$build_number"
-            return 0
-        fi
+    queue_item_path=$(_queue_item_path_from_url "$queue_url")
+    if _status_stdout_is_tty; then
+        queue_estimate_ms=$(_get_last_successful_build_duration "$job_name")
     fi
 
-    # Poll for new build number
-    local elapsed=0
-    local queued_notified=false
-
-    while [[ $elapsed -lt $build_start_timeout ]]; do
+    while true; do
         local current
         current=$(get_last_build_number "$job_name")
 
         if [[ "$current" -gt "$baseline" ]]; then
+            _clear_queue_wait_status
             bg_log_success "Build #${current} started"
-            echo "$current"
+            _WAIT_FOR_BUILD_RESULT="$current"
             return 0
         fi
 
-        # Check if job is queued
-        if [[ "$queued_notified" == false ]]; then
-            local queue_response
-            queue_response=$(jenkins_api "/queue/api/json" 2>/dev/null) || true
-            if [[ -n "$queue_response" ]]; then
-                local queue_id
-                queue_id=$(echo "$queue_response" | jq -r --arg job "$job_name" \
-                    '.items[] | select(.task.name == $job) | .id' 2>/dev/null | head -1)
-                if [[ -n "$queue_id" ]]; then
-                    bg_log_info "Job is queued, waiting for executor..."
-                    queued_notified=true
+        local queue_item_json=""
+        if [[ -n "$queue_item_path" ]]; then
+            queue_item_json=$(jenkins_api "$queue_item_path" 2>/dev/null) || true
+        fi
+        if [[ -z "$queue_item_json" ]]; then
+            queue_item_json=$(_get_queue_item_for_job "$job_name")
+        fi
+
+        if [[ -n "$queue_item_json" ]]; then
+            local queue_cancelled
+            queue_cancelled=$(echo "$queue_item_json" | jq -r '.cancelled // false' 2>/dev/null) || queue_cancelled=false
+            if [[ "$queue_cancelled" == "true" ]]; then
+                _clear_queue_wait_status
+                bg_log_error "Build was cancelled while in queue"
+                return 1
+            fi
+
+            queue_confirmed=true
+            local executable_number
+            executable_number=$(echo "$queue_item_json" | jq -r '.executable.number // empty' 2>/dev/null) || executable_number=""
+            if [[ -n "$executable_number" && "$executable_number" != "null" ]]; then
+                _clear_queue_wait_status
+                bg_log_success "Build #${executable_number} started"
+                _WAIT_FOR_BUILD_RESULT="$executable_number"
+                return 0
+            fi
+
+            local queue_why
+            queue_why=$(echo "$queue_item_json" | jq -r '.why // empty' 2>/dev/null) || queue_why=""
+            local queue_msg="Build #${pending_build_number} is QUEUED"
+            if [[ -n "$queue_why" ]]; then
+                queue_msg+=" — ${queue_why}"
+            fi
+
+            local queue_phase
+            queue_phase=$(_queue_wait_phase_prefix "$queue_why")
+            local is_transition=false
+            if [[ "$queue_detected" != "true" || "$queue_phase" != "$last_queue_phase" ]]; then
+                is_transition=true
+            fi
+
+            if _status_stdout_is_tty; then
+                if [[ "$queue_detected" != "true" ]]; then
+                    _clear_queue_wait_status
+                    log_info "Build #${pending_build_number} is QUEUED" >&2
+                elif [[ "$is_transition" == "true" && -n "$queue_why" ]]; then
+                    _clear_queue_wait_status
+                    log_info "Build #${pending_build_number} is QUEUED — ${queue_why}" >&2
                 fi
+
+                local sticky_lines=()
+                local running_build_number=""
+                if [[ "$queue_why" =~ Build\ \#([0-9]+)\ is\ already\ in\ progress ]]; then
+                    running_build_number="${BASH_REMATCH[1]}"
+                fi
+                if [[ -n "$running_build_number" ]]; then
+                    local running_build_json running_building running_timestamp
+                    running_build_json=$(get_build_info "$job_name" "$running_build_number")
+                    if [[ -n "$running_build_json" ]]; then
+                        running_building=$(echo "$running_build_json" | jq -r '.building // false' 2>/dev/null) || running_building=false
+                        if [[ "$running_building" == "true" ]]; then
+                            running_timestamp=$(echo "$running_build_json" | jq -r '.timestamp // 0' 2>/dev/null) || running_timestamp=0
+                            sticky_lines+=("$(_render_follow_line_in_progress "$job_name" "$running_build_number" "$running_timestamp" "$queue_estimate_ms" "$queue_frame")")
+                        fi
+                    fi
+                fi
+                local in_queue_since_ms
+                in_queue_since_ms=$(echo "$queue_item_json" | jq -r '.inQueueSince // 0' 2>/dev/null) || in_queue_since_ms=0
+                sticky_lines+=("$(_render_follow_line_queued "$job_name" "$pending_build_number" "$in_queue_since_ms" "$queue_estimate_ms" "$queue_frame")")
+                _redraw_queue_wait_sticky_lines "${sticky_lines[@]}"
+            else
+                local now_epoch
+                now_epoch=$(date +%s)
+                if [[ "$is_transition" == "true" || $((now_epoch - last_non_tty_log_epoch)) -ge 30 ]]; then
+                    log_info "$queue_msg" >&2
+                    last_non_tty_log_epoch="$now_epoch"
+                fi
+            fi
+
+            queue_detected=true
+            last_queue_phase="$queue_phase"
+        fi
+
+        if [[ "$queue_confirmed" != "true" ]]; then
+            if [[ "$elapsed" -ge "$build_start_timeout" ]]; then
+                _clear_queue_wait_status
+                bg_log_error "Timeout: No build started within ${build_start_timeout} seconds"
+                return 1
             fi
         fi
 
         sleep "$POLL_INTERVAL"
         elapsed=$((elapsed + POLL_INTERVAL))
+        queue_frame=$((queue_frame + 1))
     done
-
-    bg_log_error "Timeout: No build started within ${build_start_timeout} seconds"
-    return 1
 }
 
 # Monitor push-triggered build until completion
@@ -2385,13 +2811,13 @@ cmd_push() {
     bg_log_info "Current build baseline: #${baseline_build}"
 
     # Wait for new build to start
-    local new_build_number
-    if ! new_build_number=$(_wait_for_build_start "$job_name" "$baseline_build" ""); then
+    if ! _wait_for_build_start "$job_name" "$baseline_build" ""; then
         bg_log_success "Git push completed successfully"
         bg_log_error "Jenkins build monitoring failed - no build started"
         bg_log_essential "Suggestion: Check Jenkins webhook/SCM polling configuration"
         return 1
     fi
+    local new_build_number="$_WAIT_FOR_BUILD_RESULT"
 
     _display_monitoring_preamble "$job_name" "$PUSH_PRIOR_JOBS" "false" "$((new_build_number - 1))"
     log_info "Starting"
@@ -2399,7 +2825,7 @@ cmd_push() {
     # Display unified build header before monitoring
     # Spec: unify-follow-log-spec.md, Section 5 (buildgit push)
     if [[ "$PUSH_LINE_MODE" == "true" ]]; then
-        if _monitor_build_line_mode "$job_name" "$new_build_number" "false"; then
+        if _monitor_build_line_mode "$job_name" "$new_build_number" "false" "true"; then
             return 0
         fi
         return 1
@@ -2415,7 +2841,7 @@ cmd_push() {
         "$push_commit_sha" "$push_commit_msg" "$push_correlation_status"
 
     # Monitor build until completion
-    if ! _monitor_build "$job_name" "$new_build_number" "true"; then
+    if ! _monitor_build "$job_name" "$new_build_number" "true" "true"; then
         bg_log_error "Build monitoring interrupted or timed out"
         bg_log_essential "Suggestion: Check Jenkins console at ${JENKINS_URL}/job/${job_name}/${new_build_number}/console"
         return 1
@@ -2538,12 +2964,12 @@ cmd_build() {
     local baseline_build
     baseline_build=$(get_last_build_number "$job_name")
 
-    local build_number
-    if ! build_number=$(_wait_for_build_start "$job_name" "$baseline_build" "$queue_url"); then
+    if ! _wait_for_build_start "$job_name" "$baseline_build" "$queue_url"; then
         bg_log_error "Build did not start within timeout"
         bg_log_essential "Suggestion: Check Jenkins queue at ${JENKINS_URL}/queue/"
         return 1
     fi
+    local build_number="$_WAIT_FOR_BUILD_RESULT"
 
     _display_monitoring_preamble "$job_name" "$BUILD_PRIOR_JOBS" "false" "$((build_number - 1))"
     log_info "Starting"
@@ -2551,7 +2977,7 @@ cmd_build() {
     # Display unified build header before monitoring
     # Spec: unify-follow-log-spec.md, Section 5 (buildgit build)
     if [[ "$BUILD_LINE_MODE" == "true" ]]; then
-        if _monitor_build_line_mode "$job_name" "$build_number" "false"; then
+        if _monitor_build_line_mode "$job_name" "$build_number" "false" "true"; then
             return 0
         fi
         return 1
@@ -2560,7 +2986,7 @@ cmd_build() {
     _display_build_in_progress_banner "$job_name" "$build_number"
 
     # Monitor build until completion
-    if ! _monitor_build "$job_name" "$build_number" "true"; then
+    if ! _monitor_build "$job_name" "$build_number" "true" "true"; then
         bg_log_error "Build monitoring interrupted or timed out"
         bg_log_essential "Suggestion: Check Jenkins console at ${JENKINS_URL}/job/${job_name}/${build_number}/console"
         return 1

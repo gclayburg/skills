@@ -119,6 +119,18 @@ jenkins_api() {
         echo '{"duration":120000}'
         return 0
     fi
+    if [[ "${1:-}" == "/queue/item/123/api/json" ]]; then
+        echo '{"id":123,"why":"In the quiet period. Expires in 4.9 sec","executable":{"number":43}}'
+        return 0
+    fi
+    if [[ "$1" == "/queue/api/json" ]]; then
+        if [[ "${MOCK_QUEUE_STATE:-none}" == "queued" ]]; then
+            echo '{"items":[{"id":910,"task":{"name":"test-repo"},"blocked":true,"buildable":false,"why":"Build #43 is already in progress  ETA: 1m 34s","inQueueSince":1706700000000}]}'
+        else
+            echo '{"items":[]}'
+        fi
+        return 0
+    fi
     echo ""
     return 1
 }
@@ -340,6 +352,19 @@ WRAPPER
     refute_output --partial "Finished:"
 }
 
+@test "build_line_shows_queued_secondary_build" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_build_test_wrapper "SUCCESS" "2" "true"
+
+    run bash -c "MOCK_QUEUE_STATE=queued BUILDGIT_FORCE_TTY=1 bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line 2>&1"
+
+    assert_success
+    assert_output --partial "QUEUED      Job test-repo #44 ["
+}
+
 @test "build_line_non_tty_silent_until_summary" {
     cd "${TEST_REPO}"
 
@@ -547,4 +572,546 @@ WRAPPER
 
     assert_failure
     assert_output --partial "--prior-jobs value must be a non-negative integer"
+}
+
+@test "queue_build_no_timeout" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/queue_wait_wrapper.sh" << 'WRAPPER'
+#!/usr/bin/env bash
+set -euo pipefail
+_BUILDGIT_TESTING=1
+source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+POLL_INTERVAL=1
+BUILD_START_TIMEOUT=2
+BUILDGIT_FORCE_TTY=1
+echo "0" > "${TEST_TEMP_DIR}/queue_calls"
+echo "0" > "${TEST_TEMP_DIR}/build_calls"
+
+get_last_build_number() {
+    local count
+    count=$(cat "${TEST_TEMP_DIR}/build_calls")
+    count=$((count + 1))
+    echo "$count" > "${TEST_TEMP_DIR}/build_calls"
+    if [[ "$count" -ge 4 ]]; then
+        echo "43"
+    else
+        echo "42"
+    fi
+}
+
+get_build_info() {
+    local build_num="$2"
+    if [[ "$build_num" == "42" ]]; then
+        echo '{"number":42,"result":"null","building":true,"timestamp":1706700000000,"duration":0}'
+    else
+        echo '{"number":43,"result":"null","building":true,"timestamp":1706700000000,"duration":0}'
+    fi
+}
+
+jenkins_api() {
+    local path="$1"
+    if [[ "$path" == "/job/test-repo/lastSuccessfulBuild/api/json" ]]; then
+        echo '{"duration":120000}'
+        return 0
+    fi
+    if [[ "$path" == "/queue/item/123/api/json" ]]; then
+        local qcount
+        qcount=$(cat "${TEST_TEMP_DIR}/queue_calls")
+        qcount=$((qcount + 1))
+        echo "$qcount" > "${TEST_TEMP_DIR}/queue_calls"
+        if [[ "$qcount" -eq 1 ]]; then
+            echo '{"id":123,"why":"In the quiet period. Expires in 4.9 sec"}'
+        elif [[ "$qcount" -eq 2 ]]; then
+            echo '{"id":123,"why":"In the quiet period. Expires in 2.9 sec"}'
+        else
+            echo '{"id":123,"why":"Build #42 is already in progress (ETA: 1m 34s)"}'
+        fi
+        return 0
+    fi
+    if [[ "$path" == "/queue/api/json" ]]; then
+        echo '{"items":[]}'
+        return 0
+    fi
+    echo ""
+    return 1
+}
+
+_wait_for_build_start "test-repo" "42" "http://jenkins.example.com/queue/item/123/"
+echo "BN=${_WAIT_FOR_BUILD_RESULT}"
+WRAPPER
+    chmod +x "${TEST_TEMP_DIR}/queue_wait_wrapper.sh"
+
+    run bash "${TEST_TEMP_DIR}/queue_wait_wrapper.sh" 2>&1
+
+    assert_success
+    assert_output --partial "is QUEUED"
+    assert_output --partial "ETA: 1m 34s"
+    assert_output --partial "IN_PROGRESS Job test-repo #42 ["
+    assert_output --partial "BN=43"
+}
+
+@test "queue_tty_loginfo_on_state_transition_only" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/queue_tty_transition_wrapper.sh" << 'WRAPPER'
+#!/usr/bin/env bash
+set -euo pipefail
+_BUILDGIT_TESTING=1
+source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+POLL_INTERVAL=1
+BUILD_START_TIMEOUT=10
+BUILDGIT_FORCE_TTY=1
+echo "0" > "${TEST_TEMP_DIR}/queue_calls"
+echo "0" > "${TEST_TEMP_DIR}/build_calls"
+
+get_last_build_number() {
+    local count
+    count=$(cat "${TEST_TEMP_DIR}/build_calls")
+    count=$((count + 1))
+    echo "$count" > "${TEST_TEMP_DIR}/build_calls"
+    if [[ "$count" -ge 4 ]]; then
+        echo "43"
+    else
+        echo "42"
+    fi
+}
+
+jenkins_api() {
+    local path="$1"
+    if [[ "$path" == "/job/test-repo/lastSuccessfulBuild/api/json" ]]; then
+        echo '{"duration":120000}'
+        return 0
+    fi
+    if [[ "$path" == "/queue/item/123/api/json" ]]; then
+        local qcount
+        qcount=$(cat "${TEST_TEMP_DIR}/queue_calls")
+        qcount=$((qcount + 1))
+        echo "$qcount" > "${TEST_TEMP_DIR}/queue_calls"
+        if [[ "$qcount" -eq 1 ]]; then
+            echo '{"id":123,"why":"In the quiet period. Expires in 4.9 sec"}'
+        elif [[ "$qcount" -eq 2 ]]; then
+            echo '{"id":123,"why":"In the quiet period. Expires in 2.9 sec"}'
+        else
+            echo '{"id":123,"why":"Finished waiting"}'
+        fi
+        return 0
+    fi
+    if [[ "$path" == "/queue/api/json" ]]; then
+        echo '{"items":[]}'
+        return 0
+    fi
+    echo ""
+    return 1
+}
+
+_wait_for_build_start "test-repo" "42" "http://jenkins.example.com/queue/item/123/"
+WRAPPER
+    chmod +x "${TEST_TEMP_DIR}/queue_tty_transition_wrapper.sh"
+
+    run bash "${TEST_TEMP_DIR}/queue_tty_transition_wrapper.sh" 2>&1
+
+    assert_success
+    assert_output --partial "ℹ Build #43 is QUEUED"
+    assert_output --partial "ℹ Build #43 is QUEUED — Finished waiting"
+    quiet_transition_count=$(printf "%s" "$output" | grep -c "ℹ Build #43 is QUEUED — In the quiet period" || true)
+    [ "$quiet_transition_count" -eq 0 ]
+}
+
+@test "queue_non_tty_30s_throttle" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/queue_non_tty_wrapper.sh" << 'WRAPPER'
+#!/usr/bin/env bash
+set -euo pipefail
+_BUILDGIT_TESTING=1
+source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+POLL_INTERVAL=1
+BUILD_START_TIMEOUT=10
+BUILDGIT_FORCE_TTY=0
+echo "0" > "${TEST_TEMP_DIR}/queue_calls"
+echo "0" > "${TEST_TEMP_DIR}/build_calls"
+echo "0" > "${TEST_TEMP_DIR}/time_calls"
+
+date() {
+    if [[ "${1:-}" == "+%s" ]]; then
+        local count
+        count=$(cat "${TEST_TEMP_DIR}/time_calls")
+        count=$((count + 1))
+        echo "$count" > "${TEST_TEMP_DIR}/time_calls"
+        case "$count" in
+            1) echo "1000" ;;
+            2) echo "1005" ;;
+            3) echo "1010" ;;
+            4) echo "1035" ;;
+            *) echo "1035" ;;
+        esac
+        return 0
+    fi
+    command date "$@"
+}
+
+get_last_build_number() {
+    local count
+    count=$(cat "${TEST_TEMP_DIR}/build_calls")
+    count=$((count + 1))
+    echo "$count" > "${TEST_TEMP_DIR}/build_calls"
+    if [[ "$count" -ge 5 ]]; then
+        echo "43"
+    else
+        echo "42"
+    fi
+}
+
+jenkins_api() {
+    local path="$1"
+    if [[ "$path" == "/queue/item/123/api/json" ]]; then
+        local qcount
+        qcount=$(cat "${TEST_TEMP_DIR}/queue_calls")
+        qcount=$((qcount + 1))
+        echo "$qcount" > "${TEST_TEMP_DIR}/queue_calls"
+        case "$qcount" in
+            1) echo '{"id":123,"why":"Build #42 is already in progress (ETA: 4 min 59 sec)"}' ;;
+            2) echo '{"id":123,"why":"Build #42 is already in progress (ETA: 4 min 57 sec)"}' ;;
+            3) echo '{"id":123,"why":"Build #42 is already in progress (ETA: 4 min 55 sec)"}' ;;
+            *) echo '{"id":123,"why":"Build #42 is already in progress (ETA: 4 min 30 sec)"}' ;;
+        esac
+        return 0
+    fi
+    if [[ "$path" == "/queue/api/json" ]]; then
+        echo '{"items":[]}'
+        return 0
+    fi
+    echo ""
+    return 1
+}
+
+_wait_for_build_start "test-repo" "42" "http://jenkins.example.com/queue/item/123/"
+WRAPPER
+    chmod +x "${TEST_TEMP_DIR}/queue_non_tty_wrapper.sh"
+
+    run bash "${TEST_TEMP_DIR}/queue_non_tty_wrapper.sh" 2>&1
+
+    assert_success
+    queue_log_count=$(printf "%s" "$output" | grep -c "is QUEUED — Build #42 is already in progress" || true)
+    [ "$queue_log_count" -eq 2 ]
+}
+
+@test "queue_wait_build_number_capture_not_polluted_by_queue_logs" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/queue_capture_wrapper.sh" << 'WRAPPER'
+#!/usr/bin/env bash
+set -euo pipefail
+_BUILDGIT_TESTING=1
+source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+POLL_INTERVAL=1
+BUILD_START_TIMEOUT=10
+BUILDGIT_FORCE_TTY=1
+echo "0" > "${TEST_TEMP_DIR}/queue_calls"
+echo "0" > "${TEST_TEMP_DIR}/build_calls"
+
+get_last_build_number() {
+    local count
+    count=$(cat "${TEST_TEMP_DIR}/build_calls")
+    count=$((count + 1))
+    echo "$count" > "${TEST_TEMP_DIR}/build_calls"
+    if [[ "$count" -ge 4 ]]; then
+        echo "43"
+    else
+        echo "42"
+    fi
+}
+
+jenkins_api() {
+    local path="$1"
+    if [[ "$path" == "/job/test-repo/lastSuccessfulBuild/api/json" ]]; then
+        echo '{"duration":120000}'
+        return 0
+    fi
+    if [[ "$path" == "/queue/item/123/api/json" ]]; then
+        local qcount
+        qcount=$(cat "${TEST_TEMP_DIR}/queue_calls")
+        qcount=$((qcount + 1))
+        echo "$qcount" > "${TEST_TEMP_DIR}/queue_calls"
+        if [[ "$qcount" -eq 1 ]]; then
+            echo '{"id":123,"why":"In the quiet period. Expires in 4.9 sec"}'
+        else
+            echo '{"id":123,"why":"Build #42 is already in progress (ETA: 1m 34s)"}'
+        fi
+        return 0
+    fi
+    if [[ "$path" == "/queue/api/json" ]]; then
+        echo '{"items":[]}'
+        return 0
+    fi
+    echo ""
+    return 1
+}
+
+_wait_for_build_start "test-repo" "42" "http://jenkins.example.com/queue/item/123/"
+echo "BN=${_WAIT_FOR_BUILD_RESULT}"
+WRAPPER
+    chmod +x "${TEST_TEMP_DIR}/queue_capture_wrapper.sh"
+
+    run bash "${TEST_TEMP_DIR}/queue_capture_wrapper.sh" 2>&1
+
+    assert_success
+    assert_output --partial "BN=43"
+    refute_output --partial "BN=["
+}
+
+@test "queue_timeout_still_applies_when_not_queued" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/queue_timeout_wrapper.sh" << 'WRAPPER'
+#!/usr/bin/env bash
+set -euo pipefail
+_BUILDGIT_TESTING=1
+source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+POLL_INTERVAL=1
+BUILD_START_TIMEOUT=2
+
+get_last_build_number() {
+    echo "42"
+}
+
+jenkins_api() {
+    if [[ "$1" == "/queue/api/json" ]]; then
+        echo '{"items":[]}'
+        return 0
+    fi
+    echo ""
+    return 1
+}
+
+_wait_for_build_start "test-repo" "42" ""
+WRAPPER
+    chmod +x "${TEST_TEMP_DIR}/queue_timeout_wrapper.sh"
+
+    run bash "${TEST_TEMP_DIR}/queue_timeout_wrapper.sh" 2>&1
+
+    assert_failure
+    assert_output --partial "Timeout: No build started within 2 seconds"
+}
+
+@test "queue_wait_tty_sticky_lines_shown" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/queue_tty_sticky_wrapper.sh" << 'WRAPPER'
+#!/usr/bin/env bash
+set -euo pipefail
+_BUILDGIT_TESTING=1
+source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+POLL_INTERVAL=1
+BUILD_START_TIMEOUT=10
+BUILDGIT_FORCE_TTY=1
+echo "0" > "${TEST_TEMP_DIR}/queue_calls"
+echo "0" > "${TEST_TEMP_DIR}/build_calls"
+
+get_last_build_number() {
+    local count
+    count=$(cat "${TEST_TEMP_DIR}/build_calls")
+    count=$((count + 1))
+    echo "$count" > "${TEST_TEMP_DIR}/build_calls"
+    if [[ "$count" -ge 3 ]]; then
+        echo "43"
+    else
+        echo "42"
+    fi
+}
+
+get_build_info() {
+    echo '{"building":true,"timestamp":1700000000000}'
+}
+
+jenkins_api() {
+    local path="$1"
+    if [[ "$path" == "/job/test-repo/lastSuccessfulBuild/api/json" ]]; then
+        echo '{"duration":120000}'
+        return 0
+    fi
+    if [[ "$path" == "/queue/item/123/api/json" ]]; then
+        local qcount
+        qcount=$(cat "${TEST_TEMP_DIR}/queue_calls")
+        qcount=$((qcount + 1))
+        echo "$qcount" > "${TEST_TEMP_DIR}/queue_calls"
+        echo '{"id":123,"why":"Build #42 is already in progress (ETA: 1m 34s)"}'
+        return 0
+    fi
+    if [[ "$path" == "/queue/api/json" ]]; then
+        echo '{"items":[]}'
+        return 0
+    fi
+    if [[ "$path" == /job/test-repo/*/api/json* ]]; then
+        echo '{"building":true,"timestamp":1700000000000}'
+        return 0
+    fi
+    echo ""
+    return 1
+}
+
+_wait_for_build_start "test-repo" "42" "http://jenkins.example.com/queue/item/123/"
+WRAPPER
+    chmod +x "${TEST_TEMP_DIR}/queue_tty_sticky_wrapper.sh"
+
+    run bash "${TEST_TEMP_DIR}/queue_tty_sticky_wrapper.sh" 2>&1
+
+    assert_success
+    # Sticky lines use \r (carriage return) for in-place updates on TTY
+    [[ "$output" == *$'\r'* ]] || [[ "$output" == *$'\033['* ]]
+    # Should contain the queue message as a sticky line (not log_info prefixed)
+    assert_output --partial "Build #43 is QUEUED"
+    # Should also show the IN_PROGRESS bar for the blocking build
+    assert_output --partial "IN_PROGRESS"
+}
+
+@test "queue_wait_tty_estimate_fetched" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/queue_tty_estimate_wrapper.sh" << 'WRAPPER'
+#!/usr/bin/env bash
+set -euo pipefail
+_BUILDGIT_TESTING=1
+source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+POLL_INTERVAL=1
+BUILD_START_TIMEOUT=10
+BUILDGIT_FORCE_TTY=1
+echo "0" > "${TEST_TEMP_DIR}/build_calls"
+echo "" > "${TEST_TEMP_DIR}/estimate_called"
+
+_get_last_successful_build_duration() {
+    echo "fetched" > "${TEST_TEMP_DIR}/estimate_called"
+    echo "300000"
+}
+
+get_last_build_number() {
+    local count
+    count=$(cat "${TEST_TEMP_DIR}/build_calls")
+    count=$((count + 1))
+    echo "$count" > "${TEST_TEMP_DIR}/build_calls"
+    if [[ "$count" -ge 2 ]]; then
+        echo "43"
+    else
+        echo "42"
+    fi
+}
+
+jenkins_api() {
+    if [[ "$1" == "/queue/api/json" ]]; then
+        echo '{"items":[]}'
+        return 0
+    fi
+    echo ""
+    return 1
+}
+
+_wait_for_build_start "test-repo" "42" ""
+WRAPPER
+    chmod +x "${TEST_TEMP_DIR}/queue_tty_estimate_wrapper.sh"
+
+    run bash "${TEST_TEMP_DIR}/queue_tty_estimate_wrapper.sh" 2>&1
+
+    assert_success
+    # Verify the estimate function was called (only happens on TTY path)
+    local estimate_called
+    estimate_called=$(cat "${TEST_TEMP_DIR}/estimate_called")
+    [ "$estimate_called" = "fetched" ]
+}
+
+@test "queue_wait_global_var_returns_build_number" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/queue_nameref_wrapper.sh" << 'WRAPPER'
+#!/usr/bin/env bash
+set -euo pipefail
+_BUILDGIT_TESTING=1
+source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+POLL_INTERVAL=1
+BUILD_START_TIMEOUT=10
+
+echo "0" > "${TEST_TEMP_DIR}/build_calls"
+
+get_last_build_number() {
+    local count
+    count=$(cat "${TEST_TEMP_DIR}/build_calls")
+    count=$((count + 1))
+    echo "$count" > "${TEST_TEMP_DIR}/build_calls"
+    if [[ "$count" -ge 2 ]]; then
+        echo "43"
+    else
+        echo "42"
+    fi
+}
+
+jenkins_api() {
+    if [[ "$1" == "/queue/api/json" ]]; then
+        echo '{"items":[]}'
+        return 0
+    fi
+    echo ""
+    return 1
+}
+
+# Result returned via global variable (not stdout)
+_wait_for_build_start "test-repo" "42" ""
+echo "RESULT=${_WAIT_FOR_BUILD_RESULT}"
+WRAPPER
+    chmod +x "${TEST_TEMP_DIR}/queue_nameref_wrapper.sh"
+
+    run bash "${TEST_TEMP_DIR}/queue_nameref_wrapper.sh" 2>&1
+
+    assert_success
+    # Build number returned via global variable, not stdout
+    assert_output --partial "RESULT=43"
+    # No stray build number on stdout (old echo pattern)
+    refute_output --regexp "^43$"
 }

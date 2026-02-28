@@ -15,6 +15,13 @@ All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are do
 - **`status -f`/`push --line`/`build --line` multi-build progress bars** - Progress rendering now redraws atomically with no clear-line flash, shows one `IN_PROGRESS` line per concurrently running build, keeps the primary followed build first, and removes completed secondary lines cleanly
 - **Queue-aware start wait for `build` and `push`** - Build start waiting now shows `QUEUED` status details (`why` text/ETA) and waits indefinitely once Jenkins confirms the queue item; timeout still applies only when no queue item is found
 - **`status -f` queued progress row** - Follow mode progress now includes queued builds as `QUEUED` rows with indeterminate animation, elapsed queue time (`Xs in queue`), and estimated build duration
+- **Queue wait transition logging** - Queue wait output now logs only on first detect and phase transitions, uses sticky queue status lines on TTY, and throttles non-TTY updates to every 30 seconds within a phase
+- **Queued secondary rows for `push`/`build`** - `push` and `build` monitoring now include queued secondary-build rows in the same multi-line progress format used by `status -f`
+- **Progress redraw sequencing** - Full monitoring mode now gathers deferred-header and stage updates before redraw operations to reduce visible flash from clear/redraw timing gaps
+
+### Bug Fixes
+- **Queue wait progress bar missing on TTY** - Fixed `buildgit build` and `buildgit push` always using non-TTY output during queue wait (plain `log_info` lines instead of sticky progress bar). Root cause was `_wait_for_build_start()` being called inside `$()` command substitution, which runs in a subshell where `[[ -t 1 ]]` always returns false. Fix returns build number via global variable instead of stdout
+- **Queue wait sticky lines match `status -f` format** - Queue wait progress now shows `IN_PROGRESS` bar first then `QUEUED` bar (matching `status -f` display order) with aligned "Job" column using 12-character padded status labels
 
 ## [1.0.0] - 2026-02-21
 
