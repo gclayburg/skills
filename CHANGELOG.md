@@ -12,6 +12,9 @@ All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are do
 - **`--prior-jobs <N>` for `status`, `push`, and `build`** - Added prior-build context blocks in snapshot and monitoring flows with default `N=3`, oldest-first one-line rows, `N=0` suppression, and validation for missing/invalid values
 - **Monitoring preamble estimate line** - `push`, `build`, and `status -f` now print `Estimated build time = ...` from Jenkins `lastSuccessfulBuild` duration (or `unknown` when unavailable)
 - **Monitoring header field order consistency** - `push`, `build`, and `status -f` now keep header ordering aligned: `Commit` appears before `Started`, `Agent` reliably appears in Build Info, and `Console:` is printed last (including deferred-header cases)
+- **`status -f`/`push --line`/`build --line` multi-build progress bars** - Progress rendering now redraws atomically with no clear-line flash, shows one `IN_PROGRESS` line per concurrently running build, keeps the primary followed build first, and removes completed secondary lines cleanly
+- **Queue-aware start wait for `build` and `push`** - Build start waiting now shows `QUEUED` status details (`why` text/ETA) and waits indefinitely once Jenkins confirms the queue item; timeout still applies only when no queue item is found
+- **`status -f` queued progress row** - Follow mode progress now includes queued builds as `QUEUED` rows with indeterminate animation, elapsed queue time (`Xs in queue`), and estimated build duration
 
 ## [1.0.0] - 2026-02-21
 
