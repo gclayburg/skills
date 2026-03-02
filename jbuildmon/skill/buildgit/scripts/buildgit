@@ -22,7 +22,7 @@
 #
 
 set -euo pipefail
-BUILDGIT_VERSION="1.1.0-dev"
+BUILDGIT_VERSION="1.1.0"
 
 # =============================================================================
 # Script Setup

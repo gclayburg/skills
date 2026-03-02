@@ -2,156 +2,51 @@
 
 All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are documented in this file.
 
-## [Unreleased] - 1.1.0-dev
+## [1.1.0] - 2026-03-02
 
 ### Features
-- **`--format <fmt>` option for `status`, `push --line`, and `build --line`** - Added a `--format` option to customize the one-line output format. Format strings use `%`-style placeholders: `%s` (status), `%j` (job), `%n` (build number), `%t` (tests), `%d` (duration), `%D` (date), `%I` (ISO 8601 datetime), `%r` (relative time), `%c` (git commit SHA, 7 chars), `%b` (git branch), `%%` (literal `%`). Unknown placeholders are passed through unchanged. Specifying `--format` implies `--line`. Conflicts with `--json` and `--all` are reported as errors
+- **`--format <fmt>` custom output format** — Customize `--line` output with `%`-style placeholders: `%s` (status), `%j` (job), `%n` (build number), `%t` (tests), `%d` (duration), `%D` (date), `%I` (ISO 8601 datetime), `%r` (relative time), `%c` (git commit SHA), `%b` (git branch), `%%` (literal `%`). Specifying `--format` implies `--line`. Conflicts with `--json` and `--all` are reported as errors.
+- **`--prior-jobs <N>` prior build context** — Show N recently completed builds (default 3, oldest-first) before the main output in `status`, `push`, `build`, and `status -f`. Use `--prior-jobs 0` to suppress. Works with `status <build#>` to show builds prior to the specified build.
+- **Estimated build time in monitoring** — `push`, `build`, and `status -f` now print `Estimated build time = ...` from Jenkins `lastSuccessfulBuild` duration before monitoring begins.
+- **Concurrent build and queue display** — Monitoring modes (`push`, `build`, `status -f`) now show one progress row per concurrently running build and display queued builds with `QUEUED` status, queue reason, and elapsed queue time. Queue wait uses transition-based logging to reduce noise.
 
 ### Changed
-- **`status --line` default format** - Changed the default one-line format to `%s #%n id=%c Tests=%t Took %d on %I (%r)` to drop redundant job name output and include commit id with ISO 8601 timestamp
-- **`--prior-jobs <N>` for `status`, `push`, and `build`** - Added prior-build context blocks in snapshot and monitoring flows with default `N=3`, oldest-first one-line rows, `N=0` suppression, and validation for missing/invalid values
-- **Monitoring preamble estimate line** - `push`, `build`, and `status -f` now print `Estimated build time = ...` from Jenkins `lastSuccessfulBuild` duration (or `unknown` when unavailable)
-- **Monitoring header field order consistency** - `push`, `build`, and `status -f` now keep header ordering aligned: `Commit` appears before `Started`, `Agent` reliably appears in Build Info, and `Console:` is printed last (including deferred-header cases)
-- **`status -f`/`push --line`/`build --line` multi-build progress bars** - Progress rendering now redraws atomically with no clear-line flash, shows one `IN_PROGRESS` line per concurrently running build, keeps the primary followed build first, and removes completed secondary lines cleanly
-- **Queue-aware start wait for `build` and `push`** - Build start waiting now shows `QUEUED` status details (`why` text/ETA) and waits indefinitely once Jenkins confirms the queue item; timeout still applies only when no queue item is found
-- **`status -f` queued progress row** - Follow mode progress now includes queued builds as `QUEUED` rows with indeterminate animation, elapsed queue time (`Xs in queue`), and estimated build duration
-- **Queue wait transition logging** - Queue wait output now logs only on first detect and phase transitions, uses sticky queue status lines on TTY, and throttles non-TTY updates to every 30 seconds within a phase
-- **Queued secondary rows for `push`/`build`** - `push` and `build` monitoring now include queued secondary-build rows in the same multi-line progress format used by `status -f`
-- **Progress redraw sequencing** - Full monitoring mode now gathers deferred-header and stage updates before redraw operations to reduce visible flash from clear/redraw timing gaps
-
-### Bug Fixes
-- **Queue wait progress bar missing on TTY** - Fixed `buildgit build` and `buildgit push` always using non-TTY output during queue wait (plain `log_info` lines instead of sticky progress bar). Root cause was `_wait_for_build_start()` being called inside `$()` command substitution, which runs in a subshell where `[[ -t 1 ]]` always returns false. Fix returns build number via global variable instead of stdout
-- **Queue wait sticky lines match `status -f` format** - Queue wait progress now shows `IN_PROGRESS` bar first then `QUEUED` bar (matching `status -f` display order) with aligned "Job" column using 12-character padded status labels
+- **`status --line` default format** — Changed to `%s #%n id=%c Tests=%t Took %d on %I (%r)`, dropping redundant job name and adding commit id with ISO 8601 timestamp.
+- **Monitoring header field order** — `push`, `build`, and `status -f` now keep Commit before Started, Agent in Build Info, and Console printed last.
 
 ## [1.0.0] - 2026-02-21
 
 ### Features
-- **`--version` global option** — Added `--version` flag to display the current buildgit version and exit. Version `1.0.0` is the initial release. Releases use git tags of the form `v<major>.<minor>.<patch>`.
-- **`-v` verbose short flag** — Added `-v` as a global option alias for `--verbose`, matching common CLI conventions.
-- **Relative `status` build references** — `buildgit status` now accepts `0`, and negative build refs (`-1`, `-2`, …) to query builds relative to the latest build number.
-
-### Changed
-- **`status` build ref + `-n` validation** — Build references and `-n <count>` are now mutually exclusive (`Cannot combine a build number with -n`).
-- **`status -n` snapshot behavior** — `-n <count>` without `--line` now prints full snapshot output for multiple builds (oldest-first) instead of being ignored.
-- **`status -n --json` output shape** — Multi-build JSON snapshot mode now emits JSONL (one compact JSON object per build line, oldest-first).
-
-## 2026-02-20
-
-### Changed
-- **`status -f --line` support** — Removed the `--line`/`--follow` incompatibility. `buildgit status -f --line` is now supported, including `--once` and `-n <count>` combinations.
-- **Line follow in-progress behavior** — In line follow mode on TTY, in-progress builds now render an in-place animated 20-column progress bar with elapsed time and an estimate from Jenkins `lastSuccessfulBuild` duration.
-- **Line follow completion behavior** — When a followed build completes, the progress line is cleared and replaced with the standard `--line` completed-build row (including test summary when enabled).
-- **Line follow non-TTY behavior** — In-progress builds are now silent on non-TTY output in line follow mode; only the final completed `--line` row is printed.
-- **`push --line` and `build --line`** — Added compact line monitoring mode to push/build commands. On TTY, monitoring uses the animated in-progress bar; on completion, output is a single `--line` summary row.
-- **Sticky footer progress in full monitoring mode** — `push`, `build`, and `status -f` now render the in-progress progress bar as the bottom line on TTY while preserving existing full stage/header output.
-
-## 2026-02-19
-
-### Changed
-- **`status --line` count flag** — Replaced `--line=N` syntax with a separate `-n <count>` flag. `--line` is now a pure boolean mode flag; use `buildgit status -n 5 --line` instead of `buildgit status --line=5`. Using `--line=value` now produces a descriptive error.
-- **`status --line` multi-build ordering** — Reversed output order for multi-build line mode (`-n N --line`): builds are now printed oldest-first, with the newest build on the last line. Exit code is based on the last (newest) build.
-- **`status -f --once` enhanced** — `--once` now accepts an optional timeout value via `--once=N` (seconds; default 10; `--once=0` = no wait). When no build is in progress, `--once` waits up to N seconds for a new build to start; exits with code 2 and error message if timeout expires. Follow mode no longer replays the previously completed build on entry — it waits silently for the next new build. Info message updated to show `(once, timeout=Ns)` and omits "Press Ctrl+C" hint.
-- **`-n <count>` with `-f`** — The `-n` flag is now compatible with follow mode. `buildgit status -n 3 -f` displays the 3 most recently completed builds (oldest first) before entering follow mode. In-progress builds do not count toward `-n`. Combining with `--once` is also supported.
-
-## 2026-02-16
-
-### Features
-- **`line status test summary`** - Added `Tests=<passed>/<failed>/<skipped>` to `buildgit status --line` and `--line=N` output
-- **`line status no-tests flag`** - Added `buildgit status --no-tests` to skip `testReport/api/json` calls in line mode and render `Tests=?/?/?`
-- **`status follow once mode`** - Added `buildgit status -f --once` to follow a single build and exit with the build result code
-
-### Changed
-- **`line status completion wording`** - Replaced `completed in` with `Took` for completed one-line status output
-- **`status follow usage and skill docs`** - Updated help text, README, and skill docs to include `status -f --once` for agent-safe single-build monitoring
-
-## 2026-02-15
-
-### Features
-- **Usage help on invalid options** — Unknown or invalid options for `status` and `build` subcommands now display the full usage help alongside the error message. `-h`/`--help` is recognized on `status` and `build` subcommands as a valid help request (exit 0, stdout). Error usage output goes to stderr consistently across all commands.
-- **Quick status line mode** — Added `buildgit status --line` with optional count (`--line=N`) for compact one-line summaries. Added `--all` to force full status output. Default snapshot behavior is now TTY-aware (`status` shows full output on TTY and one-line output when piped/redirected).
-- **Line status alignment and color** — Enhanced `buildgit status --line` and `--line=N` output to render a fixed-width 11-character result column (padded/truncated) and color only the status token using existing TTY-aware color rules.
-
-## 2026-02-14
+- **`buildgit` unified CLI** — Combined git and Jenkins build tool with `status`, `push`, `build` subcommands and transparent git pass-through for any other git command.
+- **`--job` flag and auto-detection** — Job name auto-detected from git remote; `--job <name>` overrides for all commands.
+- **`--version` global option** — Display current buildgit version and exit. Version `1.0.0` is the initial release.
+- **`-v` verbose short flag** — `-v` as alias for `--verbose`.
+- **`buildgit status <build#>`** — Query a specific historical build by number. Supports relative references (`0` for latest, `-1` for previous, etc.).
+- **`-n <count>` multi-build display** — Show N most recent builds in oldest-first order. Works with `--line`, `--json` (JSONL), and full output modes.
+- **`--line` one-line status mode** — Compact one-line build summaries with fixed-width status column, TTY-aware color, and `Tests=pass/fail/skip` results. `--all` forces full output. Default is TTY-aware (full on terminal, one-line when piped).
+- **`--no-tests` flag** — Skip test report API calls in line mode.
+- **`--once` follow mode** — `status -f --once[=N]` follows one build and exits. Optional timeout (default 10s) for waiting when no build is in progress.
+- **`status -f --line` follow with progress bar** — In-progress builds show an animated progress bar with elapsed time and estimate on TTY. Completed builds replace the bar with a standard `--line` row. Non-TTY output is silent until completion.
+- **`push --line` and `build --line`** — Compact line monitoring mode for push and build commands with the same progress bar behavior.
+- **`--console` global option** — Control console log display; suppress noisy error logs for UNSTABLE builds.
+- **Nested/downstream job display** — Downstream build stages shown inline with agent names, `->` nesting notation, real-time monitoring, and recursive support across all output modes.
+- **Parallel stage display** — Parallel pipeline stages marked with numbered `║` indicators, proper tracking in monitoring mode, and aggregate wrapper duration.
+- **Test results for all builds** — Test results summary shown for SUCCESS, FAILURE, and UNSTABLE builds. Green for all-pass, yellow for failures, placeholder when no report available.
+- **Full stage print during monitoring** — All pipeline stages with durations displayed during build monitoring, not just the running stage.
+- **Unified monitoring output** — Consistent output format across `push`, `build`, and `status -f` during build monitoring.
+- **Usage help on invalid options** — Unknown options for `status` and `build` display full usage help. `-h`/`--help` recognized on subcommands.
+- **Early build failure display** — Full console log shown when a build fails before any pipeline stage runs (e.g. Jenkinsfile syntax error).
+- **Agent Skill packaging** — `buildgit` packaged as a portable Agent Skill following the agentskills.io open standard.
+- **Test failure display** — JUnit test failure details shown in terminal output after a failed build.
+- **bats-core test framework** — Unit testing framework installed and configured for the project.
 
 ### Bug Fixes
-- **Monitoring mode missing stages** — Fixed monitoring mode (`build`, `push`, `status -f`) missing downstream stages and printing wrapper/parent stages prematurely. Wrapper stages with parallel branches are now deferred until all branches reach terminal status. Downstream parent stages are deferred until at least one child stage appears. Settlement window increased to allow deeply nested builds to fully resolve.
-- **Downstream job matching for shared-prefix job names** — Fixed `_select_downstream_build_for_stage` matching the wrong downstream job when multiple job names share a common prefix (e.g., `phandlemono-handle` vs `phandlemono-signalboot`). Segment-level matches now score higher than substring matches.
-
-## 2026-02-13
-
-### Features
-- **Show test results for all builds** — Test results summary (`=== Test Results ===`) now appears for all completed builds including SUCCESS, not just failures. Uses green color for all-pass, yellow for failures. Shows placeholder when no test report is available. JSON output includes `test_results` field for all completed builds.
-- **Parallel stages display** — Parallel pipeline stages (e.g., `parallel { }` blocks) are now visually distinguished with `║` markers, properly tracked in monitoring mode, and show aggregate wrapper duration. JSON output includes `is_parallel_wrapper`, `parallel_branches`, `parallel_branch`, and `parallel_wrapper` fields.
-
-### Bug Fixes
-- **Parallel stages premature printing** — Fixed monitoring mode printing parallel branch stages before they completed, showing `(unknown)` duration. All parallel branches are now independently tracked through completion.
-- **Missing downstream stages for parallel branches** — Fixed `extract_stage_logs()` not finding parallel branch console logs because Jenkins uses `(Branch: StageName)` prefix. Added fallback to search with `Branch:` prefix.
-- **Parallel wrapper stage duration** — Wrapper stages containing parallel blocks now show aggregate wall-clock duration (wrapper API time + longest branch duration) instead of just the setup time.
-- **Build monitoring header cleanup** — Removed misleading `Elapsed:` field from build header; added `Duration:` line after `Finished:` in monitoring mode.
-- **Snapshot mode missing Agent/Pipeline** — Fixed `buildgit status` not passing console output to header, so Build Info section (Agent, Pipeline) now displays in snapshot mode.
-- **Deferred header fields** — When `buildgit build` triggers a new build, fields not yet available (Commit, Build Info, Console URL) are printed as soon as console output arrives instead of showing "unknown".
-- **Running-time message for `status -f`** — When `status -f` joins an already in-progress build, shows "Job X #N has been running for Xm Xs" instead of a misleading elapsed time in the header.
-
-## 2026-02-12
-
-### Features
-- **Nested/downstream job display** — Downstream and nested build stages are shown inline with agent names, `->` nesting notation, real-time monitoring, and recursive support across all output modes (status, status -f, status --json, push, build).
-- **`buildgit status <build#>`** — Query a specific historical build by number using a positional argument.
-- **`--console` global option** — Suppress noisy error logs for UNSTABLE builds; allow explicit console log display on demand.
-
-### Bug Fixes
-- **NOT_BUILT / non-SUCCESS results missing error display** — Fixed monitoring mode (push/build/status -f) not showing error output for NOT_BUILT and other non-SUCCESS stage results.
-- **JSON stdout pollution** — Removed `git status` output from `buildgit status` so `--json` output is clean; `buildgit status` is now Jenkins-only.
-
-### Refactoring
-- **Shared failure diagnostics** — Extracted `_display_failure_diagnostics()` so monitoring mode shows the same failure output as snapshot mode; added missing Failed Jobs tree to monitoring mode.
-
-## 2026-02-09 — 2026-02-11
-
-### Features
-- **Agent Skill packaging** — Packaged `buildgit` as a portable Agent Skill following the agentskills.io open standard (`skill/buildgit/`).
-
-### Bug Fixes
-- **`buildgit status --json` incomplete output** — Fixed JSON mode to include console output for early failures and multi-line error extraction for stage failures.
-- **`buildgit status -f` missing build header** — Fixed missing header when `status -f` detects a build that already completed.
-- **Early build failure display** — Show full console log when a build fails before any pipeline stage runs (e.g. Jenkinsfile syntax error).
-
-### Refactoring
-- **Code deduplication pass** — Extracted helpers, removed dead wrappers, and merged duplicated functions across `buildgit` and `jenkins-common.sh`.
-- **Migrated legacy tests to bats-core** — Converted old checkbuild/pushmon shell tests to the bats-core framework.
-
-## 2026-02-06 — 2026-02-08
-
-### Features
-- **Unified follow/monitoring output** — Consistent output format across `push`, `build`, and `status -f` commands during build monitoring.
-- **Full stage print** — Display all pipeline stages with durations during build monitoring (not just the running stage).
-
-### Bug Fixes
-- **Running stage spam** — Fixed the running stage being printed on every poll cycle during monitoring.
-
-## 2026-01-31 — 2026-02-02
-
-### Features
-- **`buildgit` unified CLI** — Combined git and Jenkins build tool with `status`, `push`, `build` subcommands and git pass-through.
-- **`--job` flag and auto-detection** — Unified job name handling with auto-detection from git remote and explicit `--job` override for all commands.
-
-### Bug Fixes
-- **Monitoring mode failures** — Fixed various issues with build monitoring not detecting or reporting failures correctly.
-- **checkbuild silent exit** — Fixed `checkbuild` exiting silently instead of reporting errors.
-
-## 2026-01-27 — 2026-01-30
-
-### Features
-- **Test failure display** — Show JUnit test failure details in terminal output after a failed build.
-- **bats-core test framework** — Installed and configured bats-core as the project unit testing framework.
-
-### Bug Fixes
-- **Jenkins log truncation** — Fixed stage log being truncated when displaying failure analysis.
-- **Empty FAILED TESTS section** — Fixed jq query not matching Jenkins API structure, resulting in an empty test failure display.
-
-## 2026-01-25 — 2026-01-26
-
-### Initial Release
-- **checkbuild** — Shell script to check current build status of a git/Jenkins project from the working directory.
-- **pushmon** — Shell script to push staged git changes to origin and monitor build status until complete.
-- Jenkins CI integration with build metadata display (user, agent, pipeline) on failure.
+- **Jenkins log truncation** — Fixed stage log truncation when displaying failure analysis.
+- **Empty test failure section** — Fixed jq query not matching Jenkins API structure.
+- **JSON stdout pollution** — Removed `git status` output from `buildgit status` so `--json` output is clean.
+- **NOT_BUILT results missing error display** — Fixed monitoring mode not showing error output for NOT_BUILT and other non-SUCCESS stage results.
+- **Parallel branch downstream mapping** — Fixed incorrect downstream job association in parallel branches.
+- **Monitoring missing stages** — Fixed monitoring mode missing downstream stages and printing wrapper stages prematurely.
+- **Build monitoring header** — Fixed missing Agent/Pipeline/Commit fields, removed misleading Elapsed field, added Duration line at completion.
+- **`status -f` missing header** — Fixed missing build header when `status -f` detects an already-completed build.
+- **`status --json` incomplete output** — Fixed JSON mode missing console output for early failures and multi-line error extraction.

@@ -67,6 +67,8 @@ add these env settings to your context in /etc/sandbox-persistent.sh:
 export JENKINS_URL=$JENKINS_URL
 export JENKINS_USER_ID=$JENKINS_USER_ID
 export JENKINS_API_TOKEN=$JENKINS_API_TOKEN
+export GIT_HTTPS_USER=$GIT_HTTPS_USER
+export GIT_HTTPS_TOKEN=$GIT_HTTPS_TOKEN
 "
 ```
 
@@ -78,6 +80,8 @@ add these env settings to your context in /etc/sandbox-persistent.sh:
 export JENKINS_URL=$JENKINS_URL
 export JENKINS_USER_ID=$JENKINS_USER_ID
 export JENKINS_API_TOKEN=$JENKINS_API_TOKEN
+export GIT_HTTPS_USER=$GIT_HTTPS_USER
+export GIT_HTTPS_TOKEN=$GIT_HTTPS_TOKEN
 "
 ```
 
@@ -91,9 +95,18 @@ $ docker sandbox run codex . -- exec --model gpt-5.1-codex-mini 'what is the bui
 $ docker sandbox run claude . -- --model haiku -p  'what is the build status'
 ```
 
-**Fix Docker sandbox proxy errors.** Allow access for your `JENKINS_URL` host:
+**Fix Docker sandbox proxy errors.** Allow access for your `JENKINS_URL` and git https host:
 
 ```
-$ docker sandbox network proxy codex-phandlemono --policy allow --allow-host palmer.garyclayburg.com
+$ docker sandbox network proxy codex-phandlemono --policy allow --allow-host palmer.garyclayburg.com --allow-host jenkins.garyclayburg.com --allow-host git.garyclaybug.com
 ```
 
+### git https permissions
+Here we are setting up git to use basic auth from env variables.
+This is needed to allow your sandbox to push code to the remote git https server:
+
+```
+git config credential.helper '!f() { echo "username=${GIT_HTTPS_USER}"; echo "password=${GIT_HTTPS_TOKEN}"; }; f'
+export GIT_HTTPS_USER=<your-git-user>
+export GIT_HTTPS_TOKEN=<your-git-password>
+```
