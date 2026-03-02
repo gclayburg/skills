@@ -29,15 +29,13 @@ pipeline {
                         }
                     }
                     steps {
-                        sh 'git submodule update --init --recursive'
+                        sh 'git submodule update --init --recursive --depth 1'
                         dir('jbuildmon') {
                             sh '''
                                 PARALLEL_OPTS=""
                                 command -v parallel >/dev/null 2>&1 && PARALLEL_OPTS="--jobs 2"
                                 ./test/bats/bin/bats --formatter tap --report-formatter junit --output . $PARALLEL_OPTS \
                                     test/buildgit_status.bats \
-                                    test/test_results_display.bats \
-                                    test/buildgit_status_follow.bats \
                                     test/buildgit_build.bats \
                                     test/smoke.bats || true
                             '''
@@ -59,7 +57,7 @@ pipeline {
                         }
                     }
                     steps {
-                        sh 'git submodule update --init --recursive'
+                        sh 'git submodule update --init --recursive --depth 1'
                         dir('jbuildmon') {
                             sh '''
                                 PARALLEL_OPTS=""
@@ -96,7 +94,7 @@ pipeline {
                         }
                     }
                     steps {
-                        sh 'git submodule update --init --recursive'
+                        sh 'git submodule update --init --recursive --depth 1'
                         dir('jbuildmon') {
                             sh '''
                                 PARALLEL_OPTS=""
@@ -124,6 +122,33 @@ pipeline {
                                     test/trigger_detection.bats \
                                     test/buildgit_verbose_stderr.bats \
                                     test/buildgit_version.bats || true
+                            '''
+                        }
+                    }
+                    post {
+                        always {
+                            junit skipPublishingChecks: true, testResults: 'jbuildmon/report.xml'
+                        }
+                    }
+                }
+
+                stage('Unit Tests D') {
+                    agent {
+                        docker {
+                            image 'registry:5000/shell-jenkins-agent:latest'
+                            alwaysPull true
+                            label 'fastnode'
+                        }
+                    }
+                    steps {
+                        sh 'git submodule update --init --recursive --depth 1'
+                        dir('jbuildmon') {
+                            sh '''
+                                PARALLEL_OPTS=""
+                                command -v parallel >/dev/null 2>&1 && PARALLEL_OPTS="--jobs 2"
+                                ./test/bats/bin/bats --formatter tap --report-formatter junit --output . $PARALLEL_OPTS \
+                                    test/test_results_display.bats \
+                                    test/buildgit_status_follow.bats || true
                             '''
                         }
                     }
