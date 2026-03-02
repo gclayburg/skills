@@ -67,10 +67,8 @@ pipeline {
                                     test/parallel_stages.bats \
                                     test/console_option.bats \
                                     test/unified_header.bats \
-                                    test/buildgit_push.bats \
                                     test/stage_duration.bats \
                                     test/stage_print.bats \
-                                    test/buildgit_args.bats \
                                     test/extract_stage_logs.bats \
                                     test/buildgit_errors.bats \
                                     test/jenkins_common.bats \
@@ -146,9 +144,60 @@ pipeline {
                             sh '''
                                 PARALLEL_OPTS=""
                                 command -v parallel >/dev/null 2>&1 && PARALLEL_OPTS="--jobs 2"
-                                ./test/bats/bin/bats --formatter tap --report-formatter junit --output . $PARALLEL_OPTS \
-                                    test/test_results_display.bats \
-                                    test/buildgit_status_follow.bats || true
+
+                                # Files explicitly assigned to Groups A, B, C
+                                ASSIGNED_FILES="
+                                    buildgit_status.bats
+                                    buildgit_build.bats
+                                    smoke.bats
+                                    nested_stages.bats
+                                    parallel_stages.bats
+                                    console_option.bats
+                                    unified_header.bats
+                                    stage_duration.bats
+                                    stage_print.bats
+                                    extract_stage_logs.bats
+                                    buildgit_errors.bats
+                                    jenkins_common.bats
+                                    build_info.bats
+                                    display_stages.bats
+                                    buildgit_routing.bats
+                                    buildgit_realtime_progress.bats
+                                    bug_show_all_stages.bats
+                                    stage_tracking.bats
+                                    buildgit_verbosity.bats
+                                    build_completion.bats
+                                    job_discovery.bats
+                                    monitor_consolidation.bats
+                                    shared_failure_diagnostics.bats
+                                    monitoring_stages.bats
+                                    finished_line.bats
+                                    early_build_failure.bats
+                                    bug_status_json.bats
+                                    stage_retrieval.bats
+                                    buildgit_follow_banner.bats
+                                    bug_not_built.bats
+                                    header_integration.bats
+                                    correlate_commit.bats
+                                    trigger_detection.bats
+                                    buildgit_verbose_stderr.bats
+                                    buildgit_version.bats
+                                "
+
+                                # Find all .bats files not assigned to other groups
+                                REMAINING=""
+                                for f in test/*.bats; do
+                                    if ! echo "$ASSIGNED_FILES" | grep -qw "$(basename "$f")"; then
+                                        REMAINING="$REMAINING $f"
+                                    fi
+                                done
+
+                                if [ -n "$REMAINING" ]; then
+                                    echo "Catch-all group running: $REMAINING"
+                                    ./test/bats/bin/bats --formatter tap --report-formatter junit --output . $PARALLEL_OPTS $REMAINING || true
+                                else
+                                    echo "No additional test files found"
+                                fi
                             '''
                         }
                     }
