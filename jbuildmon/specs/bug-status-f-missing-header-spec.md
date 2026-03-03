@@ -1,5 +1,9 @@
-# Bug Fix: buildgit status -f Missing Build Header for Completed Builds
-Date: 2026-02-07
+## Bug Fix: buildgit status -f Missing Build Header for Completed Builds
+
+- **Date:** `2026-02-07T00:00:00-07:00`
+- **References:** none
+- **Supersedes:** none
+- **State:** `VALIDATED`
 
 ## Overview
 

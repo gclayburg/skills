@@ -1,8 +1,9 @@
-# Fix Build Monitoring Header: Missing Fields, Elapsed/Duration, and Commit
+## Fix Build Monitoring Header: Missing Fields, Elapsed/Duration, and Commit
 
-- Date: 2026-02-13T10:24:51-07:00
-- References: specs/todo/bug-build-push.md
-- Supersedes: unify-follow-log-spec.md (partially — removes Elapsed field from header, adds Duration line, changes deferred header behavior)
+- **Date:** `2026-02-13T10:24:51-07:00`
+- **References:** `specs/todo/bug-build-push.md`
+- **Supersedes:** unify-follow-log-spec.md (partially — removes Elapsed field from header, adds Duration line, changes deferred header behavior)
+- **State:** `VALIDATED`
 
 ## Problem Statement
 

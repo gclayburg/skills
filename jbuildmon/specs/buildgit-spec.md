@@ -1,5 +1,9 @@
-# buildgit - Combined Git and Jenkins Build Tool
-Date: 2026-01-31
+## buildgit - Combined Git and Jenkins Build Tool
+
+- **Date:** `2026-01-31T00:00:00-07:00`
+- **References:** none
+- **Supersedes:** none
+- **State:** `VALIDATED`
 
 ## Overview
 

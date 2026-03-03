@@ -1,9 +1,9 @@
-# Feature: Progress Bar Flash Fix, Multiple Concurrent Builds, and Queue State Display
+## Feature: Progress Bar Flash Fix, Multiple Concurrent Builds, and Queue State Display
 
 - **Date:** `2026-02-27T00:00:00-0700`
 - **References:** `specs/done-reports/multiple-builds-at-once.md`
 - **Supersedes:** none
-- **State:** `IMPLEMENTED`
+- **State:** `VALIDATED`
 
 ## Overview
 

@@ -1,5 +1,9 @@
-# Full Stage Print Specification
-Date: 2026-02-02
+## Full Stage Print Specification
+
+- **Date:** `2026-02-02T00:00:00-07:00`
+- **References:** none
+- **Supersedes:** none
+- **State:** `VALIDATED`
 
 ## Overview
 

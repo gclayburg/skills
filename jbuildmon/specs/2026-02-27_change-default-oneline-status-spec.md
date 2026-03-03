@@ -3,7 +3,7 @@
 - **Date:** `2026-02-27T00:00:00-0700`
 - **References:** `specs/done-reports/change-default-oneline-status.md`
 - **Supersedes:** none
-- **State:** `IMPLEMENTED`
+- **State:** `VALIDATED`
 
 ## Background
 

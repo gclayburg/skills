@@ -1,7 +1,9 @@
-# Numbered Parallel Stage Display and Snapshot/Monitoring Consistency
-Date: 2026-02-14T00:45:00-0700
-References: specs/done-reports/feature2026-02-14-parallel-stage-numbered-display-raw.md, specs/bug-parallel-stages-display-spec.md, specs/nested-jobs-display-spec.md
-Supersedes: none (amends bug-parallel-stages-display-spec.md and nested-jobs-display-spec.md)
+## Numbered Parallel Stage Display and Snapshot/Monitoring Consistency
+
+- **Date:** `2026-02-14T00:45:00-0700`
+- **References:** `specs/done-reports/feature2026-02-14-parallel-stage-numbered-display-raw.md`, `specs/bug-parallel-stages-display-spec.md`, `specs/nested-jobs-display-spec.md`
+- **Supersedes:** none (amends bug-parallel-stages-display-spec.md and nested-jobs-display-spec.md)
+- **State:** `VALIDATED`
 
 ## Overview
 

@@ -1,5 +1,9 @@
-# Bug: checkbuild.sh Silent Exit for Some Jenkins Jobs
-Date: 2026-01-31
+## Bug: checkbuild.sh Silent Exit for Some Jenkins Jobs
+
+- **Date:** `2026-01-31T00:00:00-07:00`
+- **References:** none
+- **Supersedes:** none
+- **State:** `VALIDATED`
 
 ## Summary
 

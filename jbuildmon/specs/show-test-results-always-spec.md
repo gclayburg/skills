@@ -1,7 +1,9 @@
-# Show Test Results for All Completed Builds
-Date: 2026-02-13T15:04:27-07:00
-References: specs/done-reports/features-show-test-results-always.md
-Supersedes: none
+## Show Test Results for All Completed Builds
+
+- **Date:** `2026-02-13T15:04:27-07:00`
+- **References:** `specs/done-reports/features-show-test-results-always.md`
+- **Supersedes:** none
+- **State:** `VALIDATED`
 
 ## Overview
 

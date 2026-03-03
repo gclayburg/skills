@@ -1,5 +1,9 @@
-# Bug: Test Case Failure Details Not Shown in Terminal Output
-Date: 2026-01-28
+## Bug: Test Case Failure Details Not Shown in Terminal Output
+
+- **Date:** `2026-01-28T00:00:00-07:00`
+- **References:** none
+- **Supersedes:** none
+- **State:** `VALIDATED`
 
 ## Summary
 

@@ -1,4 +1,9 @@
-# Checkbuild - Jenkins Build Status Checker
+## Checkbuild - Jenkins Build Status Checker
+
+- **Date:** `2026-01-26T15:07:49-07:00`
+- **References:** none
+- **Supersedes:** none
+- **State:** `VALIDATED`
 
 ## Overview
 

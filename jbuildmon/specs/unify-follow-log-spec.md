@@ -1,5 +1,9 @@
-# Unified Build Monitoring Output
-Date: 2026-02-06
+## Unified Build Monitoring Output
+
+- **Date:** `2026-02-06T00:00:00-07:00`
+- **References:** none
+- **Supersedes:** none
+- **State:** `VALIDATED`
 
 ## Overview
 

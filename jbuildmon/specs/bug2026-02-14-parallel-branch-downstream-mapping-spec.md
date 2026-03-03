@@ -1,7 +1,9 @@
-# Parallel Branch Downstream Mapping Fix
-Date: 2026-02-14T00:00:00-0700
-References: specs/done-reports/bug2026-02-14-parallel-jobs-should-show-all-stages-raw-bugreport.md, specs/bug-parallel-stages-display-spec.md
-Supersedes: none (amends bug-parallel-stages-display-spec.md)
+## Parallel Branch Downstream Mapping Fix
+
+- **Date:** `2026-02-14T00:00:00-0700`
+- **References:** `specs/done-reports/bug2026-02-14-parallel-jobs-should-show-all-stages-raw-bugreport.md`, `specs/bug-parallel-stages-display-spec.md`
+- **Supersedes:** none (amends bug-parallel-stages-display-spec.md)
+- **State:** `VALIDATED`
 
 ## Overview
 

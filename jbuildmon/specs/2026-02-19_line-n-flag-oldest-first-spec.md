@@ -1,9 +1,9 @@
-# Feature: Separate Count Flag for Line Mode and Oldest-First Ordering
+## Feature: Separate Count Flag for Line Mode and Oldest-First Ordering
 
 - **Date:** `2026-02-19T00:00:00-07:00`
 - **References:** none
 - **Supersedes:** `2026-02-15_quick-status-line-spec.md` (partially — replaces `--line=N` syntax and output ordering)
-- **State:** `IMPLEMENTED`
+- **State:** `VALIDATED`
 
 ## Overview
 

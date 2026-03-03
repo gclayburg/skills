@@ -1,5 +1,9 @@
-# Simple Refactoring: Deduplication Pass
-Date: 2026-02-07
+## Simple Refactoring: Deduplication Pass
+
+- **Date:** `2026-02-07T00:00:00-07:00`
+- **References:** none
+- **Supersedes:** none
+- **State:** `VALIDATED`
 
 ## Overview
 

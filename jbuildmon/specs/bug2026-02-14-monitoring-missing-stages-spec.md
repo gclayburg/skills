@@ -1,7 +1,9 @@
-# Monitoring Mode Missing Stages and Premature Wrapper/Branch Printing
-Date: 2026-02-14T19:15:00-0700
-References: none
-Supersedes: none (amends bug-parallel-stages-display-spec.md, nested-jobs-display-spec.md, feature2026-02-14-numbered-parallel-stage-display-spec.md)
+## Monitoring Mode Missing Stages and Premature Wrapper/Branch Printing
+
+- **Date:** `2026-02-14T19:15:00-0700`
+- **References:** none
+- **Supersedes:** none (amends bug-parallel-stages-display-spec.md, nested-jobs-display-spec.md, feature2026-02-14-numbered-parallel-stage-display-spec.md)
+- **State:** `VALIDATED`
 
 ## Overview
 

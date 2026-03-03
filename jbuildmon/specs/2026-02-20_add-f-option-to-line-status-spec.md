@@ -1,9 +1,9 @@
-# Feature: Follow Mode with Line Output (`-f --line`) and In-Progress Bar
+## Feature: Follow Mode with Line Output (`-f --line`) and In-Progress Bar
 
 - **Date:** `2026-02-20T10:58:39-0700`
 - **References:** `specs/done-reports/add-f-option-to--line-status.md`
 - **Supersedes:** `2026-02-15_quick-status-line-spec.md` (partially — removes `--line` / `--follow` incompatibility), `2026-02-19_line-n-flag-oldest-first-spec.md` (partially — removes `-n` / `--follow` / `--line` incompatibility)
-- **State:** `IMPLEMENTED`
+- **State:** `VALIDATED`
 
 ## Overview
 

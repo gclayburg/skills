@@ -1,7 +1,9 @@
-# Feature: `buildgit status <build#>` — Query Specific Build Number
-Date: 2026-02-13T10:30:00-07:00
-References: specs/todo/feature-status-job-number.md, specs/todo/needed_tools.md
-Supersedes: none
+## Feature: `buildgit status <build#>` — Query Specific Build Number
+
+- **Date:** `2026-02-13T10:30:00-07:00`
+- **References:** `specs/todo/feature-status-job-number.md`, `specs/todo/needed_tools.md`
+- **Supersedes:** none
+- **State:** `VALIDATED`
 
 ## Overview
 

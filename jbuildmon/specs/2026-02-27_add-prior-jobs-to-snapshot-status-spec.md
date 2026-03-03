@@ -1,9 +1,9 @@
-# Feature: Prior Jobs Display for Snapshot Status
+## Feature: Prior Jobs Display for Snapshot Status
 
 - **Date:** `2026-02-27T00:00:00-0700`
 - **References:** `specs/done-reports/add-prior-jobs-display-to-snapshot-status.md`
 - **Supersedes:** none
-- **State:** `IMPLEMENTED`
+- **State:** `VALIDATED`
 
 ## Overview
 

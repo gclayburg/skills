@@ -1,7 +1,9 @@
-# Remove `git status` from `buildgit status`
-Date: 2026-02-10T17:10:00-07:00
-References: none
-Supersedes: buildgit-spec.md (partially — removes `git status` from the `buildgit status` command)
+## Remove `git status` from `buildgit status`
+
+- **Date:** `2026-02-10T17:10:00-07:00`
+- **References:** none
+- **Supersedes:** buildgit-spec.md (partially — removes `git status` from the `buildgit status` command)
+- **State:** `VALIDATED`
 
 ## Problem Statement
 

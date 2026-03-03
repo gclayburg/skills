@@ -1,5 +1,9 @@
-# Bug: Running Stage Printed on Every Poll Cycle
-Date: 2026-02-04
+## Bug: Running Stage Printed on Every Poll Cycle
+
+- **Date:** `2026-02-04T00:00:00-07:00`
+- **References:** none
+- **Supersedes:** none
+- **State:** `VALIDATED`
 
 ## Summary
 

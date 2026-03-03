@@ -1,8 +1,9 @@
-# Usage Help on Invalid Options and Subcommand Help
-- **Date:** 2026-02-15T11:00:00-07:00
-- **References:** specs/done-reports/usage-help.md
+## Usage Help on Invalid Options and Subcommand Help
+
+- **Date:** `2026-02-15T11:00:00-07:00`
+- **References:** `specs/done-reports/usage-help.md`
 - **Supersedes:** none
-- **State:** IMPLEMENTED
+- **State:** `VALIDATED`
 
 ## Overview
 

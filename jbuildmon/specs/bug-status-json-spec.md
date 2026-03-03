@@ -1,6 +1,9 @@
-# Bug Fix: JSON Output Missing Console/Error Details for Failed Builds
-Date: 2026-02-07
-References: specs/todo/bug-status-json.md
+## Bug Fix: JSON Output Missing Console/Error Details for Failed Builds
+
+- **Date:** `2026-02-07T00:00:00-07:00`
+- **References:** `specs/todo/bug-status-json.md`
+- **Supersedes:** none
+- **State:** `VALIDATED`
 
 ## Overview
 

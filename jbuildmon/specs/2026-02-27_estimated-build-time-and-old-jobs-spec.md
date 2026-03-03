@@ -1,9 +1,9 @@
-# Feature: Estimated Build Time and Prior Build History for Monitoring Commands
+## Feature: Estimated Build Time and Prior Build History for Monitoring Commands
 
 - **Date:** `2026-02-27T00:00:00-0700`
 - **References:** `specs/done-reports/estimated-time-to-complete-build.md`, `specs/done-reports/prior-jobs-display.md`
 - **Supersedes:** none
-- **State:** `IMPLEMENTED`
+- **State:** `VALIDATED`
 
 ## Overview
 

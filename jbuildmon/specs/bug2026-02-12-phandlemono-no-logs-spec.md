@@ -1,7 +1,9 @@
-# Bug Fix: NOT_BUILT and Non-SUCCESS Results Missing Error Display in Monitoring Mode
-Date: 2026-02-12T18:15:00-07:00
-References: specs/todo/bug-phandlemono-no-logs.shown.md
-Supersedes: none
+## Bug Fix: NOT_BUILT and Non-SUCCESS Results Missing Error Display in Monitoring Mode
+
+- **Date:** `2026-02-12T18:15:00-07:00`
+- **References:** `specs/todo/bug-phandlemono-no-logs.shown.md`
+- **Supersedes:** none
+- **State:** `VALIDATED`
 
 ## Overview
 

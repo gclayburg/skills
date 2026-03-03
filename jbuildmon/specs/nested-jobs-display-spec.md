@@ -1,7 +1,9 @@
-# Nested/Downstream Job Stage Display
-Date: 2026-02-12T22:11:15-0700
-References: specs/todo/feature-raw-nested-jobs.md
-Supersedes: none
+## Nested/Downstream Job Stage Display
+
+- **Date:** `2026-02-12T22:11:15-0700`
+- **References:** `specs/todo/feature-raw-nested-jobs.md`
+- **Supersedes:** none
+- **State:** `VALIDATED`
 
 ## Overview
 

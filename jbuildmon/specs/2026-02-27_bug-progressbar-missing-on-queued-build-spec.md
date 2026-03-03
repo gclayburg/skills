@@ -1,9 +1,9 @@
-# Bug: Progress Bar Missing on Queued Build (TTY check broken inside command substitution)
+## Bug: Progress Bar Missing on Queued Build (TTY check broken inside command substitution)
 
 - **Date:** `2026-02-27T22:00:00-0700`
 - **References:** `specs/done-reports/enhance-multiple-builds-at-once.md`, `specs/done-reports/bug-progressbar-missing-on-queued-build.md`
 - **Supersedes:** none (bug fix only; existing specs remain correct as-is)
-- **State:** `IMPLEMENTED`
+- **State:** `VALIDATED`
 
 ## Observed Behavior
 

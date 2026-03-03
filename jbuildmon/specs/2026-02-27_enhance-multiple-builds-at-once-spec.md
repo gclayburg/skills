@@ -1,9 +1,9 @@
-# Enhancement: Queue Output Noise, QUEUED Build Display for All Commands, Flash Follow-up
+## Enhancement: Queue Output Noise, QUEUED Build Display for All Commands, Flash Follow-up
 
 - **Date:** `2026-02-27T00:00:00-0700`
 - **References:** `specs/done-reports/enhance-multiple-builds-at-once.md`
 - **Supersedes:** `2026-02-27_multiple-builds-at-once-spec.md` (sections: Queue Status Output for build/push, Applicable Modes for QUEUED builds)
-- **State:** `IMPLEMENTED`
+- **State:** `VALIDATED`
 
 ## Overview
 

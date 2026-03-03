@@ -1,4 +1,9 @@
-# Jenkins Build Monitor - Functional Specification
+## Jenkins Build Monitor - Functional Specification
+
+- **Date:** `2026-01-26T01:07:11-07:00`
+- **References:** none
+- **Supersedes:** none
+- **State:** `VALIDATED`
 
 ## Overview
 

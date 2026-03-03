@@ -3,7 +3,7 @@
 - **Date:** `2026-02-21T14:43:52-0700`
 - **References:** `specs/done-reports/allow-negative-job-number.md`, `specs/done-reports/negative-numbers-with-n-enhanced.md`
 - **Supersedes:** (none)
-- **State:** `IMPLEMENTED`
+- **State:** `VALIDATED`
 
 ## Background
 

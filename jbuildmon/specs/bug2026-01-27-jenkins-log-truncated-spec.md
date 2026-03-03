@@ -1,4 +1,9 @@
-# Bug Fix: Jenkins Stage Log Truncation
+## Bug Fix: Jenkins Stage Log Truncation
+
+- **Date:** `2026-01-28T10:24:32-07:00`
+- **References:** none
+- **Supersedes:** none
+- **State:** `VALIDATED`
 
 ## Overview
 

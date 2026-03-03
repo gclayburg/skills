@@ -1,4 +1,9 @@
-# Install bats-core Testing Framework
+## Install bats-core Testing Framework
+
+- **Date:** `2026-01-27T22:53:48-07:00`
+- **References:** none
+- **Supersedes:** none
+- **State:** `VALIDATED`
 
 ## Overview
 

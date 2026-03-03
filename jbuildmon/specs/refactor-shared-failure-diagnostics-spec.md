@@ -1,7 +1,9 @@
-# Refactoring: Shared Failure Diagnostics Across All Entry Points
-Date: 2026-02-12T19:05:00-07:00
-References: specs/todo/bug-nofailed-jobs-section.md, specs/todo/bug-phandlemono-no-logs.shown.md
-Supersedes: none
+## Refactoring: Shared Failure Diagnostics Across All Entry Points
+
+- **Date:** `2026-02-12T19:05:00-07:00`
+- **References:** `specs/todo/bug-nofailed-jobs-section.md`, `specs/todo/bug-phandlemono-no-logs.shown.md`
+- **Supersedes:** none
+- **State:** `VALIDATED`
 
 ## Overview
 

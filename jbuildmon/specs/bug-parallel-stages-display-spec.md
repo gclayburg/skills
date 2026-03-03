@@ -1,7 +1,9 @@
-# Parallel Stages Display Fix and Enhancement
-Date: 2026-02-13T16:20:00-0700
-References: specs/done-reports/bug-show-paralel-stages.md
-Supersedes: none (amends nested-jobs-display-spec.md)
+## Parallel Stages Display Fix and Enhancement
+
+- **Date:** `2026-02-13T16:20:00-0700`
+- **References:** `specs/done-reports/bug-show-paralel-stages.md`
+- **Supersedes:** none (amends nested-jobs-display-spec.md)
+- **State:** `VALIDATED`
 
 ## Overview
 

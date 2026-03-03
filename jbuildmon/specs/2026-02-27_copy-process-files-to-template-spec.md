@@ -3,7 +3,7 @@
 - **Date:** `2026-02-27T23:15:24-0700`
 - **References:** none
 - **Supersedes:** none
-- **State:** `IMPLEMENTED`
+- **State:** `VALIDATED`
 
 ## SPEC workflow
 

@@ -1,6 +1,9 @@
-# Feature: --console Global Option
-Date: 2026-02-08
-References: specs/todo/bug-console-status.md
+## Feature: --console Global Option
+
+- **Date:** `2026-02-08T00:00:00-07:00`
+- **References:** `specs/todo/bug-console-status.md`
+- **Supersedes:** none
+- **State:** `VALIDATED`
 
 ## Overview
 

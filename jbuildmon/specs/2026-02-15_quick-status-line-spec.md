@@ -1,9 +1,9 @@
-# Feature: Quick One-Line Status with TTY-Aware Default
+## Feature: Quick One-Line Status with TTY-Aware Default
 
 - **Date:** `2026-02-15T14:52:46-07:00`
 - **References:** `specs/done-reports/quick-status-line.md`
 - **Supersedes:** none
-- **State:** `IMPLEMENTED`
+- **State:** `VALIDATED`
 
 ## Overview
 

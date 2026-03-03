@@ -1,9 +1,9 @@
-# Feature: Line Mode Status Column Alignment and Color
+## Feature: Line Mode Status Column Alignment and Color
 
 - **Date:** `2026-02-15T16:32:39-07:00`
 - **References:** `specs/done-reports/line-jobs-enhance.md`
 - **Supersedes:** none
-- **State:** `IMPLEMENTED`
+- **State:** `VALIDATED`
 
 ## Overview
 

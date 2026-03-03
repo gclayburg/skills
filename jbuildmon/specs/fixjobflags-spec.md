@@ -1,5 +1,9 @@
-# Unified Job Name Handling for pushmon.sh and checkbuild.sh
-Date: 2026-01-30
+## Unified Job Name Handling for pushmon.sh and checkbuild.sh
+
+- **Date:** `2026-01-30T00:00:00-07:00`
+- **References:** none
+- **Supersedes:** none
+- **State:** `VALIDATED`
 
 ## Overview
 

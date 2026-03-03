@@ -3,7 +3,7 @@
 - **Date:** `2026-02-23T10:22:50-0700`
 - **References:** `specs/done-reports/status-line-template.md`
 - **Supersedes:** none
-- **State:** `IMPLEMENTED`
+- **State:** `VALIDATED`
 
 ## Background
 

@@ -1,9 +1,9 @@
-# Bug: buildgit push Header Missing Commit Position and Agent Field
+## Bug: buildgit push Header Missing Commit Position and Agent Field
 
 - **Date:** `2026-02-27T00:00:00-0700`
 - **References:** `specs/done-reports/status-display-timing-issue`
 - **Supersedes:** none (regression against `bug2026-02-13-build-monitoring-header-spec.md`)
-- **State:** `IMPLEMENTED`
+- **State:** `VALIDATED`
 
 ## Problem Statement
 

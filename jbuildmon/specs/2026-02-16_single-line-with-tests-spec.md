@@ -1,4 +1,4 @@
-# Feature: Test Results in Line Mode Output
+## Feature: Test Results in Line Mode Output
 
 - **Date:** `2026-02-16T08:56:32-07:00`
 - **References:** `specs/done-reports/single-line-with-tests.md`

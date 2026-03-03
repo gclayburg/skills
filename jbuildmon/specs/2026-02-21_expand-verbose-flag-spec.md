@@ -3,7 +3,7 @@
 - **Date:** `2026-02-21T13:55:56-0700`
 - **References:** `specs/done-reports/expand-verbose-flag`
 - **Supersedes:** (none)
-- **State:** `IMPLEMENTED`
+- **State:** `VALIDATED`
 
 ## Background
 

@@ -1,9 +1,9 @@
-# Feature: `--once` Flag for `buildgit status -f`
+## Feature: `--once` Flag for `buildgit status -f`
 
 - **Date:** `2026-02-16T10:47:22-07:00`
 - **References:** `specs/done-reports/add-once-flag-to-status-f.md`, `specs/done-reports/status-follow-once-wait-for-new-build.md`
 - **Supersedes:** none
-- **State:** `IMPLEMENTED`
+- **State:** `VALIDATED`
 
 ## Overview
 
