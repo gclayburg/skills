@@ -2,5 +2,5 @@
 .claude/*
 .agents/*
 skills-lock.json
-
+.idea/
 .DS_Store
