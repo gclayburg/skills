@@ -69,12 +69,89 @@ Running on buildagent9 in /var/jenkins/workspace/myjob
     [[ "$agent" == "orchestrator1" ]]
 }
 
+@test "extract_agent_name_preserves_spaces" {
+    local console="Running on agent6 guthrie in /home/jenkins/workspace/ralph1"
+
+    local agent
+    agent=$(_extract_agent_name "$console")
+    [[ "$agent" == "agent6 guthrie" ]]
+}
+
 @test "extract_agent_name_with_ansi_prefix" {
     local console=$'\x1b[0mRunning on agent8_sixcore in /var/jenkins/workspace/ralph1'
 
     local agent
     agent=$(_extract_agent_name "$console")
     [[ "$agent" == "agent8_sixcore" ]]
+}
+
+# =============================================================================
+# Test Cases: _build_stage_agent_map
+# =============================================================================
+
+@test "build_stage_agent_map_maps_stages_to_agents" {
+    local console='[Pipeline] { (Build)
+[Pipeline] node
+Running on agent6 guthrie in /home/jenkins/workspace/ralph1
+[Pipeline] }
+[Pipeline] { (Unit Tests A)
+[Pipeline] node
+Running on agent7 in /home/jenkins/workspace/ralph1
+[Pipeline] }'
+
+    local result
+    result=$(_build_stage_agent_map "$console")
+
+    [[ $(echo "$result" | jq -r '.["Build"]') == "agent6 guthrie" ]]
+    [[ $(echo "$result" | jq -r '.["Unit Tests A"]') == "agent7" ]]
+}
+
+@test "build_stage_agent_map_parallel_branches_use_distinct_agents" {
+    local console='[Pipeline] { (Unit Tests)
+[Pipeline] parallel
+[Pipeline] { (Branch: Unit Tests A)
+[Pipeline] node
+Running on agent7 guthrie in /home/jenkins/workspace/ralph1
+[Pipeline] }
+[Pipeline] { (Branch: Unit Tests B)
+[Pipeline] node
+Running on agent8_sixcore in /home/jenkins/workspace/ralph1
+[Pipeline] }'
+
+    local result
+    result=$(_build_stage_agent_map "$console")
+
+    [[ $(echo "$result" | jq -r '.["Unit Tests A"]') == "agent7 guthrie" ]]
+    [[ $(echo "$result" | jq -r '.["Unit Tests B"]') == "agent8_sixcore" ]]
+}
+
+@test "build_stage_agent_map_returns_empty_when_no_running_lines" {
+    local console='[Pipeline] { (Build)
+echo build
+[Pipeline] }'
+
+    local result
+    result=$(_build_stage_agent_map "$console")
+
+    [[ "$(echo "$result" | jq -c '.')" == "{}" ]]
+}
+
+@test "build_stage_agent_map_ignores_unmatched_running_lines" {
+    local console='Running on agent9 in /home/jenkins/workspace/ralph1'
+
+    local result
+    result=$(_build_stage_agent_map "$console")
+
+    [[ "$(echo "$result" | jq -c '.')" == "{}" ]]
+}
+
+@test "parse_build_metadata_header_uses_full_agent_name" {
+    local console='Started by user admin
+Running on agent6 guthrie in /home/jenkins/workspace/ralph1'
+
+    _parse_build_metadata "$console"
+
+    [[ "$_META_AGENT" == "agent6 guthrie" ]]
 }
 
 # =============================================================================
@@ -187,6 +264,12 @@ Starting building: phandlemono-signalboot #25
     assert_output "[18:00:18] ℹ   Stage:   [buildagent9   ] Build Handle->Compile Code (18s)"
 }
 
+@test "print_stage_line_with_space_agent_name_truncates_to_14_chars" {
+    run print_stage_line "Build" "SUCCESS" 1000 "" "[agent6 guthrie] "
+    assert_success
+    assert_output "[18:00:18] ℹ   Stage: [agent6 guthrie] Build (1s)"
+}
+
 @test "print_stage_line_nested_failed_with_marker" {
     run print_stage_line "Build Handle->Package Zip" "FAILED" 20000 "  " "[buildagent9] "
     assert_success
@@ -238,7 +321,14 @@ Starting building: phandlemono-signalboot #25
         ]'
     }
     get_console_output() {
-        echo "Running on agent1 in /workspace"
+        echo '[Pipeline] { (Build)
+[Pipeline] node
+Running on agent1 in /workspace
+[Pipeline] }
+[Pipeline] { (Test)
+[Pipeline] node
+Running on agent2 in /workspace
+[Pipeline] }'
     }
 
     local result
@@ -249,11 +339,36 @@ Starting building: phandlemono-signalboot #25
     # Both at nesting_depth 0
     [[ $(echo "$result" | jq '.[0].nesting_depth') == "0" ]]
     [[ $(echo "$result" | jq '.[1].nesting_depth') == "0" ]]
-    # Agent should be present
+    # Each stage should use its own mapped agent
     [[ $(echo "$result" | jq -r '.[0].agent') == "agent1" ]]
+    [[ $(echo "$result" | jq -r '.[1].agent') == "agent2" ]]
     # Names should be plain (no prefix)
     [[ $(echo "$result" | jq -r '.[0].name') == "Build" ]]
     [[ $(echo "$result" | jq -r '.[1].name') == "Test" ]]
+}
+
+@test "get_nested_stages_wrapper_stage_without_running_on_has_empty_agent" {
+    get_all_stages() {
+        echo '[
+            {"name":"Unit Tests","status":"SUCCESS","startTimeMillis":0,"durationMillis":10000},
+            {"name":"Unit Tests A","status":"SUCCESS","startTimeMillis":0,"durationMillis":5000}
+        ]'
+    }
+
+    get_console_output() {
+        echo '[Pipeline] { (Unit Tests)
+[Pipeline] parallel
+[Pipeline] { (Branch: Unit Tests A)
+[Pipeline] node
+Running on agent7 in /workspace
+[Pipeline] }'
+    }
+
+    local result
+    result=$(_get_nested_stages "test-job" "42")
+
+    [[ $(echo "$result" | jq -r '.[] | select(.name == "Unit Tests").agent') == "" ]]
+    [[ $(echo "$result" | jq -r '.[] | select(.name == "Unit Tests A").agent') == "agent7" ]]
 }
 
 @test "get_nested_stages_with_downstream" {
@@ -280,16 +395,25 @@ Starting building: phandlemono-signalboot #25
     get_console_output() {
         local job="$1"
         if [[ "$job" == "parent-job" ]]; then
-            echo 'Running on orchestrator1 in /workspace
-[Pipeline] { (Checkout)
+            echo '[Pipeline] { (Checkout)
+[Pipeline] node
+Running on orchestrator1 in /workspace
 echo checkout
 [Pipeline] }
 [Pipeline] { (Build Handle)
+[Pipeline] node
+Running on orchestrator2 in /workspace
 [Pipeline] build
 Starting building: downstream-job #10
 [Pipeline] }'
         elif [[ "$job" == "downstream-job" ]]; then
-            echo 'Running on buildagent9 in /workspace'
+            echo '[Pipeline] { (Compile Code)
+[Pipeline] node
+Running on buildagent9 in /workspace
+[Pipeline] }
+[Pipeline] { (Package Zip)
+[Pipeline] node
+Running on buildagent10 in /workspace'
         else
             echo ''
         fi
@@ -316,6 +440,7 @@ Starting building: downstream-job #10
     # Third: Build Handle->Package Zip (nested, depth 1, FAILED)
     [[ $(echo "$result" | jq -r '.[2].name') == "Build Handle->Package Zip" ]]
     [[ $(echo "$result" | jq -r '.[2].status') == "FAILED" ]]
+    [[ $(echo "$result" | jq -r '.[2].agent') == "buildagent10" ]]
 
     # Fourth: Build Handle (parent, has_downstream)
     [[ $(echo "$result" | jq -r '.[3].name') == "Build Handle" ]]
@@ -392,7 +517,9 @@ Starting building: level2-job #1
 [Pipeline] }'
                 ;;
             level2-job)
-                echo 'Running on leaf-agent in /ws'
+                echo '[Pipeline] { (Leaf)
+[Pipeline] node
+Running on leaf-agent in /ws'
                 ;;
             *)
                 echo ''
@@ -578,12 +705,15 @@ Starting building: signalboot-job #2
     get_console_output() {
         local job="$1"
         if [[ "$job" == "parent-job" ]]; then
-            echo 'Running on orchestrator1 in /ws
-[Pipeline] { (Build Handle)
+            echo '[Pipeline] { (Build Handle)
+[Pipeline] node
+Running on orchestrator1 in /ws
 Starting building: downstream-job #10
 [Pipeline] }'
         elif [[ "$job" == "downstream-job" ]]; then
-            echo 'Running on buildagent9 in /ws'
+            echo '[Pipeline] { (Compile)
+[Pipeline] node
+Running on buildagent9 in /ws'
         else
             echo ''
         fi
@@ -661,15 +791,24 @@ Starting building: downstream-job #10
     get_console_output() {
         local job="$1"
         if [[ "$job" == "parent-job" ]]; then
-            echo 'Running on orchestrator1 in /workspace
-[Pipeline] { (Checkout)
+            echo '[Pipeline] { (Checkout)
+[Pipeline] node
+Running on orchestrator1 in /workspace
 echo checkout
 [Pipeline] }
 [Pipeline] { (Build Handle)
+[Pipeline] node
+Running on orchestrator2 in /workspace
 Starting building: downstream-job #10
 [Pipeline] }'
         elif [[ "$job" == "downstream-job" ]]; then
-            echo 'Running on buildagent9 in /workspace'
+            echo '[Pipeline] { (Compile)
+[Pipeline] node
+Running on buildagent9 in /workspace
+[Pipeline] }
+[Pipeline] { (Package)
+[Pipeline] node
+Running on buildagent10 in /workspace'
         else
             echo ''
         fi
@@ -685,11 +824,14 @@ Starting building: downstream-job #10
     }
 
     local build_json='{"result":"FAILURE","building":false,"duration":38000,"timestamp":1700000000000,"url":"http://jenkins/job/parent-job/1/"}'
-    local console_output='Running on orchestrator1 in /workspace
-[Pipeline] { (Checkout)
+    local console_output='[Pipeline] { (Checkout)
+[Pipeline] node
+Running on orchestrator1 in /workspace
 echo checkout
 [Pipeline] }
 [Pipeline] { (Build Handle)
+[Pipeline] node
+Running on orchestrator2 in /workspace
 Starting building: downstream-job #10
 [Pipeline] }'
 

@@ -1663,7 +1663,7 @@ _extract_running_agent_from_console() {
     stripped_console=$(printf "%s\n" "$console_output" | sed -E 's/\x1B\[[0-9;]*[[:alpha:]]//g')
 
     printf "%s\n" "$stripped_console" | grep -m1 "Running on " | \
-        sed -E 's/.*Running on[[:space:]]+([^[:space:]]+).*/\1/' || true
+        sed -E 's/.*Running on[[:space:]]+(.+)[[:space:]]+in[[:space:]]+\/.*/\1/' || true
 }
 
 _parse_build_metadata() {
@@ -3542,6 +3542,81 @@ _extract_agent_name() {
     _extract_running_agent_from_console "$console_output" || true
 }
 
+# Build a map of pipeline stage name -> Jenkins agent name from console output.
+# Usage: _build_stage_agent_map "$console_output"
+# Returns: JSON object like {"Build":"agent6 guthrie","Unit Tests A":"agent7"}
+# Notes:
+# - Associates each "Running on" line with the most recent unmatched stage block.
+# - Normalizes "Branch: <name>" stage labels to "<name>" for wfapi compatibility.
+_build_stage_agent_map() {
+    local console_output="${1:-}"
+    if [[ -z "$console_output" ]]; then
+        echo "{}"
+        return 0
+    fi
+
+    local stage_agent_pairs
+    stage_agent_pairs=$(printf "%s\n" "$console_output" | \
+        sed -E 's/\x1B\[[0-9;]*[[:alpha:]]//g' | \
+        awk '
+            function trim(s) {
+                sub(/^[[:space:]]+/, "", s)
+                sub(/[[:space:]]+$/, "", s)
+                return s
+            }
+
+            {
+                if ($0 ~ /^\[Pipeline\] \{ \(.+\)$/) {
+                    stage_name = $0
+                    sub(/^\[Pipeline\] \{ \(/, "", stage_name)
+                    sub(/\)$/, "", stage_name)
+                    sub(/^Branch:[[:space:]]+/, "", stage_name)
+                    pending[++pending_count] = stage_name
+                    next
+                }
+
+                if ($0 ~ /Running on[[:space:]]+.+[[:space:]]+in[[:space:]]+\//) {
+                    agent_name = $0
+                    sub(/^.*Running on[[:space:]]+/, "", agent_name)
+                    sub(/[[:space:]]+in[[:space:]]+\/.*$/, "", agent_name)
+                    agent_name = trim(agent_name)
+                    for (i = pending_count; i >= 1; i--) {
+                        if (pending[i] != "") {
+                            if (!(pending[i] in stage_agent_map)) {
+                                stage_agent_map[pending[i]] = agent_name
+                            }
+                            pending[i] = ""
+                            break
+                        }
+                    }
+                }
+            }
+
+            END {
+                for (stage_name in stage_agent_map) {
+                    printf "%s\t%s\n", stage_name, stage_agent_map[stage_name]
+                }
+            }
+        ')
+
+    if [[ -z "$stage_agent_pairs" ]]; then
+        echo "{}"
+        return 0
+    fi
+
+    local stage_agent_map_json="{}"
+    local stage_name agent_name
+    while IFS=$'\t' read -r stage_name agent_name; do
+        [[ -z "${stage_name:-}" ]] && continue
+        stage_agent_map_json=$(echo "$stage_agent_map_json" | jq \
+            --arg stage "$stage_name" \
+            --arg agent "$agent_name" \
+            '. + {($stage): $agent}')
+    done <<< "$stage_agent_pairs"
+
+    echo "$stage_agent_map_json"
+}
+
 # Map parent stages to their downstream builds
 # Usage: _map_stages_to_downstream "$console_output" "$stages_json"
 # Returns: JSON object mapping stage names to {job, build} pairs
@@ -3613,9 +3688,9 @@ _get_nested_stages() {
     local console_output
     console_output=$(get_console_output "$job_name" "$build_number" 2>/dev/null) || true
 
-    local agent=""
+    local stage_agent_map="{}"
     if [[ -n "$console_output" ]]; then
-        agent=$(_extract_agent_name "$console_output")
+        stage_agent_map=$(_build_stage_agent_map "$console_output")
     fi
 
     local parallel_info="{}"
@@ -3688,6 +3763,10 @@ _get_nested_stages() {
         stage_name=$(echo "$stages_json" | jq -r ".[$i].name")
         status=$(echo "$stages_json" | jq -r ".[$i].status")
         duration_ms=$(echo "$stages_json" | jq -r ".[$i].durationMillis")
+        local stage_agent=""
+        if [[ "$stage_agent_map" != "{}" ]]; then
+            stage_agent=$(echo "$stage_agent_map" | jq -r --arg s "$stage_name" '.[$s] // empty')
+        fi
 
         local is_parallel_wrapper="false"
         local parallel_branches_json="null"
@@ -3760,7 +3839,7 @@ _get_nested_stages() {
                 --arg name "$display_name" \
                 --arg status "$status" \
                 --argjson duration_ms "$duration_ms" \
-                --arg agent "$agent" \
+                --arg agent "$stage_agent" \
                 --argjson nesting_depth "$nesting_depth" \
                 --arg downstream_job "$job_name" \
                 --argjson downstream_build "$build_number" \
@@ -3788,7 +3867,7 @@ _get_nested_stages() {
                 --arg name "$display_name" \
                 --arg status "$status" \
                 --argjson duration_ms "$duration_ms" \
-                --arg agent "$agent" \
+                --arg agent "$stage_agent" \
                 --argjson nesting_depth "$nesting_depth" \
                 --argjson is_parallel_wrapper "$is_parallel_wrapper" \
                 --argjson parallel_branches "${parallel_branches_json:-null}" \

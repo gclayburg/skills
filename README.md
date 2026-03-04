@@ -54,6 +54,7 @@ IN_PROGRESS Job upbanner #158 [=>                  ] 10% 19s / ~3m 5s
 ```
 
 You'll see the basics about the build, along with build pipeline stages as they are finished.
+Stage lines use per-stage Jenkins `Running on` data, so parallel branches can show different agents; names with spaces are preserved and then formatted to the fixed stage agent width.
 The IN_PROGRESS indicator shows as long as the build is running.
 When Jenkins queues additional builds for the same job, monitoring also shows `QUEUED` rows so you can see backlog pressure while the primary build is still running.
 

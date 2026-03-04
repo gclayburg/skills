@@ -1,9 +1,9 @@
 ## Fix incorrect and truncated agent names in stage display
 
 - **Date:** `2026-03-04T14:47:49-0700`
-- **References:** `specs/todo/status-all-wrong-node-name.md`
+- **References:** `specs/done-reports/status-all-wrong-node-name.md`
 - **Supersedes:** none
-- **State:** `DRAFT`
+- **State:** `IMPLEMENTED`
 
 ## Background
 

@@ -186,6 +186,8 @@ Started:    2026-02-20 20:23:56
 
 Console:    http://palmer.garyclayburg.com:18080/job/phandlemono-IT/39/console
 
+# Stage agent labels are resolved per stage from Jenkins "Running on ..." lines.
+# Parallel branches may show different agents.
 [09:00:08] ℹ   Stage: [agent8_sixcore] Declarative: Checkout SCM (<1s)
 [09:00:08] ℹ   Stage: [agent8_sixcore] Checkout (<1s)
 [09:00:08] ℹ   Stage: [agent8_sixcore] Analyze Component Changes (<1s)
