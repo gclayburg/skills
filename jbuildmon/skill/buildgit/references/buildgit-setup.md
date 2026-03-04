@@ -63,7 +63,7 @@ $ `docker sandbox run claude .`
 
 ```
 $ docker sandbox run claude . -- --model haiku -p "
-add these env settings to your context in /etc/sandbox-persistent.sh:
+replace these env settings to your context in /etc/sandbox-persistent.sh:
 export JENKINS_URL=$JENKINS_URL
 export JENKINS_USER_ID=$JENKINS_USER_ID
 export JENKINS_API_TOKEN=$JENKINS_API_TOKEN
@@ -75,8 +75,8 @@ export GIT_HTTPS_TOKEN=$GIT_HTTPS_TOKEN
 If you are using Codex, you'll need to go through similar auth steps as above. Set the env variables like this:
 
 ```
-$ docker sandbox run codex . -- exec --model gpt-5.1-codex-mini "
-add these env settings to your context in /etc/sandbox-persistent.sh:
+docker sandbox run codex . -- exec --model gpt-5.1-codex-mini "
+replace these env settings to your context in /etc/sandbox-persistent.sh:
 export JENKINS_URL=$JENKINS_URL
 export JENKINS_USER_ID=$JENKINS_USER_ID
 export JENKINS_API_TOKEN=$JENKINS_API_TOKEN
