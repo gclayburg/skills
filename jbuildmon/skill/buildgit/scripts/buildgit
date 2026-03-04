@@ -83,7 +83,7 @@ Usage: buildgit [global-options] <command> [command-options] [arguments]
 A unified interface for git operations with Jenkins CI/CD integration.
 
 Global Options:
-  -j, --job <name>               Specify Jenkins job name (overrides auto-detection)
+  -j, --job <name>               Specify Jenkins job name (or multibranch job/branch)
   -c, --console <mode>           Show console log output (auto or line count)
   -h, --help                     Show this help message
   -v, --verbose                  Enable verbose output for debugging
@@ -130,6 +130,7 @@ Monitor ongoing Jenkins build jobs:
   buildgit build --line            # Trigger + compact one-line monitoring with progress bar
   buildgit status -f --prior-jobs 5  # Follow with last 5 builds shown first
   buildgit --job myjob build       # Trigger build for specific job
+  buildgit --job myjob/main status # Query explicit multibranch branch job
 
 Format placeholders for --format (use with --line):
   %s=status  %j=job  %n=build#  %t=tests  %d=duration
@@ -735,8 +736,14 @@ _status_stdout_is_tty() {
 # Returns empty string when unavailable.
 _get_last_successful_build_duration() {
     local job_name="$1"
+    local job_path
+    job_path=$(jenkins_job_path "$job_name")
+    if [[ -z "$job_path" ]]; then
+        echo ""
+        return 0
+    fi
     local response
-    response=$(jenkins_api "/job/${job_name}/lastSuccessfulBuild/api/json" 2>/dev/null) || true
+    response=$(jenkins_api "${job_path}/lastSuccessfulBuild/api/json" 2>/dev/null) || true
     if [[ -z "$response" ]]; then
         echo ""
         return 0
@@ -800,9 +807,15 @@ _get_running_builds_for_progress() {
     local job_name="$1"
     local primary_build_number="$2"
     local primary_build_json="$3"
+    local job_path
+    job_path=$(jenkins_job_path "$job_name")
+    if [[ -z "$job_path" ]]; then
+        echo "[]"
+        return 0
+    fi
 
     local response running_builds primary_running primary_timestamp
-    response=$(jenkins_api "/job/${job_name}/api/json?tree=builds[number,building,timestamp,result]{0,10}" 2>/dev/null) || true
+    response=$(jenkins_api "${job_path}/api/json?tree=builds[number,building,timestamp,result]{0,10}" 2>/dev/null) || true
     if [[ -n "$response" ]]; then
         running_builds=$(echo "$response" | jq -c '[.builds[]? | select(.building == true) | {number: (.number // 0), timestamp: (.timestamp // 0)}]' 2>/dev/null) || running_builds="[]"
     else
@@ -2210,12 +2223,144 @@ _cmd_status_follow() {
     done
 }
 
+_get_current_git_branch() {
+    local current_branch
+    current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null) || return 1
+    if [[ -z "$current_branch" || "$current_branch" == "HEAD" ]]; then
+        return 1
+    fi
+    echo "$current_branch"
+}
+
+_normalize_branch_ref() {
+    local ref="$1"
+    ref="${ref#+}"
+
+    # For refspecs, prefer destination branch when present.
+    if [[ "$ref" == *:* ]]; then
+        local src_ref dst_ref
+        src_ref="${ref%%:*}"
+        dst_ref="${ref#*:}"
+        if [[ -n "$dst_ref" ]]; then
+            ref="$dst_ref"
+        elif [[ -n "$src_ref" ]]; then
+            ref="$src_ref"
+        fi
+    fi
+
+    ref="${ref#refs/heads/}"
+    if [[ "$ref" == "HEAD" || -z "$ref" ]]; then
+        _get_current_git_branch || return 1
+    else
+        echo "$ref"
+    fi
+}
+
+_infer_push_branch_from_args() {
+    local args=("${PUSH_GIT_ARGS[@]+"${PUSH_GIT_ARGS[@]}"}")
+    local positionals=()
+    local parse_positionals=false
+    local arg
+
+    # Support common push syntax: git push [options] [remote] [refspec]
+    for arg in "${args[@]}"; do
+        if [[ "$arg" == "--" ]]; then
+            parse_positionals=true
+            continue
+        fi
+        if [[ "$parse_positionals" == "false" && "$arg" == -* ]]; then
+            continue
+        fi
+        positionals+=("$arg")
+    done
+
+    # Branch/refspec is positional #2 when present.
+    if [[ "${#positionals[@]}" -ge 2 ]]; then
+        _normalize_branch_ref "${positionals[1]}" || return 1
+        return 0
+    fi
+
+    _get_current_git_branch || return 1
+}
+
+_resolve_effective_job_name() {
+    local requested_job_name="$1"
+    local command_mode="${2:-status}"
+
+    local top_job_name="$requested_job_name"
+    local explicit_branch_name=""
+    if [[ "$requested_job_name" == */* ]]; then
+        top_job_name="${requested_job_name%%/*}"
+        explicit_branch_name="${requested_job_name#*/}"
+    fi
+
+    if [[ -z "$top_job_name" ]]; then
+        bg_log_error "Invalid Jenkins job name: '${requested_job_name}'"
+        return 1
+    fi
+
+    local job_type
+    job_type=$(get_jenkins_job_type "$top_job_name")
+    if [[ "$job_type" == "unknown" || -z "$job_type" ]]; then
+        # Backward-compatible fallback for Jenkins instances where _class
+        # cannot be resolved from the API response.
+        if [[ -n "$explicit_branch_name" ]]; then
+            bg_log_error "Jenkins job '${requested_job_name}' not found"
+            return 1
+        fi
+        echo "$top_job_name"
+        return 0
+    fi
+
+    if [[ -n "$explicit_branch_name" ]]; then
+        if [[ "$job_type" != "multibranch" ]]; then
+            bg_log_error "Jenkins job '${requested_job_name}' not found"
+            return 1
+        fi
+        if ! multibranch_branch_exists "$top_job_name" "$explicit_branch_name"; then
+            bg_log_error "Branch '${explicit_branch_name}' not found in multibranch job '${top_job_name}'. Push the branch and wait for Jenkins to scan."
+            return 1
+        fi
+        echo "${top_job_name}/${explicit_branch_name}"
+        return 0
+    fi
+
+    if [[ "$job_type" == "multibranch" ]]; then
+        local inferred_branch=""
+        case "$command_mode" in
+            push)
+                inferred_branch=$(_infer_push_branch_from_args) || true
+                ;;
+            status|build)
+                inferred_branch=$(_get_current_git_branch) || true
+                ;;
+            *)
+                inferred_branch=$(_get_current_git_branch) || true
+                ;;
+        esac
+
+        if [[ -z "$inferred_branch" ]]; then
+            bg_log_error "Could not determine git branch for multibranch job '${top_job_name}'"
+            return 1
+        fi
+        if ! multibranch_branch_exists "$top_job_name" "$inferred_branch"; then
+            bg_log_error "Branch '${inferred_branch}' not found in multibranch job '${top_job_name}'. Push the branch and wait for Jenkins to scan."
+            return 1
+        fi
+        echo "${top_job_name}/${inferred_branch}"
+        return 0
+    fi
+
+    echo "$top_job_name"
+}
+
 # Validate Jenkins environment, resolve job name, verify connectivity
 # Usage: _validate_jenkins_setup "context-for-errors"
 # Sets: _VALIDATED_JOB_NAME
 # Returns: 0 on success, 1 on failure (with appropriate error messages)
 _validate_jenkins_setup() {
     local context="$1"  # e.g., "monitor Jenkins builds", "trigger Jenkins build"
+    local command_mode="${2:-status}"
 
     if ! validate_dependencies; then
         bg_log_error "Cannot ${context} - missing dependencies (jq, curl)"
@@ -2246,6 +2391,12 @@ _validate_jenkins_setup() {
     if ! verify_jenkins_connection; then
         bg_log_error "Cannot ${context} - cannot connect to Jenkins"
         bg_log_essential "Suggestion: Check JENKINS_URL and credentials"
+        return 1
+    fi
+
+    if ! _VALIDATED_JOB_NAME=$(_resolve_effective_job_name "$_VALIDATED_JOB_NAME" "$command_mode"); then
+        bg_log_error "Cannot ${context} - could not resolve Jenkins job"
+        bg_log_essential "Suggestion: Verify --job value and git branch"
         return 1
     fi
 
@@ -2300,7 +2451,7 @@ cmd_status() {
         fi
 
         # Validate and setup Jenkins connection
-        if ! _validate_jenkins_setup "monitor Jenkins builds"; then
+        if ! _validate_jenkins_setup "monitor Jenkins builds" "status"; then
             return 1
         fi
 
@@ -2318,7 +2469,7 @@ cmd_status() {
     # -------------------------------------------------------------------------
     # Display Jenkins build status
     # -------------------------------------------------------------------------
-    if ! _validate_jenkins_setup "check Jenkins status"; then
+    if ! _validate_jenkins_setup "check Jenkins status" "status"; then
         return 1
     fi
 
@@ -2805,7 +2956,7 @@ cmd_push() {
     # Part 3: Monitor Jenkins build
     # -------------------------------------------------------------------------
     # Spec: Jenkins Unavailable - Complete git push (done above), then show Jenkins error
-    if ! _validate_jenkins_setup "monitor Jenkins build"; then
+    if ! _validate_jenkins_setup "monitor Jenkins build" "push"; then
         bg_log_success "Git push completed successfully"
         return 1
     fi
@@ -2849,7 +3000,11 @@ cmd_push() {
     # Monitor build until completion
     if ! _monitor_build "$job_name" "$new_build_number" "true" "true"; then
         bg_log_error "Build monitoring interrupted or timed out"
-        bg_log_essential "Suggestion: Check Jenkins console at ${JENKINS_URL}/job/${job_name}/${new_build_number}/console"
+        local console_url
+        console_url=$(jenkins_console_url "$job_name" "$new_build_number")
+        if [[ -n "$console_url" ]]; then
+            bg_log_essential "Suggestion: Check Jenkins console at ${console_url}"
+        fi
         return 1
     fi
 
@@ -2934,7 +3089,7 @@ cmd_build() {
     # Part 1: Validate environment, connection, and resolve job name
     # -------------------------------------------------------------------------
     # Spec: Jenkins Unavailable for build - Fail immediately with descriptive error
-    if ! _validate_jenkins_setup "trigger Jenkins build"; then
+    if ! _validate_jenkins_setup "trigger Jenkins build" "build"; then
         return 1
     fi
     local job_name="$_VALIDATED_JOB_NAME"
@@ -2994,7 +3149,11 @@ cmd_build() {
     # Monitor build until completion
     if ! _monitor_build "$job_name" "$build_number" "true" "true"; then
         bg_log_error "Build monitoring interrupted or timed out"
-        bg_log_essential "Suggestion: Check Jenkins console at ${JENKINS_URL}/job/${job_name}/${build_number}/console"
+        local console_url
+        console_url=$(jenkins_console_url "$job_name" "$build_number")
+        if [[ -n "$console_url" ]]; then
+            bg_log_essential "Suggestion: Check Jenkins console at ${console_url}"
+        fi
         return 1
     fi
 

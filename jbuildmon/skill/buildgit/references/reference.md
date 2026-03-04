@@ -6,7 +6,7 @@ buildgit assumes:
 
 1. Your project is a git project
 2. A git push will automatically trigger a build in a Jenkins CI/CD system.
-3. The Jenkins job is setup as a pipeline job. Other types of jobs have not been tested.
+3. The Jenkins job is setup as a Pipeline or Multibranch Pipeline job.
 4. You have a Jenkins user with read/build permissions. It does not need to be an administrator.
 5. There are no network/sandbox restrictions to access your Jenkins server.
 

@@ -1,9 +1,9 @@
 ## Multibranch Pipeline Support for buildgit
 
 - **Date:** `2026-03-03T15:39:16-0700`
-- **References:** `specs/todo/feature-multibranch-pipeline.md`
+- **References:** `specs/done-reports/feature-multibranch-pipeline.md`
 - **Supersedes:** none
-- **State:** `DRAFT`
+- **State:** `IMPLEMENTED`
 
 ## Background
 

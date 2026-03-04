@@ -319,6 +319,140 @@ validate_git_repository() {
 # Job Name Discovery Functions
 # =============================================================================
 
+# Build a Jenkins API path segment from a buildgit job name.
+# Supported inputs:
+#   pipeline:     myjob              -> /job/myjob
+#   multibranch:  myjob/feature/x    -> /job/myjob/job/feature%2Fx
+# Branch parsing uses the first slash as the separator: <job>/<branch>.
+jenkins_job_path() {
+    local job_name="$1"
+    if [[ -z "$job_name" ]]; then
+        echo ""
+        return 1
+    fi
+
+    local top_job="$job_name"
+    local branch_name=""
+    if [[ "$job_name" == */* ]]; then
+        top_job="${job_name%%/*}"
+        branch_name="${job_name#*/}"
+    fi
+
+    if [[ -z "$top_job" ]]; then
+        echo ""
+        return 1
+    fi
+
+    local top_job_enc
+    top_job_enc=$(printf '%s' "$top_job" | jq -sRr @uri 2>/dev/null)
+    if [[ -z "$top_job_enc" || "$top_job_enc" == "null" ]]; then
+        echo ""
+        return 1
+    fi
+
+    if [[ -n "$branch_name" ]]; then
+        local branch_name_enc
+        branch_name_enc=$(printf '%s' "$branch_name" | jq -sRr @uri 2>/dev/null)
+        if [[ -z "$branch_name_enc" || "$branch_name_enc" == "null" ]]; then
+            echo ""
+            return 1
+        fi
+        echo "/job/${top_job_enc}/job/${branch_name_enc}"
+    else
+        echo "/job/${top_job_enc}"
+    fi
+}
+
+# Build Jenkins console URL for a job/build pair.
+jenkins_console_url() {
+    local job_name="$1"
+    local build_number="$2"
+    local job_path
+    job_path=$(jenkins_job_path "$job_name")
+    if [[ -z "$job_path" ]]; then
+        echo ""
+        return 1
+    fi
+    echo "${JENKINS_URL}${job_path}/${build_number}/console"
+}
+
+# Build Jenkins build URL for a job/build pair.
+jenkins_build_url() {
+    local job_name="$1"
+    local build_number="$2"
+    local job_path
+    job_path=$(jenkins_job_path "$job_name")
+    if [[ -z "$job_path" ]]; then
+        echo ""
+        return 1
+    fi
+    echo "${JENKINS_URL}${job_path}/${build_number}/"
+}
+
+# Cache for get_jenkins_job_type.
+_JENKINS_JOB_TYPE_CACHE_JOB=""
+_JENKINS_JOB_TYPE_CACHE_VALUE=""
+
+# Detect top-level Jenkins job type.
+# Returns one of: pipeline, multibranch, unknown
+get_jenkins_job_type() {
+    local top_job_name="$1"
+    if [[ -z "$top_job_name" ]]; then
+        echo "unknown"
+        return 1
+    fi
+
+    if [[ "$_JENKINS_JOB_TYPE_CACHE_JOB" == "$top_job_name" && -n "$_JENKINS_JOB_TYPE_CACHE_VALUE" ]]; then
+        echo "$_JENKINS_JOB_TYPE_CACHE_VALUE"
+        return 0
+    fi
+
+    local top_job_path response class_name job_type
+    top_job_path=$(jenkins_job_path "$top_job_name")
+    if [[ -z "$top_job_path" ]]; then
+        echo "unknown"
+        return 1
+    fi
+
+    response=$(jenkins_api "${top_job_path}/api/json" 2>/dev/null) || true
+    class_name=$(echo "$response" | jq -r '._class // empty' 2>/dev/null) || class_name=""
+
+    job_type="unknown"
+    case "$class_name" in
+        org.jenkinsci.plugins.workflow.job.WorkflowJob)
+            job_type="pipeline"
+            ;;
+        org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject)
+            job_type="multibranch"
+            ;;
+    esac
+
+    _JENKINS_JOB_TYPE_CACHE_JOB="$top_job_name"
+    _JENKINS_JOB_TYPE_CACHE_VALUE="$job_type"
+    echo "$job_type"
+}
+
+# Verify branch sub-job exists under a multibranch job.
+# Usage: multibranch_branch_exists "top-job" "feature/name"
+multibranch_branch_exists() {
+    local top_job_name="$1"
+    local branch_name="$2"
+    if [[ -z "$top_job_name" || -z "$branch_name" ]]; then
+        return 1
+    fi
+
+    local branch_job="${top_job_name}/${branch_name}"
+    local branch_path response http_code
+    branch_path=$(jenkins_job_path "$branch_job")
+    if [[ -z "$branch_path" ]]; then
+        return 1
+    fi
+
+    response=$(jenkins_api_with_status "${branch_path}/api/json")
+    http_code=$(echo "$response" | tail -1)
+    [[ "$http_code" == "200" ]]
+}
+
 # Discover Jenkins job name from AGENTS.md or git origin
 # Priority: 1) AGENTS.md JOB_NAME, 2) git origin fallback
 # Usage: discover_job_name
@@ -485,14 +619,20 @@ verify_job_exists() {
 
     local response
     local http_code
+    local job_path
+    job_path=$(jenkins_job_path "$job_name")
+    if [[ -z "$job_path" ]]; then
+        log_error "Invalid Jenkins job name: '$job_name'"
+        return 1
+    fi
 
-    response=$(jenkins_api_with_status "/job/${job_name}/api/json")
+    response=$(jenkins_api_with_status "${job_path}/api/json")
     http_code=$(echo "$response" | tail -1)
 
     case "$http_code" in
         200)
             bg_log_success "Job '$job_name' found"
-            JOB_URL="${JENKINS_URL}/job/${job_name}"
+            JOB_URL="${JENKINS_URL}${job_path}"
             return 0
             ;;
         404)
@@ -520,6 +660,12 @@ verify_job_exists() {
 # e.g., Location: http://jenkins/queue/item/123/
 trigger_build() {
     local job_name="$1"
+    local job_path
+    job_path=$(jenkins_job_path "$job_name")
+    if [[ -z "$job_path" ]]; then
+        log_error "Invalid Jenkins job name: '$job_name'"
+        return 1
+    fi
 
     local response http_code location_header
 
@@ -532,7 +678,7 @@ trigger_build() {
         -X POST \
         -u "${JENKINS_USER_ID}:${JENKINS_API_TOKEN}" \
         -D "$header_file" \
-        "${JENKINS_URL}/job/${job_name}/build")
+        "${JENKINS_URL}${job_path}/build")
 
     case "$http_code" in
         201)
@@ -668,8 +814,13 @@ wait_for_queue_item() {
 get_build_info() {
     local job_name="$1"
     local build_number="$2"
-
-    jenkins_api "/job/${job_name}/${build_number}/api/json" 2>/dev/null || echo ""
+    local job_path
+    job_path=$(jenkins_job_path "$job_name")
+    if [[ -z "$job_path" ]]; then
+        echo ""
+        return 0
+    fi
+    jenkins_api "${job_path}/${build_number}/api/json" 2>/dev/null || echo ""
 }
 
 # Get console text output for a build
@@ -678,8 +829,13 @@ get_build_info() {
 get_console_output() {
     local job_name="$1"
     local build_number="$2"
-
-    jenkins_api "/job/${job_name}/${build_number}/consoleText" 2>/dev/null || echo ""
+    local job_path
+    job_path=$(jenkins_job_path "$job_name")
+    if [[ -z "$job_path" ]]; then
+        echo ""
+        return 0
+    fi
+    jenkins_api "${job_path}/${build_number}/consoleText" 2>/dev/null || echo ""
 }
 
 # Get currently executing stage name from workflow API
@@ -688,9 +844,14 @@ get_console_output() {
 get_current_stage() {
     local job_name="$1"
     local build_number="$2"
+    local job_path
+    job_path=$(jenkins_job_path "$job_name")
+    if [[ -z "$job_path" ]]; then
+        return 0
+    fi
 
     local response
-    response=$(jenkins_api "/job/${job_name}/${build_number}/wfapi/describe" 2>/dev/null) || true
+    response=$(jenkins_api "${job_path}/${build_number}/wfapi/describe" 2>/dev/null) || true
 
     if [[ -n "$response" ]]; then
         # Find the currently executing stage (status IN_PROGRESS)
@@ -707,9 +868,15 @@ get_current_stage() {
 get_all_stages() {
     local job_name="$1"
     local build_number="$2"
+    local job_path
+    job_path=$(jenkins_job_path "$job_name")
+    if [[ -z "$job_path" ]]; then
+        echo "[]"
+        return 0
+    fi
 
     local response
-    response=$(jenkins_api "/job/${job_name}/${build_number}/wfapi/describe" 2>/dev/null) || true
+    response=$(jenkins_api "${job_path}/${build_number}/wfapi/describe" 2>/dev/null) || true
 
     if [[ -z "$response" ]]; then
         echo "[]"
@@ -743,9 +910,14 @@ get_all_stages() {
 get_failed_stage() {
     local job_name="$1"
     local build_number="$2"
+    local job_path
+    job_path=$(jenkins_job_path "$job_name")
+    if [[ -z "$job_path" ]]; then
+        return 0
+    fi
 
     local response
-    response=$(jenkins_api "/job/${job_name}/${build_number}/wfapi/describe" 2>/dev/null) || true
+    response=$(jenkins_api "${job_path}/${build_number}/wfapi/describe" 2>/dev/null) || true
 
     if [[ -n "$response" ]]; then
         echo "$response" | jq -r '.stages[] | select(.status == "FAILED" or .status == "UNSTABLE") | .name' 2>/dev/null | head -1
@@ -758,8 +930,13 @@ get_failed_stage() {
 get_last_build_number() {
     local job_name="$1"
     local response
-
-    response=$(jenkins_api "/job/${job_name}/api/json" 2>/dev/null) || true
+    local job_path
+    job_path=$(jenkins_job_path "$job_name")
+    if [[ -z "$job_path" ]]; then
+        echo "0"
+        return 0
+    fi
+    response=$(jenkins_api "${job_path}/api/json" 2>/dev/null) || true
 
     if [[ -n "$response" ]]; then
         echo "$response" | jq -r '.lastBuild.number // 0'
@@ -779,13 +956,19 @@ get_last_build_number() {
 fetch_test_results() {
     local job_name="$1"
     local build_number="$2"
+    local job_path
+    job_path=$(jenkins_job_path "$job_name")
+    if [[ -z "$job_path" ]]; then
+        echo ""
+        return 0
+    fi
 
     local response
     local http_code
     local body
 
     # Query the test report API
-    response=$(jenkins_api_with_status "/job/${job_name}/${build_number}/testReport/api/json")
+    response=$(jenkins_api_with_status "${job_path}/${build_number}/testReport/api/json")
 
     # Split response into body and status code
     http_code=$(echo "$response" | tail -1)
@@ -1524,7 +1707,11 @@ analyze_failure() {
             extract_error_lines "$downstream_console" 50
             echo "${COLOR_YELLOW}===============================${COLOR_RESET}"
             echo ""
-            log_info "Full downstream console: ${JENKINS_URL}/job/${downstream_job}/${downstream_build}/console"
+            local downstream_console_url
+            downstream_console_url=$(jenkins_console_url "$downstream_job" "$downstream_build")
+            if [[ -n "$downstream_console_url" ]]; then
+                log_info "Full downstream console: ${downstream_console_url}"
+            fi
         fi
         return
     fi

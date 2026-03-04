@@ -4,7 +4,7 @@
 
 - **bash**, **curl**, **jq**
 - **Git** for your project, with a remote repository
-- **Jenkins** with a **Pipeline** job for your project (freestyle jobs are not supported)
+- **Jenkins** with a **Pipeline** or **Multibranch Pipeline** job for your project (freestyle jobs are not supported)
 - **Automatic build triggers** — your git remote must be configured to trigger a Jenkins build on every push (e.g. via a webhook, a git post-receive hook, or a Jenkins plugin like GitHub Branch Source). buildgit monitors builds; it doesn't create the link between your repo and Jenkins.
 
 ### Jenkins user setup
@@ -40,10 +40,11 @@ Add the Jenkins job name to your project's root `CLAUDE.md` or `AGENTS.md`:
 
 This lets buildgit match your project to the Jenkins job automatically.
 
-To override this inferred jobname, override it with `--job`:
+To override this inferred jobname, use `--job`:
 
 ```bash
 buildgit --job jenkins-job-name status
+buildgit --job jenkins-job-name/main status
 ```
 
 ### Using with docker sandbox
