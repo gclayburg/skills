@@ -3,7 +3,7 @@
 - **Date:** `2026-03-04T10:54:22-0700`
 - **References:** `specs/done-reports/bug-multibranch-push.md`
 - **Supersedes:** none
-- **State:** `DRAFT`
+- **State:** `IMPLEMENTED`
 
 ## Background
 

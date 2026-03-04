@@ -40,6 +40,20 @@ set -euo pipefail
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
 
+_get_current_git_branch() {
+    if [[ -n "${MOCK_CURRENT_BRANCH:-}" ]]; then
+        echo "${MOCK_CURRENT_BRANCH}"
+        return 0
+    fi
+
+    local current_branch
+    current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null) || return 1
+    if [[ -z "$current_branch" || "$current_branch" == "HEAD" ]]; then
+        return 1
+    fi
+    echo "$current_branch"
+}
+
 validate_dependencies() { return 0; }
 validate_environment() { return 0; }
 verify_jenkins_connection() { return 0; }
@@ -62,9 +76,16 @@ multibranch_branch_exists() {
 }
 
 JOB_NAME="${MOCK_JOB_NAME:-ralph1}"
-if [[ -n "${MOCK_PUSH_ARGS:-}" ]]; then
+if [[ "${MOCK_PUSH_ARGS_SET_EMPTY:-false}" == "true" ]]; then
+    PUSH_GIT_ARGS=()
+elif [[ -n "${MOCK_PUSH_ARGS:-}" ]]; then
     # shellcheck disable=SC2206
     PUSH_GIT_ARGS=(${MOCK_PUSH_ARGS})
+fi
+
+if [[ "${MOCK_INFER_ONLY:-false}" == "true" ]]; then
+    _infer_push_branch_from_args
+    exit $?
 fi
 
 if _validate_jenkins_setup "test context" "${MOCK_MODE:-status}"; then
@@ -141,6 +162,47 @@ EOF
     assert_success
     assert_output --partial "RESOLVED_JOB=ralph1/feature/from-push-args"
     assert_output --partial "VERIFY_JOB=ralph1/feature/from-push-args"
+}
+
+@test "_infer_push_branch_from_args uses current branch when push args empty" {
+    export PROJECT_DIR TEST_TEMP_DIR
+    create_multibranch_wrapper
+
+    run env \
+        MOCK_INFER_ONLY="true" \
+        MOCK_PUSH_ARGS_SET_EMPTY="true" \
+        MOCK_CURRENT_BRANCH="main" \
+        bash "${TEST_TEMP_DIR}/mb_wrapper.sh" 2>&1
+
+    assert_success
+    assert_output "main"
+}
+
+@test "_infer_push_branch_from_args returns positional branch when provided" {
+    export PROJECT_DIR TEST_TEMP_DIR
+    create_multibranch_wrapper
+
+    run env \
+        MOCK_INFER_ONLY="true" \
+        MOCK_PUSH_ARGS="origin feature-x" \
+        bash "${TEST_TEMP_DIR}/mb_wrapper.sh" 2>&1
+
+    assert_success
+    assert_output "feature-x"
+}
+
+@test "_infer_push_branch_from_args uses current branch when only remote is provided" {
+    export PROJECT_DIR TEST_TEMP_DIR
+    create_multibranch_wrapper
+
+    run env \
+        MOCK_INFER_ONLY="true" \
+        MOCK_PUSH_ARGS="origin" \
+        MOCK_CURRENT_BRANCH="main" \
+        bash "${TEST_TEMP_DIR}/mb_wrapper.sh" 2>&1
+
+    assert_success
+    assert_output "main"
 }
 
 @test "explicit job/branch fails for pipeline jobs" {
