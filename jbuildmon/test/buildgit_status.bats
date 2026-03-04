@@ -403,6 +403,87 @@ WRAPPER_START
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 }
 
+# Helper for test-report communication error in line/json/full modes
+create_status_tests_comm_error_wrapper() {
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER_START
+#!/usr/bin/env bash
+set -euo pipefail
+
+export PROJECT_DIR="${PROJECT_DIR}"
+export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
+
+_BUILDGIT_TESTING=1
+source "\${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+verify_jenkins_connection() { return 0; }
+verify_job_exists() {
+    local job_name="\$1"
+    JOB_URL="\${JENKINS_URL}/job/\${job_name}"
+    return 0
+}
+get_last_build_number() { echo "42"; }
+get_build_info() {
+    echo '{"number":42,"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/test-repo/42/"}'
+}
+get_console_output() { echo "Started by user testuser"; }
+fetch_test_results() { return 2; }
+get_all_stages() { echo "[]"; }
+get_failed_stage() { echo ""; }
+
+cmd_status --prior-jobs 0 "\$@"
+WRAPPER_START
+
+    chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+}
+
+# Helper to force color variables with test-report communication error
+create_status_forced_color_comm_error_wrapper() {
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER_START
+#!/usr/bin/env bash
+set -euo pipefail
+
+export PROJECT_DIR="${PROJECT_DIR}"
+export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
+
+_BUILDGIT_TESTING=1
+source "\${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+COLOR_GREEN=$'\033[32m'
+COLOR_RED=$'\033[31m'
+COLOR_YELLOW=$'\033[33m'
+COLOR_BLUE=$'\033[34m'
+COLOR_DIM=$'\033[2m'
+COLOR_RESET=$'\033[0m'
+
+verify_jenkins_connection() { return 0; }
+verify_job_exists() {
+    local job_name="\$1"
+    JOB_URL="\${JENKINS_URL}/job/\${job_name}"
+    return 0
+}
+get_last_build_number() { echo "42"; }
+get_build_info() {
+    echo '{"number":42,"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/test-repo/42/"}'
+}
+get_console_output() { echo "Started by user testuser"; }
+fetch_test_results() { return 2; }
+get_all_stages() { echo "[]"; }
+get_failed_stage() { echo ""; }
+
+cmd_status --prior-jobs 0 "\$@"
+WRAPPER_START
+
+    chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+}
+
 # Helper for --no-tests checks: if fetch_test_results is called, fail fast
 create_status_no_tests_guard_wrapper() {
     sed -e '/^main "\$@"$/d' \
@@ -525,6 +606,33 @@ WRAPPER
     assert_output --partial '"job":'
     assert_output --partial '"build":'
     assert_output --partial '"status":'
+}
+
+@test "status_json_communication_failure_includes_test_results_error" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    create_status_tests_comm_error_wrapper
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --json 2>&1"
+
+    assert_success
+    assert_output --partial '"test_results": null'
+    assert_output --partial '"testResults": null'
+    assert_output --partial '"testResultsError": "communication_failure"'
+    assert_output --partial "Could not retrieve test results (communication error)"
+}
+
+@test "status_json_404_omits_test_results_error" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    create_status_tests_unknown_wrapper
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --json 2>&1"
+
+    assert_success
+    refute_output --partial '"testResultsError"'
 }
 
 # =============================================================================
@@ -1552,6 +1660,73 @@ WRAPPER
     if printf "%s" "$output" | grep -Eq $'\\033\\[[0-9;]*mTests=\\?/\\?/\\?'; then
         fail "Expected unknown Tests field to be uncolored"
     fi
+}
+
+@test "status_line_tests_comm_error_token" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_tests_comm_error_wrapper
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line 2>&1"
+
+    assert_success
+    assert_output --partial "Tests=!err!"
+    assert_output --partial "Could not retrieve test results (communication error)"
+}
+
+@test "status_line_tests_comm_error_yellow_when_color" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_forced_color_comm_error_wrapper
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line 2>&1"
+
+    assert_success
+    if ! printf "%s" "$output" | grep -Fq $' \033[33mTests=!err!\033[0m Took '; then
+        fail "Expected Tests field to be yellow for communication errors"
+    fi
+}
+
+@test "status_all_comm_error_replaces_test_results_section" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    create_status_tests_comm_error_wrapper
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --all 2>&1"
+
+    assert_success
+    assert_output --partial "Test Results: ⚠ Communication error retrieving test results"
+}
+
+@test "status_line_comm_error_warning_dedup_per_build" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/dedup_wrapper.sh" << 'WRAPPER_START'
+#!/usr/bin/env bash
+set -euo pipefail
+
+_BUILDGIT_TESTING=1
+source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+fetch_test_results() { return 2; }
+build_json='{"number":42,"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":120000}'
+
+_status_line_for_build_json "test-repo" "42" "$build_json" "false"
+_status_line_for_build_json "test-repo" "42" "$build_json" "false"
+WRAPPER_START
+    chmod +x "${TEST_TEMP_DIR}/dedup_wrapper.sh"
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/dedup_wrapper.sh\" 2>&1"
+
+    assert_success
+    warning_count="$(printf "%s\n" "$output" | grep -c "Could not retrieve test results (communication error)" || true)"
+    [ "$warning_count" -eq 1 ]
 }
 
 @test "status_line_no_tests_flag" {

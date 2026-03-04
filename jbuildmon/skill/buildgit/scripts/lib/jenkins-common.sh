@@ -949,6 +949,36 @@ get_last_build_number() {
 # Test Results Functions
 # =============================================================================
 
+# Track builds that already emitted a test-results communication warning.
+_TEST_RESULTS_WARNED_BUILDS=""
+
+_test_results_warn_key() {
+    local job_name="$1"
+    local build_number="$2"
+    echo "${job_name}#${build_number}"
+}
+
+_note_test_results_comm_failure() {
+    local job_name="$1"
+    local build_number="$2"
+    local key
+    key=$(_test_results_warn_key "$job_name" "$build_number")
+    if [[ ",${_TEST_RESULTS_WARNED_BUILDS}," == *",${key},"* ]]; then
+        return 0
+    fi
+    _TEST_RESULTS_WARNED_BUILDS="${_TEST_RESULTS_WARNED_BUILDS},${key}"
+    log_warning "Could not retrieve test results (communication error)" >&2
+}
+
+display_test_results_comm_error() {
+    local warning_text="⚠ Communication error retrieving test results"
+    if [[ -n "${COLOR_YELLOW}" ]]; then
+        warning_text="${COLOR_YELLOW}${warning_text}${COLOR_RESET}"
+    fi
+    echo ""
+    echo "Test Results: ${warning_text}"
+}
+
 # Fetch test results from Jenkins test report API
 # Usage: fetch_test_results "job-name" "build-number"
 # Returns: JSON test report on success, empty string if not available
@@ -968,26 +998,36 @@ fetch_test_results() {
     local body
 
     # Query the test report API
-    response=$(jenkins_api_with_status "${job_path}/${build_number}/testReport/api/json")
+    response=$(jenkins_api_with_status "${job_path}/${build_number}/testReport/api/json" || true)
 
     # Split response into body and status code
     http_code=$(echo "$response" | tail -1)
     body=$(echo "$response" | sed '$d')
+    if [[ ! "$http_code" =~ ^[0-9]{3}$ ]]; then
+        http_code="000"
+    fi
 
     case "$http_code" in
         200)
             # Test report available - return the JSON
             echo "$body"
+            return 0
             ;;
         404)
             # No test report available - silently return empty
             # This is expected for builds without junit results
             echo ""
+            return 0
+            ;;
+        000)
+            # Communication failure (DNS/network/sandbox/connection issue)
+            echo ""
+            return 2
             ;;
         *)
-            # Other error - log warning and return empty
-            log_warning "Failed to fetch test results (HTTP $http_code)"
+            # Other HTTP errors are treated as communication failures
             echo ""
+            return 2
             ;;
     esac
 }
@@ -1680,8 +1720,16 @@ analyze_failure() {
 
     # Display test results if available
     # Spec: test-failure-display-spec.md, Section: Integration Points (5.1)
-    local test_results_json
-    test_results_json=$(fetch_test_results "$job_name" "$build_number")
+    local test_results_json test_results_rc=0
+    if test_results_json=$(fetch_test_results "$job_name" "$build_number"); then
+        test_results_rc=0
+    else
+        test_results_rc=$?
+        test_results_json=""
+    fi
+    if [[ "$test_results_rc" -eq 2 ]]; then
+        _note_test_results_comm_failure "$job_name" "$build_number"
+    fi
     if [[ -n "$test_results_json" ]]; then
         display_test_results "$test_results_json"
     fi
@@ -2568,9 +2616,19 @@ display_success_output() {
 
     # Display test results for SUCCESS builds
     # Spec: show-test-results-always-spec.md, Section 1.1
-    local test_results_json
-    test_results_json=$(fetch_test_results "$job_name" "$build_number")
-    display_test_results "$test_results_json"
+    local test_results_json test_results_rc=0
+    if test_results_json=$(fetch_test_results "$job_name" "$build_number"); then
+        test_results_rc=0
+    else
+        test_results_rc=$?
+        test_results_json=""
+    fi
+    if [[ "$test_results_rc" -eq 2 ]]; then
+        _note_test_results_comm_failure "$job_name" "$build_number"
+        display_test_results_comm_error
+    else
+        display_test_results "$test_results_json"
+    fi
 
     # Finished line and duration
     echo ""
@@ -2895,9 +2953,19 @@ _display_failure_diagnostics() {
 
     # 3. Test results (always shown, placeholder if no report)
     # Spec: show-test-results-always-spec.md, Section 1
-    local test_results_json
-    test_results_json=$(fetch_test_results "$job_name" "$build_number")
-    display_test_results "$test_results_json"
+    local test_results_json test_results_rc=0
+    if test_results_json=$(fetch_test_results "$job_name" "$build_number"); then
+        test_results_rc=0
+    else
+        test_results_rc=$?
+        test_results_json=""
+    fi
+    if [[ "$test_results_rc" -eq 2 ]]; then
+        _note_test_results_comm_failure "$job_name" "$build_number"
+        display_test_results_comm_error
+    else
+        display_test_results "$test_results_json"
+    fi
 
     # 4. Error log section (respects --console and test failure suppression)
     _display_error_log_section "$job_name" "$build_number" "$console_output" "$test_results_json"
@@ -3236,10 +3304,18 @@ output_json() {
     fi
 
     if [[ "$is_completed" == "true" ]]; then
-        local test_report_json
-        test_report_json=$(fetch_test_results "$job_name" "$build_number")
+        local test_report_json test_report_rc=0
+        if test_report_json=$(fetch_test_results "$job_name" "$build_number"); then
+            test_report_rc=0
+        else
+            test_report_rc=$?
+            test_report_json=""
+        fi
 
-        if [[ -n "$test_report_json" ]]; then
+        if [[ "$test_report_rc" -eq 2 ]]; then
+            _note_test_results_comm_failure "$job_name" "$build_number"
+            json_output=$(echo "$json_output" | jq '. + {test_results: null, testResults: null, testResultsError: "communication_failure"}')
+        elif [[ -n "$test_report_json" ]]; then
             local test_results_formatted
             test_results_formatted=$(format_test_results_json "$test_report_json")
 

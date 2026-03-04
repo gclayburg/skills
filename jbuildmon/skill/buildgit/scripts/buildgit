@@ -652,12 +652,22 @@ _status_line_for_build_json() {
     fi
 
     local tests_display tests_fail_count tests_color tests_field
+    local tests_comm_error=false
     tests_display="?/?/?"
     tests_fail_count=""
     if [[ "$no_tests" != "true" ]]; then
-        local test_results_json passed failed skipped
-        test_results_json=$(fetch_test_results "$job_name" "$build_number")
-        if [[ -n "$test_results_json" ]]; then
+        local test_results_json passed failed skipped test_results_rc=0
+        if test_results_json=$(fetch_test_results "$job_name" "$build_number"); then
+            test_results_rc=0
+        else
+            test_results_rc=$?
+            test_results_json=""
+        fi
+        if [[ "$test_results_rc" -eq 2 ]]; then
+            tests_display="!err!"
+            tests_comm_error=true
+            _note_test_results_comm_failure "$job_name" "$build_number"
+        elif [[ -n "$test_results_json" ]]; then
             passed=$(echo "$test_results_json" | jq -r '.passCount // 0')
             failed=$(echo "$test_results_json" | jq -r '.failCount // 0')
             skipped=$(echo "$test_results_json" | jq -r '.skipCount // 0')
@@ -693,7 +703,9 @@ _status_line_for_build_json() {
         tests_field="Tests=${tests_display}"
         if [[ "$tests_display" != "?/?/?" ]]; then
             tests_color="${COLOR_GREEN}"
-            if [[ "$tests_fail_count" =~ ^[0-9]+$ && "$tests_fail_count" -gt 0 ]]; then
+            if [[ "$tests_comm_error" == "true" ]]; then
+                tests_color="${COLOR_YELLOW}"
+            elif [[ "$tests_fail_count" =~ ^[0-9]+$ && "$tests_fail_count" -gt 0 ]]; then
                 tests_color="${COLOR_YELLOW}"
             fi
             if [[ -n "$tests_color" ]]; then
@@ -706,7 +718,9 @@ _status_line_for_build_json() {
         local tests_colorized="$tests_display"
         if [[ "$tests_display" != "?/?/?" ]]; then
             tests_color="${COLOR_GREEN}"
-            if [[ "$tests_fail_count" =~ ^[0-9]+$ && "$tests_fail_count" -gt 0 ]]; then
+            if [[ "$tests_comm_error" == "true" ]]; then
+                tests_color="${COLOR_YELLOW}"
+            elif [[ "$tests_fail_count" =~ ^[0-9]+$ && "$tests_fail_count" -gt 0 ]]; then
                 tests_color="${COLOR_YELLOW}"
             fi
             if [[ -n "$tests_color" ]]; then
@@ -2870,9 +2884,19 @@ _handle_build_completion() {
     else
         # Display test results for SUCCESS builds
         # Spec: show-test-results-always-spec.md, Section 1.2
-        local test_results_json
-        test_results_json=$(fetch_test_results "$job_name" "$build_number")
-        display_test_results "$test_results_json"
+        local test_results_json test_results_rc=0
+        if test_results_json=$(fetch_test_results "$job_name" "$build_number"); then
+            test_results_rc=0
+        else
+            test_results_rc=$?
+            test_results_json=""
+        fi
+        if [[ "$test_results_rc" -eq 2 ]]; then
+            _note_test_results_comm_failure "$job_name" "$build_number"
+            display_test_results_comm_error
+        else
+            display_test_results "$test_results_json"
+        fi
     fi
 
     # Print final status line

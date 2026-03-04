@@ -109,8 +109,8 @@ teardown() {
 }
 
 # -----------------------------------------------------------------------------
-# Test Case: fetch_test_results returns empty on server error
-# Spec: test-failure-display-spec.md, Section: Error Handling - API Failures
+# Test Case: fetch_test_results returns communication failure on server error
+# Spec: 2026-03-04_short-status-sandbox-fail-spec.md, Section 1
 # -----------------------------------------------------------------------------
 @test "fetch_test_results_returns_empty_on_error" {
     # Mock jenkins_api_with_status to return 500
@@ -121,11 +121,20 @@ teardown() {
     export -f jenkins_api_with_status
 
     run fetch_test_results "test-job" "123"
-    assert_success
-    # Should log a warning about the failure
-    assert_output --partial "Failed to fetch test results (HTTP 500)"
-    # Should NOT include the error body in output
-    refute_output --partial "Internal Server Error"
+    [ "$status" -eq 2 ]
+    assert_output ""
+}
+
+@test "fetch_test_results_returns_comm_failure_on_http_000" {
+    jenkins_api_with_status() {
+        echo ""
+        echo "000"
+    }
+    export -f jenkins_api_with_status
+
+    run fetch_test_results "test-job" "123"
+    [ "$status" -eq 2 ]
+    assert_output ""
 }
 
 # -----------------------------------------------------------------------------

@@ -1,9 +1,9 @@
 ## Warn user when test results cannot be retrieved
 
 - **Date:** `2026-03-04T11:10:46-0700`
-- **References:** `specs/todo/short-status-sandbox-fail.md`
+- **References:** `specs/done-reports/short-status-sandbox-fail.md`
 - **Supersedes:** none
-- **State:** `DRAFT`
+- **State:** `IMPLEMENTED`
 
 ## Background
 

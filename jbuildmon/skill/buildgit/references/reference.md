@@ -113,6 +113,12 @@ SUCCESS     #55 5m 38s
 Format placeholders: `%s`=status `%j`=job `%n`=build# `%t`=tests `%d`=duration `%D`=date `%I`=iso8601 `%r`=relative `%c`=commit `%b`=branch `%%`=literal%
 Default line format: `%s #%n id=%c Tests=%t Took %d on %I (%r)`
 
+If test-report retrieval fails due to communication issues (for example network/sandbox restrictions), `%t` shows `!err!` and buildgit logs:
+
+```bash
+[HH:MM:SS] ⚠ Could not retrieve test results (communication error)
+```
+
 ## Show status for last N builds (--line)
 
 ```bash

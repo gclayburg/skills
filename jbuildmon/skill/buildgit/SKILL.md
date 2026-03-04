@@ -96,6 +96,7 @@ Default one-line format (`status --line`, `push --line`, `build --line`) is:
 - `NOT_BUILT` — build was skipped or not executed (e.g., due to upstream failure or explicit skip)
 - `UNKNOWN` — the state could not be determined (e.g., API error, incomplete data)
 - `QUEUED` — build is waiting in the Jenkins queue and hasn't started running yet
+- `Tests=!err!` in line output means Jenkins test-report data could not be retrieved due to a communication failure (network/sandbox/API connectivity), not a test result.
 
 For failures, summarize the failed stage name, error logs, and test failure details for the user.
 

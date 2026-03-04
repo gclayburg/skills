@@ -250,6 +250,7 @@ Format placeholders for --format (use with --line):
   %s=status  %j=job  %n=build#  %t=tests  %d=duration
   %D=date  %I=iso8601  %r=relative  %c=commit  %b=branch  %%=literal%
   Default: "%s #%n id=%c Tests=%t Took %d on %I (%r)"
+  Note: `%t` is `!err!` when Jenkins test-report retrieval fails (communication/sandbox/network error).
 
 Passthrough:
   buildgit log --oneline -5        # Passed through to git
