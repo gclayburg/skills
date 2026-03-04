@@ -93,7 +93,7 @@ Commands:
   status [build#] [-f|--follow] [--once[=N]] [-n <count>] [--json] [--line] [--all] [--no-tests] [--format <fmt>] [--prior-jobs <N>]
                       Display Jenkins build status (latest or specific build)
                       build# can be absolute (31) or relative (0=latest, -1=previous, -2=two ago)
-                      Default: full output on TTY, one-line on pipe/redirect
+                      Default: one-line output (TTY adds color)
   push [--no-follow] [--line] [--format <fmt>] [--prior-jobs <N>] [git-push-options] [remote] [branch]
                       Push commits and monitor Jenkins build
   build [--no-follow] [--line] [--format <fmt>] [--prior-jobs <N>]
@@ -252,7 +252,8 @@ _parse_status_options() {
     STATUS_NO_TESTS=false
     STATUS_BUILD_NUMBER=""
     STATUS_FORMAT_EXPLICIT=false
-    STATUS_PRIOR_JOBS=3
+    STATUS_PRIOR_JOBS=0
+    STATUS_PRIOR_JOBS_EXPLICIT=false
     _LINE_FORMAT_STRING="$_DEFAULT_LINE_FORMAT"
 
     while [[ $# -gt 0 ]]; do
@@ -336,10 +337,12 @@ _parse_status_options() {
             --prior-jobs)
                 shift
                 STATUS_PRIOR_JOBS=$(_parse_prior_jobs_value "${1:-}" "--prior-jobs")
+                STATUS_PRIOR_JOBS_EXPLICIT=true
                 shift
                 ;;
             --prior-jobs=*)
                 STATUS_PRIOR_JOBS=$(_parse_prior_jobs_value "${1#--prior-jobs=}" "--prior-jobs")
+                STATUS_PRIOR_JOBS_EXPLICIT=true
                 shift
                 ;;
             -*)
@@ -2292,6 +2295,10 @@ cmd_status() {
 
     # For follow mode, jump straight to Jenkins monitoring
     if [[ "$STATUS_FOLLOW_MODE" == "true" ]]; then
+        if [[ "${STATUS_PRIOR_JOBS_EXPLICIT:-false}" != "true" ]]; then
+            STATUS_PRIOR_JOBS=3
+        fi
+
         # Validate and setup Jenkins connection
         if ! _validate_jenkins_setup "monitor Jenkins builds"; then
             return 1
@@ -2331,16 +2338,15 @@ cmd_status() {
     fi
 
     # Determine output mode for status snapshots.
-    # Default: full output on TTY, one-line output when stdout is not a TTY.
+    # Default: one-line output (full output only with --all).
     local use_line_mode="$STATUS_LINE_MODE"
     local line_count="$STATUS_LINE_COUNT"
     if [[ "$STATUS_LINE_MODE" != "true" && "$STATUS_ALL_MODE" != "true" && "${STATUS_N_SET:-false}" != "true" ]]; then
-        if [[ -t 1 ]]; then
-            use_line_mode=false
-        else
-            use_line_mode=true
-            line_count="1"
-        fi
+        use_line_mode=true
+        line_count="1"
+    fi
+    if [[ "$STATUS_LINE_MODE" != "true" && "$STATUS_ALL_MODE" != "true" && "${STATUS_N_SET:-false}" == "true" ]]; then
+        use_line_mode=true
     fi
 
     if [[ "$use_line_mode" == "true" ]]; then

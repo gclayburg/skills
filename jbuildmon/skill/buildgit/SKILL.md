@@ -99,11 +99,7 @@ Default one-line format (`status --line`, `push --line`, `build --line`) is:
 
 For failures, summarize the failed stage name, error logs, and test failure details for the user.
 
-For snapshot mode defaults, `scripts/buildgit status` is TTY-aware:
-- TTY stdout: full output
-- non-TTY stdout (pipe/redirect): one-line output
-- Exception: when `-n` is provided without `--line`, snapshot output is full multi-build mode.
-- Snapshot also prints a prior-jobs block by default (`--prior-jobs 3`); use `--prior-jobs 0` to suppress
+For snapshot mode defaults, `scripts/buildgit status` prints one-line output by default on both TTY and non-TTY stdout (TTY adds color).
 - Monitoring commands (`push`, `build`, `status -f`) print prior-jobs + estimated build time before monitoring starts
 
 Build reference rules:

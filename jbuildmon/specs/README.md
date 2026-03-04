@@ -56,3 +56,4 @@ These files represent completed specifications in the specs/ directory.  This li
 - 2026-02-27_enhance-multiple-builds-at-once-spec.md  reduce queue wait log noise with transition-based sticky/throttled updates, extend queued secondary rows to push/build monitoring, and tighten redraw sequencing to reduce flash
 - 2026-02-27_bug-progressbar-missing-on-queued-build-spec.md  fix queue wait progress bar never showing on TTY for build/push due to command substitution breaking TTY detection
 - 2026-02-27_copy-process-files-to-template-spec.md  extract generic spec-driven development process framework into reusable `templates/` directory with install script
+- 2026-03-03_short-buildgit-status-spec.md  change snapshot `buildgit status` default to one-line output on both TTY/non-TTY and suppress snapshot prior-jobs by default (`--prior-jobs 0`)

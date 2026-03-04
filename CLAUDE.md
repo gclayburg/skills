@@ -28,7 +28,7 @@ Commands:
   status [build#] [-f|--follow] [--once[=N]] [-n <count>] [--json] [--line] [--all] [--no-tests] [--format <fmt>] [--prior-jobs <N>]
                       Display Jenkins build status (latest or specific build)
                       build# can be absolute (31) or relative (0=latest, -1=previous, -2=two ago)
-                      Default: full output on TTY, one-line on pipe/redirect
+                      Default: one-line output (TTY adds color)
   push [--no-follow] [--line] [--format <fmt>] [--prior-jobs <N>] [git-push-options] [remote] [branch]
                       Push commits and monitor Jenkins build
   build [--no-follow] [--line] [--format <fmt>] [--prior-jobs <N>]

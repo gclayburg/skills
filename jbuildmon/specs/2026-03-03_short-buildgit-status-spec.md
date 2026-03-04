@@ -1,9 +1,9 @@
 ## Change `buildgit status` default to one-line output
 
 - **Date:** `2026-03-03T09:57:25-0700`
-- **References:** `specs/todo/short-buildgit-status.md`
+- **References:** `specs/done-reports/short-buildgit-status.md`
 - **Supersedes:** `2026-02-15_quick-status-line-spec.md` (partially — removes TTY/non-TTY distinction for default output)
-- **State:** `DRAFT`
+- **State:** `IMPLEMENTED`
 
 ## Background
 

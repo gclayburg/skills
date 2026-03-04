@@ -1376,7 +1376,7 @@ WRAPPER
     [ "${line3#*#42 id=}" != "$line3" ]
 }
 
-@test "status_n_without_line_mode_uses_full_mode" {
+@test "status_n_without_line_mode_uses_line_mode" {
     cd "${TEST_REPO}"
     export PROJECT_DIR
     create_status_line_count_wrapper
@@ -1384,10 +1384,12 @@ WRAPPER
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -n 2
 
     assert_success
-    build_header_count="$(printf "%s\n" "$output" | grep -c '^Build:[[:space:]]*#' || true)"
-    [ "$build_header_count" -eq 2 ]
-    assert_output --partial "Build:      #41"
-    assert_output --partial "Build:      #42"
+    line_count="$(printf "%s\n" "$output" | wc -l | tr -d ' ')"
+    [ "$line_count" -eq 2 ]
+    line1="$(printf "%s\n" "$output" | sed -n '1p')"
+    line2="$(printf "%s\n" "$output" | sed -n '2p')"
+    [ "${line1#*#41 id=}" != "$line1" ]
+    [ "${line2#*#42 id=}" != "$line2" ]
 }
 
 @test "status_n_full_mode_ordering_oldest_first" {
@@ -1398,11 +1400,11 @@ WRAPPER
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -n 3
 
     assert_success
-    build_numbers="$(printf "%s\n" "$output" | sed -n 's/^Build:[[:space:]]*#\([0-9][0-9]*\)$/\1/p' | paste -sd ' ' -)"
+    build_numbers="$(printf "%s\n" "$output" | sed -n 's/^.*#\([0-9][0-9]*\) id=.*$/\1/p' | paste -sd ' ' -)"
     [ "$build_numbers" = "40 41 42" ]
 }
 
-@test "status_n_full_mode_exit_code_uses_newest_build" {
+@test "status_n_line_mode_exit_code_uses_newest_build" {
     cd "${TEST_REPO}"
     export PROJECT_DIR
     create_status_full_count_latest_failure_wrapper
@@ -1410,9 +1412,9 @@ WRAPPER
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" -n 3
 
     assert_failure
-    assert_output --partial "Build:      #40"
-    assert_output --partial "Build:      #41"
-    assert_output --partial "Build:      #42"
+    assert_output --partial "#40 id="
+    assert_output --partial "#41 id="
+    assert_output --partial "#42 id="
 }
 
 @test "status_n_json_outputs_jsonl_oldest_first" {
@@ -1886,13 +1888,13 @@ WRAPPER_START
     export PROJECT_DIR TEST_TEMP_DIR
     create_status_prior_jobs_wrapper
 
-    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --line
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
     assert_success
-    assert_output --partial "Prior 3 Jobs"
-    assert_output --partial "#198"
-    assert_output --partial "#199"
-    assert_output --partial "#200"
+    refute_output --partial "Prior "
+    refute_output --partial "#198"
+    refute_output --partial "#199"
+    refute_output --partial "#200"
     assert_output --partial "#201"
     refute_output --partial "Estimated build time ="
 }
@@ -1920,6 +1922,18 @@ WRAPPER_START
 
     assert_success
     refute_output --partial "Prior 3 Jobs"
+}
+
+@test "snapshot_prior_jobs_zero_suppresses_block" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR TEST_TEMP_DIR
+    create_status_prior_jobs_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --prior-jobs 0
+
+    assert_success
+    refute_output --partial "Prior "
+    assert_output --partial "#201"
 }
 
 @test "status_prior_jobs_invalid_negative" {

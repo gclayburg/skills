@@ -155,10 +155,10 @@ SUCCESS     #38 id=4ef5a6b Tests=19/0/0 Took 5m 32s on 2026-02-17T08:14:52-0700 
 IN_PROGRESS Job phandlemono-IT #39 [>                   ] 1% 5s / ~5m 32s
 ```
 
-## Full status output for a successful build
+## Full status output for a successful build (`--all`)
 
 ```bash
-$ buildgit status
+$ buildgit status --all
 
 ╔════════════════════════════════════════╗
 ║           BUILD SUCCESSFUL             ║

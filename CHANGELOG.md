@@ -4,6 +4,10 @@ All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are do
 
 ## [Unreleased] - 1.2.0-dev
 
+### Changed
+- **`buildgit status` snapshot default is now one-line everywhere** — `buildgit status` now defaults to compact one-line output on both TTY and non-TTY stdout (TTY keeps color). Use `--all` for full snapshot output.
+- **Snapshot `--prior-jobs` default changed to 0** — plain snapshot status no longer shows prior-jobs unless explicitly requested (`--prior-jobs <N>`). Monitoring commands (`push`, `build`, `status -f`) keep their existing default prior-jobs behavior.
+
 ## [1.1.0] - 2026-03-02
 
 ### Features
