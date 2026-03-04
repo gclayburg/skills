@@ -18,7 +18,7 @@ Usage: buildgit [global-options] <command> [command-options] [arguments]
 A unified interface for git operations with Jenkins CI/CD integration.
 
 Global Options:
-  -j, --job <name>               Specify Jenkins job name (overrides auto-detection)
+  -j, --job <name>               Specify Jenkins job name (or multibranch job/branch)
   -c, --console <mode>           Show console log output (auto or line count)
   -h, --help                     Show this help message
   -v, --verbose                  Enable verbose output for debugging
@@ -65,6 +65,7 @@ Monitor ongoing Jenkins build jobs:
   buildgit build --line            # Trigger + compact one-line monitoring with progress bar
   buildgit status -f --prior-jobs 5  # Follow with last 5 builds shown first
   buildgit --job myjob build       # Trigger build for specific job
+  buildgit --job myjob/main status # Query explicit multibranch branch job
 
 Format placeholders for --format (use with --line):
   %s=status  %j=job  %n=build#  %t=tests  %d=duration
@@ -90,8 +91,8 @@ Environment Variables:
 
 ## Building on Jenkins CI server
 
-- Jenkins build server will build automatically on a git push to origin main
-- There is one Jenkins pipeline job for this project, defined in ./Jenkinsfile.
+- Jenkins build server is configured as a Multibranch Pipeline and builds pushed branches after scan/webhook.
+- The top-level Jenkins job for this project is `ralph1` (branch jobs are sub-jobs under it, e.g. `ralph1/main`).
 - JOB_NAME=ralph1
 - You have env variables that represent the credentials for Jenkins.
   - JENKINS_URL

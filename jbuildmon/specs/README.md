@@ -57,3 +57,4 @@ These files represent completed specifications in the specs/ directory.  This li
 - 2026-02-27_bug-progressbar-missing-on-queued-build-spec.md  fix queue wait progress bar never showing on TTY for build/push due to command substitution breaking TTY detection
 - 2026-02-27_copy-process-files-to-template-spec.md  extract generic spec-driven development process framework into reusable `templates/` directory with install script
 - 2026-03-03_short-buildgit-status-spec.md  change snapshot `buildgit status` default to one-line output on both TTY/non-TTY and suppress snapshot prior-jobs by default (`--prior-jobs 0`)
+- 2026-03-03_multibranch-pipeline-spec.md  add Jenkins Multibranch Pipeline support with `<job>/<branch>` job format, branch-aware auto-resolution, and encoded multibranch API paths

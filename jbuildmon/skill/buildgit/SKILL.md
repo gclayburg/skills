@@ -71,7 +71,7 @@ push the staged changes and monitor the build.  fix any errors you find.
 | `scripts/buildgit build --format '<fmt>'` | Trigger + compact one-line monitoring with custom format |
 | `scripts/buildgit --console auto status` | Show default console log on failure |
 | `scripts/buildgit --console <N> status` | Show last N raw console lines on failure |
-| `scripts/buildgit --job <name> <cmd>` | Override auto-detected job name |
+| `scripts/buildgit --job <name|name/branch> <cmd>` | Override auto-detected job name (supports multibranch) |
 | `scripts/buildgit --version` | Show version number and exit |
 
 Default one-line format (`status --line`, `push --line`, `build --line`) is:
