@@ -1,0 +1,3 @@
+short buildgit status does not always show test information.  sometimes the curl call will silently fail and show ?/?/?  when running in a restrictive sandbox.  This was seen when running under claude code with /sandbox turned on.  The status needs to show a warning message of some sort.  
+
+the user only sees ?/?/?.  It still shows that everything is green and good.  This isn't quite right in this case.  What they should see is a clear warning message saying there was some sort of communication failure.  it's not an error with the project or the testing.  It should say something about a coumminication failure in retrieving test information.
