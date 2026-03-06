@@ -1641,6 +1641,14 @@ _monitor_build() {
                 _clear_follow_line_progress
                 showed_progress=false
             fi
+            if [[ -n "$deferred_output" ]]; then
+                printf '%s\n' "$deferred_output"
+                deferred_output=""
+            fi
+            if [[ -n "$stage_output" ]]; then
+                printf '%s\n' "$stage_output" >&2
+                stage_output=""
+            fi
             # Reconcile late-arriving nested stage metadata before exiting monitor.
             # Jenkins can mark the root build complete slightly before nested
             # stage details are fully available through API/log parsing.
@@ -1648,12 +1656,25 @@ _monitor_build() {
             local settle_elapsed=0
             local stable_polls=0
             local prev_state_fingerprint
-            prev_state_fingerprint=$(echo "$stage_state" | jq -cS '.' 2>/dev/null || echo "$stage_state")
-            while [[ $settle_elapsed -lt $MONITOR_SETTLE_MAX_SECONDS && $stable_polls -lt $MONITOR_SETTLE_STABLE_POLLS ]]; do
+            prev_state_fingerprint=$(_stage_state_settle_fingerprint "$stage_state")
+            local tracking_complete
+            tracking_complete=$(echo "$stage_state" | jq -r '.tracking_complete // false' 2>/dev/null || echo false)
+            while [[ $settle_elapsed -lt $MONITOR_SETTLE_MAX_SECONDS && ( $stable_polls -lt $MONITOR_SETTLE_STABLE_POLLS || "$tracking_complete" != "true" ) ]]; do
                 sleep 1
-                stage_state=$(_track_nested_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE")
+                local settle_stage_output=""
+                if [[ "$render_progress" == "true" && -n "$stage_log_file" ]]; then
+                    stage_state=$(_track_nested_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE" 2>"$stage_log_file")
+                    settle_stage_output=$(cat "$stage_log_file")
+                    : > "$stage_log_file"
+                    if [[ -n "$settle_stage_output" ]]; then
+                        printf '%s\n' "$settle_stage_output" >&2
+                    fi
+                else
+                    stage_state=$(_track_nested_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE")
+                fi
                 local current_state_fingerprint
-                current_state_fingerprint=$(echo "$stage_state" | jq -cS '.' 2>/dev/null || echo "$stage_state")
+                current_state_fingerprint=$(_stage_state_settle_fingerprint "$stage_state")
+                tracking_complete=$(echo "$stage_state" | jq -r '.tracking_complete // false' 2>/dev/null || echo false)
                 if [[ "$current_state_fingerprint" == "$prev_state_fingerprint" ]]; then
                     stable_polls=$((stable_polls + 1))
                 else
@@ -1662,6 +1683,35 @@ _monitor_build() {
                 fi
                 settle_elapsed=$((settle_elapsed + 1))
             done
+            if [[ "$render_progress" == "true" && -n "$stage_log_file" ]]; then
+                stage_state=$(_track_nested_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE" 2>"$stage_log_file")
+                stage_output=$(cat "$stage_log_file")
+                : > "$stage_log_file"
+                if [[ -n "$stage_output" ]]; then
+                    printf '%s\n' "$stage_output" >&2
+                fi
+            else
+                stage_state=$(_track_nested_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE")
+            fi
+            tracking_complete=$(echo "$stage_state" | jq -r '.tracking_complete // false' 2>/dev/null || echo false)
+            if [[ "$tracking_complete" != "true" ]]; then
+                local flush_elapsed=0
+                while [[ $flush_elapsed -lt $MONITOR_SETTLE_MAX_SECONDS && "$tracking_complete" != "true" ]]; do
+                    sleep 1
+                    if [[ "$render_progress" == "true" && -n "$stage_log_file" ]]; then
+                        stage_state=$(_force_flush_completion_stages "$job_name" "$build_number" "$stage_state" 2>"$stage_log_file")
+                        stage_output=$(cat "$stage_log_file")
+                        : > "$stage_log_file"
+                        if [[ -n "$stage_output" ]]; then
+                            printf '%s\n' "$stage_output" >&2
+                        fi
+                    else
+                        stage_state=$(_force_flush_completion_stages "$job_name" "$build_number" "$stage_state")
+                    fi
+                    tracking_complete=$(echo "$stage_state" | jq -r '.tracking_complete // false' 2>/dev/null || echo false)
+                    flush_elapsed=$((flush_elapsed + 1))
+                done
+            fi
             rm -f "$stage_log_file" 2>/dev/null || true
             rm -f "$deferred_log_file" 2>/dev/null || true
             return 0
@@ -2846,6 +2896,18 @@ _wait_for_build_start() {
         elapsed=$((elapsed + POLL_INTERVAL))
         queue_frame=$((queue_frame + 1))
     done
+}
+
+_stage_state_settle_fingerprint() {
+    local stage_state="$1"
+
+    echo "$stage_state" | jq -cS '
+        del(
+            .parallel_state[]?.stable_polls,
+            .parallel_state[]?.wrapper_stable_polls,
+            .parallel_state[]?.branch_state[]?.stable_polls
+        )
+    ' 2>/dev/null || echo "$stage_state"
 }
 
 # Monitor push-triggered build until completion

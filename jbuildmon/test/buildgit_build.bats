@@ -276,6 +276,134 @@ WRAPPER
     [[ "$output" == *"SUCCESS"* ]] || [[ "$output" == *"Build"* ]]
 }
 
+@test "build_completion_stage_lines_match_tty_and_non_tty_output" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    echo "0" > "${TEST_TEMP_DIR}/build_info_calls"
+    echo "0" > "${TEST_TEMP_DIR}/track_calls"
+
+    cat > "${TEST_TEMP_DIR}/build_completion_stage_wrapper.sh" << 'WRAPPER_END'
+#!/usr/bin/env bash
+set -euo pipefail
+
+_BUILDGIT_TESTING=1
+source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+POLL_INTERVAL=1
+MAX_BUILD_TIME=15
+BUILD_START_TIMEOUT=5
+MONITOR_SETTLE_STABLE_POLLS=1
+MONITOR_SETTLE_MAX_SECONDS=1
+
+verify_jenkins_connection() { return 0; }
+verify_job_exists() {
+    JOB_URL="${JENKINS_URL}/job/$1"
+    return 0
+}
+trigger_build() {
+    echo "http://jenkins.example.com/queue/item/123/"
+    return 0
+}
+wait_for_queue_item() {
+    echo "43"
+    return 0
+}
+_wait_for_build_start() {
+    _WAIT_FOR_BUILD_RESULT="43"
+    return 0
+}
+jenkins_api() {
+    if [[ "${1:-}" == *"/lastSuccessfulBuild/api/json" ]]; then
+        echo '{"duration":120000}'
+        return 0
+    fi
+    echo ""
+    return 1
+}
+get_build_info() {
+    local count
+    count=$(cat "${TEST_TEMP_DIR}/build_info_calls")
+    count=$((count + 1))
+    echo "$count" > "${TEST_TEMP_DIR}/build_info_calls"
+    if [[ $count -le 1 ]]; then
+        echo '{"number":43,"result":"null","building":true,"timestamp":1706700000000,"duration":0,"url":"http://jenkins.example.com/job/test-repo/43/"}'
+    else
+        echo '{"number":43,"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/test-repo/43/"}'
+    fi
+}
+get_console_output() {
+    echo "Started by user buildtriggerdude"
+    echo "Checking out Revision abc1234567890"
+}
+get_current_stage() { echo "Build"; }
+get_last_build_number() { echo "42"; }
+get_all_stages() { echo "[]"; }
+fetch_test_results() { echo ""; }
+_display_follow_line_progress() { :; }
+_clear_follow_line_progress() { :; }
+
+_track_nested_stage_changes() {
+    local count
+    count=$(cat "${TEST_TEMP_DIR}/track_calls")
+    count=$((count + 1))
+    echo "$count" > "${TEST_TEMP_DIR}/track_calls"
+
+    if [[ $count -eq 1 ]]; then
+        jq -n '{nested: [], printed: {}, parallel_state: {}, tracking_complete: false}'
+    elif [[ $count -eq 2 ]]; then
+        echo "[12:34:56] ℹ   Stage: Deploy (3s)" >&2
+        jq -n '{
+            nested: [{name: "Deploy", status: "SUCCESS", durationMillis: 3000, nesting_depth: 0}],
+            printed: {Deploy: {terminal: true}},
+            parallel_state: {},
+            tracking_complete: true
+        }'
+    else
+        jq -n '{
+            nested: [{name: "Deploy", status: "SUCCESS", durationMillis: 3000, nesting_depth: 0}],
+            printed: {Deploy: {terminal: true}},
+            parallel_state: {},
+            tracking_complete: true
+        }'
+    fi
+}
+
+JOB_NAME="test-repo"
+cmd_build --prior-jobs 0
+WRAPPER_END
+    chmod +x "${TEST_TEMP_DIR}/build_completion_stage_wrapper.sh"
+
+    run bash -c "BUILDGIT_FORCE_TTY=1 bash \"${TEST_TEMP_DIR}/build_completion_stage_wrapper.sh\" 2>&1"
+
+    assert_success
+    assert_output --partial "Stage: Deploy (3s)"
+    assert_output --partial "Finished: SUCCESS"
+
+    local tty_stage_count
+    tty_stage_count=$(printf '%s\n' "$output" | grep -c "Stage: Deploy (3s)" || true)
+    [ "$tty_stage_count" -eq 1 ]
+
+    echo "0" > "${TEST_TEMP_DIR}/build_info_calls"
+    echo "0" > "${TEST_TEMP_DIR}/track_calls"
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/build_completion_stage_wrapper.sh\" 2>&1"
+
+    assert_success
+    assert_output --partial "Stage: Deploy (3s)"
+    assert_output --partial "Finished: SUCCESS"
+
+    local non_tty_stage_count
+    non_tty_stage_count=$(printf '%s\n' "$output" | grep -c "Stage: Deploy (3s)" || true)
+    [ "$non_tty_stage_count" -eq 1 ]
+}
+
 @test "build_commit_before_console_when_deferred" {
     cd "${TEST_REPO}"
 

@@ -1145,6 +1145,406 @@ WRAPPER_END
     refute_output --partial "Tests=?/?/? Took"
 }
 
+@test "status_follow_settle_loop_prints_late_stage_before_exit" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_test_wrapper "true" "SUCCESS" "1"
+
+    cat > "${TEST_TEMP_DIR}/follow_settle_stage_probe.sh" << 'WRAPPER_END'
+#!/usr/bin/env bash
+set -euo pipefail
+
+_BUILDGIT_TESTING=1
+source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+POLL_INTERVAL=1
+MAX_BUILD_TIME=15
+MONITOR_SETTLE_STABLE_POLLS=1
+MONITOR_SETTLE_MAX_SECONDS=3
+
+echo "0" > "${TEST_TEMP_DIR}/track_calls"
+
+verify_jenkins_connection() { return 0; }
+verify_job_exists() {
+    JOB_URL="${JENKINS_URL}/job/$1"
+    return 0
+}
+jenkins_api() {
+    if [[ "${1:-}" == *"/lastSuccessfulBuild/api/json" ]]; then
+        echo '{"duration":120000}'
+        return 0
+    fi
+    echo ""
+    return 1
+}
+get_last_build_number() { echo "42"; }
+get_build_info() {
+    local count
+    count=$(cat "${TEST_TEMP_DIR}/build_info_calls")
+    count=$((count + 1))
+    echo "$count" > "${TEST_TEMP_DIR}/build_info_calls"
+    if [[ $count -le 1 ]]; then
+        echo '{"number":42,"result":"null","building":true,"timestamp":1706700000000,"duration":0,"url":"http://jenkins.example.com/job/test-repo/42/"}'
+    else
+        echo '{"number":42,"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/test-repo/42/"}'
+    fi
+}
+get_all_stages() { echo "[]"; }
+fetch_test_results() { echo ""; }
+get_console_output() {
+    echo "Started by user testuser"
+    echo "Checking out Revision abc1234567890"
+}
+get_current_stage() { echo "Build"; }
+
+_track_nested_stage_changes() {
+    local job_name="$1"
+    local build_number="$2"
+    local previous_state="${3:-[]}"
+
+    local count
+    count=$(cat "${TEST_TEMP_DIR}/track_calls")
+    count=$((count + 1))
+    echo "$count" > "${TEST_TEMP_DIR}/track_calls"
+
+    if [[ $count -eq 1 ]]; then
+        jq -n '{nested: [], printed: {}, parallel_state: {}, tracking_complete: false}'
+    elif [[ $count -eq 2 ]]; then
+        echo "[12:34:56] ℹ   Stage: [agent7        ] Deploy (3s)" >&2
+        jq -n '{
+            nested: [{name: "Deploy", status: "SUCCESS", durationMillis: 3000, agent: "agent7", nesting_depth: 0}],
+            printed: {Deploy: {terminal: true}},
+            parallel_state: {},
+            tracking_complete: true
+        }'
+    else
+        jq -n '{
+            nested: [{name: "Deploy", status: "SUCCESS", durationMillis: 3000, agent: "agent7", nesting_depth: 0}],
+            printed: {Deploy: {terminal: true}},
+            parallel_state: {},
+            tracking_complete: true
+        }'
+    fi
+}
+
+JOB_NAME="test-repo"
+cmd_status -f --once --prior-jobs 0
+WRAPPER_END
+    chmod +x "${TEST_TEMP_DIR}/follow_settle_stage_probe.sh"
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/follow_settle_stage_probe.sh\" 2>&1"
+
+    assert_success
+    assert_output --partial "Stage: [agent7        ] Deploy (3s)"
+    assert_output --partial "Finished: SUCCESS"
+}
+
+@test "status_follow_completion_stage_lines_match_tty_and_non_tty_output" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    echo "0" > "${TEST_TEMP_DIR}/build_info_calls"
+    echo "0" > "${TEST_TEMP_DIR}/track_calls"
+
+    cat > "${TEST_TEMP_DIR}/follow_completion_stage_wrapper.sh" << 'WRAPPER_END'
+#!/usr/bin/env bash
+set -euo pipefail
+
+_BUILDGIT_TESTING=1
+source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+POLL_INTERVAL=1
+MAX_BUILD_TIME=15
+MONITOR_SETTLE_STABLE_POLLS=1
+MONITOR_SETTLE_MAX_SECONDS=1
+
+verify_jenkins_connection() { return 0; }
+verify_job_exists() {
+    JOB_URL="${JENKINS_URL}/job/$1"
+    return 0
+}
+jenkins_api() {
+    if [[ "${1:-}" == *"/lastSuccessfulBuild/api/json" ]]; then
+        echo '{"duration":120000}'
+        return 0
+    fi
+    echo ""
+    return 1
+}
+get_last_build_number() { echo "42"; }
+get_build_info() {
+    local count
+    count=$(cat "${TEST_TEMP_DIR}/build_info_calls")
+    count=$((count + 1))
+    echo "$count" > "${TEST_TEMP_DIR}/build_info_calls"
+    if [[ $count -le 1 ]]; then
+        echo '{"number":42,"result":"null","building":true,"timestamp":1706700000000,"duration":0,"url":"http://jenkins.example.com/job/test-repo/42/"}'
+    else
+        echo '{"number":42,"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/test-repo/42/"}'
+    fi
+}
+get_all_stages() { echo "[]"; }
+fetch_test_results() { echo ""; }
+get_console_output() {
+    echo "Started by user testuser"
+    echo "Checking out Revision abc1234567890"
+}
+get_current_stage() { echo "Build"; }
+_display_follow_line_progress() { :; }
+_clear_follow_line_progress() { :; }
+
+_track_nested_stage_changes() {
+    local count
+    count=$(cat "${TEST_TEMP_DIR}/track_calls")
+    count=$((count + 1))
+    echo "$count" > "${TEST_TEMP_DIR}/track_calls"
+
+    if [[ $count -eq 1 ]]; then
+        jq -n '{nested: [], printed: {}, parallel_state: {}, tracking_complete: false}'
+    elif [[ $count -eq 2 ]]; then
+        echo "[12:34:56] ℹ   Stage: Deploy (3s)" >&2
+        jq -n '{
+            nested: [{name: "Deploy", status: "SUCCESS", durationMillis: 3000, nesting_depth: 0}],
+            printed: {Deploy: {terminal: true}},
+            parallel_state: {},
+            tracking_complete: true
+        }'
+    else
+        jq -n '{
+            nested: [{name: "Deploy", status: "SUCCESS", durationMillis: 3000, nesting_depth: 0}],
+            printed: {Deploy: {terminal: true}},
+            parallel_state: {},
+            tracking_complete: true
+        }'
+    fi
+}
+
+JOB_NAME="test-repo"
+cmd_status -f --once --prior-jobs 0
+WRAPPER_END
+    chmod +x "${TEST_TEMP_DIR}/follow_completion_stage_wrapper.sh"
+
+    run bash -c "BUILDGIT_FORCE_TTY=1 bash \"${TEST_TEMP_DIR}/follow_completion_stage_wrapper.sh\" 2>&1"
+
+    assert_success
+    assert_output --partial "Stage: Deploy (3s)"
+    assert_output --partial "Finished: SUCCESS"
+
+    local tty_stage_count
+    tty_stage_count=$(printf '%s\n' "$output" | grep -c "Stage: Deploy (3s)" || true)
+    [ "$tty_stage_count" -eq 1 ]
+
+    echo "0" > "${TEST_TEMP_DIR}/build_info_calls"
+    echo "0" > "${TEST_TEMP_DIR}/track_calls"
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/follow_completion_stage_wrapper.sh\" 2>&1"
+
+    assert_success
+    assert_output --partial "Stage: Deploy (3s)"
+    assert_output --partial "Finished: SUCCESS"
+
+    local non_tty_stage_count
+    non_tty_stage_count=$(printf '%s\n' "$output" | grep -c "Stage: Deploy (3s)" || true)
+    [ "$non_tty_stage_count" -eq 1 ]
+}
+
+@test "status_follow_completion_force_flushes_missing_terminal_stages" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_test_wrapper "true" "SUCCESS" "1"
+
+    cat > "${TEST_TEMP_DIR}/follow_force_flush_probe.sh" << 'WRAPPER_END'
+#!/usr/bin/env bash
+set -euo pipefail
+
+_BUILDGIT_TESTING=1
+source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+POLL_INTERVAL=1
+MAX_BUILD_TIME=15
+MONITOR_SETTLE_STABLE_POLLS=1
+MONITOR_SETTLE_MAX_SECONDS=2
+
+echo "0" > "${TEST_TEMP_DIR}/flush_calls"
+
+verify_jenkins_connection() { return 0; }
+verify_job_exists() {
+    JOB_URL="${JENKINS_URL}/job/$1"
+    return 0
+}
+jenkins_api() {
+    if [[ "${1:-}" == *"/lastSuccessfulBuild/api/json" ]]; then
+        echo '{"duration":120000}'
+        return 0
+    fi
+    echo ""
+    return 1
+}
+get_last_build_number() { echo "42"; }
+get_build_info() {
+    local count
+    count=$(cat "${TEST_TEMP_DIR}/build_info_calls")
+    count=$((count + 1))
+    echo "$count" > "${TEST_TEMP_DIR}/build_info_calls"
+    if [[ $count -le 1 ]]; then
+        echo '{"number":42,"result":"null","building":true,"timestamp":1706700000000,"duration":0,"url":"http://jenkins.example.com/job/test-repo/42/"}'
+    else
+        echo '{"number":42,"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/test-repo/42/"}'
+    fi
+}
+get_all_stages() { echo '[{"name":"Build","status":"SUCCESS","durationMillis":3000},{"name":"Deploy","status":"SUCCESS","durationMillis":3000}]'; }
+fetch_test_results() { echo ""; }
+get_console_output() {
+    echo "Started by user testuser"
+    echo "Checking out Revision abc1234567890"
+}
+get_current_stage() { echo "Build"; }
+
+_track_nested_stage_changes() {
+    jq -n '{
+        parent: [{name: "Build", status: "SUCCESS", durationMillis: 3000}, {name: "Deploy", status: "SUCCESS", durationMillis: 3000}],
+        nested: [{name: "Build", status: "SUCCESS", durationMillis: 3000, agent: "agent1", nesting_depth: 0}],
+        printed: {Build: {terminal: true}},
+        parallel_state: {},
+        tracking_complete: false
+    }'
+}
+
+_force_flush_completion_stages() {
+    local count
+    count=$(cat "${TEST_TEMP_DIR}/flush_calls")
+    count=$((count + 1))
+    echo "$count" > "${TEST_TEMP_DIR}/flush_calls"
+    echo "[12:34:56] ℹ   Stage: Deploy (3s)" >&2
+    jq -n '{
+        parent: [{name: "Build", status: "SUCCESS", durationMillis: 3000}, {name: "Deploy", status: "SUCCESS", durationMillis: 3000}],
+        nested: [
+            {name: "Build", status: "SUCCESS", durationMillis: 3000, agent: "agent1", nesting_depth: 0},
+            {name: "Deploy", status: "SUCCESS", durationMillis: 3000, agent: "agent7", nesting_depth: 0}
+        ],
+        printed: {Build: {terminal: true}, Deploy: {terminal: true}},
+        parallel_state: {},
+        tracking_complete: true
+    }'
+}
+
+JOB_NAME="test-repo"
+cmd_status -f --once --prior-jobs 0
+WRAPPER_END
+    chmod +x "${TEST_TEMP_DIR}/follow_force_flush_probe.sh"
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/follow_force_flush_probe.sh\" 2>&1"
+
+    assert_success
+    assert_output --partial "Stage: Deploy (3s)"
+    assert_output --partial "Finished: SUCCESS"
+}
+
+@test "status_follow_settle_loop_ignores_counter_only_parallel_state_changes" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_test_wrapper "true" "SUCCESS" "1"
+
+    cat > "${TEST_TEMP_DIR}/follow_settle_counter_probe.sh" << 'WRAPPER_END'
+#!/usr/bin/env bash
+set -euo pipefail
+
+_BUILDGIT_TESTING=1
+source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+POLL_INTERVAL=1
+MAX_BUILD_TIME=15
+MONITOR_SETTLE_STABLE_POLLS=1
+MONITOR_SETTLE_MAX_SECONDS=5
+
+echo "0" > "${TEST_TEMP_DIR}/track_calls"
+
+sleep() { :; }
+
+verify_jenkins_connection() { return 0; }
+verify_job_exists() {
+    JOB_URL="${JENKINS_URL}/job/$1"
+    return 0
+}
+jenkins_api() {
+    if [[ "${1:-}" == *"/lastSuccessfulBuild/api/json" ]]; then
+        echo '{"duration":120000}'
+        return 0
+    fi
+    echo ""
+    return 1
+}
+get_last_build_number() { echo "42"; }
+get_build_info() {
+    local count
+    count=$(cat "${TEST_TEMP_DIR}/build_info_calls")
+    count=$((count + 1))
+    echo "$count" > "${TEST_TEMP_DIR}/build_info_calls"
+    if [[ $count -le 1 ]]; then
+        echo '{"number":42,"result":"null","building":true,"timestamp":1706700000000,"duration":0,"url":"http://jenkins.example.com/job/test-repo/42/"}'
+    else
+        echo '{"number":42,"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/test-repo/42/"}'
+    fi
+}
+get_all_stages() {
+    echo '[{"name":"Build","status":"SUCCESS","durationMillis":3000},{"name":"Deploy","status":"SUCCESS","durationMillis":3000}]'
+}
+fetch_test_results() { echo ""; }
+get_console_output() {
+    echo "Started by user testuser"
+    echo "Checking out Revision abc1234567890"
+}
+get_current_stage() { echo "Build"; }
+
+_track_nested_stage_changes() {
+    local count
+    count=$(cat "${TEST_TEMP_DIR}/track_calls")
+    count=$((count + 1))
+    echo "$count" > "${TEST_TEMP_DIR}/track_calls"
+
+    if [[ $count -eq 1 ]]; then
+        jq -n '{
+            parent: [{name: "Build", status: "SUCCESS", durationMillis: 3000}, {name: "Deploy", status: "SUCCESS", durationMillis: 3000}],
+            nested: [{name: "Build", status: "SUCCESS", durationMillis: 3000, agent: "agent1", nesting_depth: 0}],
+            printed: {Build: {terminal: true}},
+            parallel_state: {UnitTests: {stable_polls: 1, wrapper_stable_polls: 1, branch_state: {A: {stable_polls: 1, ready_to_print: false}}}},
+            tracking_complete: false
+        }'
+    else
+        jq -n --argjson count "$count" '{
+            parent: [{name: "Build", status: "SUCCESS", durationMillis: 3000}, {name: "Deploy", status: "SUCCESS", durationMillis: 3000}],
+            nested: [
+                {name: "Build", status: "SUCCESS", durationMillis: 3000, agent: "agent1", nesting_depth: 0},
+                {name: "Deploy", status: "SUCCESS", durationMillis: 3000, agent: "agent7", nesting_depth: 0}
+            ],
+            printed: {Build: {terminal: true}, Deploy: {terminal: true}},
+            parallel_state: {UnitTests: {stable_polls: $count, wrapper_stable_polls: $count, branch_state: {A: {stable_polls: $count, ready_to_print: true}}}},
+            tracking_complete: true
+        }'
+    fi
+}
+
+JOB_NAME="test-repo"
+cmd_status -f --once --prior-jobs 0
+echo "TRACK_CALLS=$(cat "${TEST_TEMP_DIR}/track_calls")"
+WRAPPER_END
+    chmod +x "${TEST_TEMP_DIR}/follow_settle_counter_probe.sh"
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/follow_settle_counter_probe.sh\" 2>&1"
+
+    assert_success
+    assert_output --partial "Finished: SUCCESS"
+    assert_output --partial "TRACK_CALLS=4"
+}
+
 @test "status_follow_line_n_prior_builds" {
     cd "${TEST_REPO}"
     export PROJECT_DIR

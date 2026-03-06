@@ -1,9 +1,9 @@
 ## Fix monitoring mode stage timing and ordering for parallel branches
 
 - **Date:** `2026-03-04T15:57:39-0700`
-- **References:** `specs/done-reports/realtime-timing-fix.md`
+- **References:** `specs/done-reports/build-stage-timing-fixes.md`
 - **Supersedes:** none
-- **State:** `DRAFT`
+- **State:** `IMPLEMENTED`
 
 ## Background
 

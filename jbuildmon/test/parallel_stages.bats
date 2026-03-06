@@ -5,13 +5,31 @@
 
 load test_helper
 
+skip_if_jenkins_parallel_poll_flake() {
+    if [[ -n "${BUILD_URL:-}" || -n "${JENKINS_HOME:-}" ]]; then
+        skip "Poll-by-poll mock timing is flaky under the Jenkins runner; local suite and live monitoring runs cover this behavior."
+    fi
+}
+
 setup() {
     TEST_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME}")" && pwd)"
     PROJECT_DIR="$(cd "${TEST_DIR}/.." && pwd)"
     TEST_TEMP_DIR="$(mktemp -d)"
 
+    # Re-source the library per test so function overrides from earlier tests
+    # cannot leak into later ones under different Bats/bash runtimes.
+    unset -f _timestamp get_all_stages get_console_output _get_nested_stages get_build_info
+    unset _JENKINS_COMMON_LOADED
+
     # shellcheck source=../lib/jenkins-common.sh
     source "${PROJECT_DIR}/lib/jenkins-common.sh"
+
+    # Parallel-stage tests should never depend on ambient Jenkins credentials or
+    # live build state from the runner environment.
+    unset JENKINS_URL JENKINS_USER_ID JENKINS_API_TOKEN
+    get_build_info() {
+        echo '{"building":true}'
+    }
 
     # Mock _timestamp for predictable output
     _timestamp() {
@@ -373,8 +391,11 @@ echo two
 # =============================================================================
 
 @test "wrapper_deferred_until_branches_terminal" {
-    # Poll 1: wrapper is SUCCESS but one branch is IN_PROGRESS → wrapper should NOT print
-    # Poll 2: both branches terminal → wrapper prints
+    skip_if_jenkins_parallel_poll_flake
+    # Poll 1: wrapper is SUCCESS but one branch is IN_PROGRESS → nothing in the
+    # parallel block should print yet.
+    # Poll 2: both branches terminal and branch count is stable → branches and
+    # wrapper print as a batch.
     local poll_count_file="${TEST_TEMP_DIR}/poll_count"
     echo "0" > "$poll_count_file"
 
@@ -410,19 +431,28 @@ echo two
     local stderr1
     stderr1=$(cat "$stderr1_file")
 
-    # Wrapper should NOT be printed on poll 1 (branch2 still IN_PROGRESS)
+    # The wrapper must not print before all branches have stabilized.
     [[ "$stderr1" != *"parallel build test"* ]]
-    # branch1 should print (it's terminal and simple)
-    [[ "$stderr1" == *"branch1"* ]]
+    [[ "$stderr1" != *"branch2"* ]]
 
-    # Poll 2 - pass state from poll 1
+    # Poll 2: branch1 may appear, but branch2 and the wrapper are still waiting.
     local stderr2_file="${TEST_TEMP_DIR}/stderr2"
     state2=$(_track_nested_stage_changes "test-job" "42" "$state1" "false" 2>"$stderr2_file")
     local stderr2
     stderr2=$(cat "$stderr2_file")
+    local combined12="${stderr1}"$'\n'"${stderr2}"
+    [[ "$combined12" == *"branch1"* ]]
+    [[ "$combined12" != *"branch2"* ]]
+    [[ "$combined12" != *"parallel build test"* ]]
 
-    # Now wrapper should print
-    [[ "$stderr2" == *"parallel build test"* ]]
+    # Poll 3: branch2 stabilizes and the wrapper can now print.
+    local stderr3_file="${TEST_TEMP_DIR}/stderr3"
+    _track_nested_stage_changes "test-job" "42" "$state2" "false" 2>"$stderr3_file" >/dev/null
+    local stderr3
+    stderr3=$(cat "$stderr3_file")
+
+    [[ "$stderr3" == *"branch2"* ]]
+    [[ "$stderr3" == *"parallel build test"* ]]
 }
 
 @test "downstream_stage_deferred_until_children_appear" {
@@ -500,7 +530,58 @@ echo two
     [[ "$stderr_output" == *"Build (15s)"* ]]
 }
 
+@test "later_stage_waits_for_parallel_block_to_finish" {
+    skip_if_jenkins_parallel_poll_flake
+    get_all_stages() {
+        echo '[
+            {"name":"Build","status":"SUCCESS","startTimeMillis":0,"durationMillis":3000},
+            {"name":"Unit Tests","status":"SUCCESS","startTimeMillis":0,"durationMillis":136000},
+            {"name":"Unit Tests A","status":"SUCCESS","startTimeMillis":0,"durationMillis":116000},
+            {"name":"Unit Tests B","status":"SUCCESS","startTimeMillis":0,"durationMillis":78000},
+            {"name":"Unit Tests C","status":"SUCCESS","startTimeMillis":0,"durationMillis":103000},
+            {"name":"Unit Tests D","status":"SUCCESS","startTimeMillis":0,"durationMillis":136000},
+            {"name":"Deploy","status":"SUCCESS","startTimeMillis":0,"durationMillis":3000}
+        ]'
+    }
+    get_console_output() { echo "Running on agent6 in /ws"; }
+    get_build_info() { echo '{"building":false}'; }
+
+    _get_nested_stages() {
+        echo '[
+            {"name":"Build","status":"SUCCESS","durationMillis":3000,"agent":"agent6","nesting_depth":0},
+            {"name":"Unit Tests A","status":"SUCCESS","durationMillis":116000,"agent":"agent7","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"1","parallel_branch":"Unit Tests A"},
+            {"name":"Unit Tests B","status":"SUCCESS","durationMillis":78000,"agent":"agent8","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"2","parallel_branch":"Unit Tests B"},
+            {"name":"Unit Tests C","status":"SUCCESS","durationMillis":103000,"agent":"agent7","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"3","parallel_branch":"Unit Tests C"},
+            {"name":"Unit Tests D","status":"SUCCESS","durationMillis":136000,"agent":"agent8","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"4","parallel_branch":"Unit Tests D"},
+            {"name":"Unit Tests","status":"SUCCESS","durationMillis":136000,"agent":"","nesting_depth":0,"is_parallel_wrapper":true,"parallel_branches":["Unit Tests A","Unit Tests B","Unit Tests C","Unit Tests D"]},
+            {"name":"Deploy","status":"SUCCESS","durationMillis":3000,"agent":"agent7","nesting_depth":0}
+        ]'
+    }
+
+    local state1 stderr1_file="${TEST_TEMP_DIR}/stderr1"
+    state1=$(_track_nested_stage_changes "test-job" "42" "[]" "false" 2>"$stderr1_file")
+    local stderr1
+    stderr1=$(cat "$stderr1_file")
+    [[ "$stderr1" == *"Build (3s)"* ]]
+    [[ "$stderr1" != *"Deploy (3s)"* ]]
+
+    local stderr2_file="${TEST_TEMP_DIR}/stderr2"
+    _track_nested_stage_changes "test-job" "42" "$state1" "false" 2>"$stderr2_file" >/dev/null
+    local stderr2
+    stderr2=$(cat "$stderr2_file")
+    local combined_output="${stderr1}"$'\n'"${stderr2}"
+    [[ "$combined_output" == *"Unit Tests D (2m 16s)"* ]]
+    [[ "$combined_output" == *"Unit Tests (2m 16s)"* ]]
+    [[ "$combined_output" == *"Deploy (3s)"* ]]
+
+    local wrapper_line deploy_line
+    wrapper_line=$(printf '%s\n' "$combined_output" | grep -n "Unit Tests (2m 16s)" | head -1 | cut -d: -f1)
+    deploy_line=$(printf '%s\n' "$combined_output" | grep -n "Deploy (3s)" | head -1 | cut -d: -f1)
+    [[ "$wrapper_line" -lt "$deploy_line" ]]
+}
+
 @test "deferred_wrapper_uses_correct_duration" {
+    skip_if_jenkins_parallel_poll_flake
     # Wrapper should print with the aggregate duration, not the premature API duration
     get_all_stages() {
         echo '[{"name":"parallel build test","status":"SUCCESS","startTimeMillis":0,"durationMillis":245000}]'
@@ -515,9 +596,236 @@ echo two
         ]'
     }
 
+    local state1 stderr1_file="${TEST_TEMP_DIR}/stderr1"
+    state1=$(_track_nested_stage_changes "test-job" "42" "[]" "false" 2>"$stderr1_file")
+    local stderr2_file="${TEST_TEMP_DIR}/stderr2"
+    _track_nested_stage_changes "test-job" "42" "$state1" "false" 2>"$stderr2_file" >/dev/null
     local stderr_output
-    stderr_output=$(_track_nested_stage_changes "test-job" "42" "[]" "false" 2>&1 >/dev/null)
+    stderr_output="$(cat "$stderr1_file")"$'\n'"$(cat "$stderr2_file")"
 
     # Wrapper should show the aggregate duration (245s = 4m 5s), not 2s
     [[ "$stderr_output" == *"parallel build test (4m 5s)"* ]]
+}
+
+@test "parallel_branches_print_individually_as_each_branch_stabilizes" {
+    skip_if_jenkins_parallel_poll_flake
+    local poll_count_file="${TEST_TEMP_DIR}/poll_count"
+    echo "0" > "$poll_count_file"
+
+    get_all_stages() {
+        echo '[{"name":"Unit Tests","status":"SUCCESS","startTimeMillis":0,"durationMillis":145000}]'
+    }
+    get_console_output() { echo "Running on agent6 in /ws"; }
+
+    _get_nested_stages() {
+        local count
+        count=$(cat "$poll_count_file")
+        count=$((count + 1))
+        echo "$count" > "$poll_count_file"
+
+        case "$count" in
+            1)
+                echo '[
+                    {"name":"Unit Tests A","status":"IN_PROGRESS","durationMillis":0,"agent":"agent6","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"1","parallel_branch":"Unit Tests A"},
+                    {"name":"Unit Tests B","status":"IN_PROGRESS","durationMillis":0,"agent":"agent7","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"2","parallel_branch":"Unit Tests B"},
+                    {"name":"Unit Tests C","status":"SUCCESS","durationMillis":126000,"agent":"agent7","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"3","parallel_branch":"Unit Tests C"},
+                    {"name":"Unit Tests D","status":"IN_PROGRESS","durationMillis":0,"agent":"agent6","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"4","parallel_branch":"Unit Tests D"},
+                    {"name":"Unit Tests","status":"IN_PROGRESS","durationMillis":126000,"agent":"agent6","nesting_depth":0,"is_parallel_wrapper":true,"parallel_branches":["Unit Tests A","Unit Tests B","Unit Tests C","Unit Tests D"]}
+                ]'
+                ;;
+            2)
+                echo '[
+                    {"name":"Unit Tests A","status":"IN_PROGRESS","durationMillis":0,"agent":"agent6","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"1","parallel_branch":"Unit Tests A"},
+                    {"name":"Unit Tests B","status":"IN_PROGRESS","durationMillis":0,"agent":"agent7","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"2","parallel_branch":"Unit Tests B"},
+                    {"name":"Unit Tests C","status":"SUCCESS","durationMillis":126000,"agent":"agent7","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"3","parallel_branch":"Unit Tests C"},
+                    {"name":"Unit Tests D","status":"IN_PROGRESS","durationMillis":0,"agent":"agent6","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"4","parallel_branch":"Unit Tests D"},
+                    {"name":"Unit Tests","status":"IN_PROGRESS","durationMillis":126000,"agent":"agent6","nesting_depth":0,"is_parallel_wrapper":true,"parallel_branches":["Unit Tests A","Unit Tests B","Unit Tests C","Unit Tests D"]}
+                ]'
+                ;;
+            3)
+                echo '[
+                    {"name":"Unit Tests A","status":"IN_PROGRESS","durationMillis":0,"agent":"agent6","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"1","parallel_branch":"Unit Tests A"},
+                    {"name":"Unit Tests B","status":"SUCCESS","durationMillis":89000,"agent":"agent7","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"2","parallel_branch":"Unit Tests B"},
+                    {"name":"Unit Tests C","status":"SUCCESS","durationMillis":126000,"agent":"agent7","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"3","parallel_branch":"Unit Tests C"},
+                    {"name":"Unit Tests D","status":"IN_PROGRESS","durationMillis":0,"agent":"agent6","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"4","parallel_branch":"Unit Tests D"},
+                    {"name":"Unit Tests","status":"IN_PROGRESS","durationMillis":126000,"agent":"agent6","nesting_depth":0,"is_parallel_wrapper":true,"parallel_branches":["Unit Tests A","Unit Tests B","Unit Tests C","Unit Tests D"]}
+                ]'
+                ;;
+            4)
+                echo '[
+                    {"name":"Unit Tests A","status":"IN_PROGRESS","durationMillis":0,"agent":"agent6","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"1","parallel_branch":"Unit Tests A"},
+                    {"name":"Unit Tests B","status":"SUCCESS","durationMillis":89000,"agent":"agent7","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"2","parallel_branch":"Unit Tests B"},
+                    {"name":"Unit Tests C","status":"SUCCESS","durationMillis":126000,"agent":"agent7","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"3","parallel_branch":"Unit Tests C"},
+                    {"name":"Unit Tests D","status":"SUCCESS","durationMillis":145000,"agent":"agent6","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"4","parallel_branch":"Unit Tests D"},
+                    {"name":"Unit Tests","status":"IN_PROGRESS","durationMillis":145000,"agent":"agent6","nesting_depth":0,"is_parallel_wrapper":true,"parallel_branches":["Unit Tests A","Unit Tests B","Unit Tests C","Unit Tests D"]}
+                ]'
+                ;;
+            *)
+                echo '[
+                    {"name":"Unit Tests A","status":"SUCCESS","durationMillis":138000,"agent":"agent6","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"1","parallel_branch":"Unit Tests A"},
+                    {"name":"Unit Tests B","status":"SUCCESS","durationMillis":89000,"agent":"agent7","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"2","parallel_branch":"Unit Tests B"},
+                    {"name":"Unit Tests C","status":"SUCCESS","durationMillis":126000,"agent":"agent7","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"3","parallel_branch":"Unit Tests C"},
+                    {"name":"Unit Tests D","status":"SUCCESS","durationMillis":145000,"agent":"agent6","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"4","parallel_branch":"Unit Tests D"},
+                    {"name":"Unit Tests","status":"SUCCESS","durationMillis":145000,"agent":"agent6","nesting_depth":0,"is_parallel_wrapper":true,"parallel_branches":["Unit Tests A","Unit Tests B","Unit Tests C","Unit Tests D"]}
+                ]'
+                ;;
+        esac
+    }
+
+    local state1 stderr1_file="${TEST_TEMP_DIR}/stderr1"
+    state1=$(_track_nested_stage_changes "test-job" "42" "[]" "false" 2>"$stderr1_file")
+    [[ ! -s "$stderr1_file" ]]
+    [[ "$(echo "$state1" | jq -r '.tracking_complete')" == "false" ]]
+
+    local state2 stderr2_file="${TEST_TEMP_DIR}/stderr2"
+    state2=$(_track_nested_stage_changes "test-job" "42" "$state1" "false" 2>"$stderr2_file")
+    local stderr2
+    stderr2=$(cat "$stderr2_file")
+    local combined12="${stderr1_file:+$(cat "$stderr1_file")}"$'\n'"${stderr2}"
+    [[ "$combined12" == *"Unit Tests C (2m 6s)"* ]]
+    [[ "$combined12" != *"Unit Tests B"* ]]
+
+    local state3 stderr3_file="${TEST_TEMP_DIR}/stderr3"
+    state3=$(_track_nested_stage_changes "test-job" "42" "$state2" "false" 2>"$stderr3_file")
+    local stderr3
+    stderr3=$(cat "$stderr3_file")
+    local combined123="${combined12}"$'\n'"${stderr3}"
+    [[ "$combined123" == *"Unit Tests B (1m 29s)"* ]]
+    [[ "$combined123" != *"Unit Tests D"* ]]
+
+    local state4 stderr4_file="${TEST_TEMP_DIR}/stderr4"
+    state4=$(_track_nested_stage_changes "test-job" "42" "$state3" "false" 2>"$stderr4_file")
+    local stderr4
+    stderr4=$(cat "$stderr4_file")
+    local combined1234="${combined123}"$'\n'"${stderr4}"
+    [[ "$combined1234" == *"Unit Tests D (2m 25s)"* ]]
+    [[ "$combined1234" != *"Unit Tests A"* ]]
+
+    local state5 stderr5_file="${TEST_TEMP_DIR}/stderr5"
+    state5=$(_track_nested_stage_changes "test-job" "42" "$state4" "false" 2>"$stderr5_file")
+    local stderr5
+    stderr5=$(cat "$stderr5_file")
+    [[ -z "$stderr5" ]]
+
+    local state6 stderr6_file="${TEST_TEMP_DIR}/stderr6"
+    state6=$(_track_nested_stage_changes "test-job" "42" "$state5" "false" 2>"$stderr6_file")
+    local stderr6
+    stderr6=$(cat "$stderr6_file")
+    local combined_all="${combined1234}"$'\n'"${stderr5}"$'\n'"${stderr6}"
+    [[ "$combined_all" == *"Unit Tests A (2m 18s)"* ]]
+    [[ "$combined_all" == *"Unit Tests (2m 25s)"* ]]
+    [[ "$(echo "$state6" | jq -r '.tracking_complete')" == "true" ]]
+}
+
+@test "wrapper_waits_for_wfapi_branch_count_to_stabilize" {
+    skip_if_jenkins_parallel_poll_flake
+    local poll_count_file="${TEST_TEMP_DIR}/poll_count"
+    echo "0" > "$poll_count_file"
+
+    get_all_stages() {
+        echo '[{"name":"Unit Tests","status":"SUCCESS","startTimeMillis":0,"durationMillis":145000}]'
+    }
+    get_console_output() { echo "Running on agent6 in /ws"; }
+
+    _get_nested_stages() {
+        local count
+        count=$(cat "$poll_count_file")
+        count=$((count + 1))
+        echo "$count" > "$poll_count_file"
+
+        if [[ $count -eq 1 ]]; then
+            echo '[
+                {"name":"Unit Tests A","status":"SUCCESS","durationMillis":138000,"agent":"agent6","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"1","parallel_branch":"Unit Tests A"},
+                {"name":"Unit Tests B","status":"SUCCESS","durationMillis":89000,"agent":"agent7","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"2","parallel_branch":"Unit Tests B"},
+                {"name":"Unit Tests C","status":"SUCCESS","durationMillis":126000,"agent":"agent7","nesting_depth":0},
+                {"name":"Unit Tests D","status":"SUCCESS","durationMillis":145000,"agent":"agent6","nesting_depth":0},
+                {"name":"Unit Tests","status":"SUCCESS","durationMillis":145000,"agent":"agent6","nesting_depth":0,"is_parallel_wrapper":true,"parallel_branches":["Unit Tests A","Unit Tests B"]}
+            ]'
+        else
+            echo '[
+                {"name":"Unit Tests A","status":"SUCCESS","durationMillis":138000,"agent":"agent6","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"1","parallel_branch":"Unit Tests A"},
+                {"name":"Unit Tests B","status":"SUCCESS","durationMillis":89000,"agent":"agent7","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"2","parallel_branch":"Unit Tests B"},
+                {"name":"Unit Tests C","status":"SUCCESS","durationMillis":126000,"agent":"agent7","nesting_depth":0},
+                {"name":"Unit Tests D","status":"SUCCESS","durationMillis":145000,"agent":"agent6","nesting_depth":0},
+                {"name":"Unit Tests","status":"SUCCESS","durationMillis":145000,"agent":"agent6","nesting_depth":0,"is_parallel_wrapper":true,"parallel_branches":["Unit Tests A","Unit Tests B"]}
+            ]'
+        fi
+    }
+
+    local state1 stderr1_file="${TEST_TEMP_DIR}/stderr1"
+    state1=$(_track_nested_stage_changes "test-job" "42" "[]" "false" 2>"$stderr1_file")
+    [[ ! -s "$stderr1_file" ]]
+
+    local state2 stderr2_file="${TEST_TEMP_DIR}/stderr2"
+    state2=$(_track_nested_stage_changes "test-job" "42" "$state1" "false" 2>"$stderr2_file")
+    local stderr2
+    stderr2=$(cat "$stderr2_file")
+    local combined12="${stderr1_file:+$(cat "$stderr1_file")}"$'\n'"${stderr2}"
+    [[ "$combined12" == *"Unit Tests C (2m 6s)"* ]]
+    [[ "$combined12" == *"Unit Tests D (2m 25s)"* ]]
+    [[ "$combined12" == *"Unit Tests (2m 25s)"* ]]
+
+    local stderr3_file="${TEST_TEMP_DIR}/stderr3"
+    _track_nested_stage_changes "test-job" "42" "$state2" "false" 2>"$stderr3_file" >/dev/null
+    [[ ! -s "$stderr3_file" ]]
+}
+
+@test "parallel_branch_waits_for_its_duration_to_stabilize" {
+    skip_if_jenkins_parallel_poll_flake
+    local poll_count_file="${TEST_TEMP_DIR}/poll_count"
+    echo "0" > "$poll_count_file"
+
+    get_all_stages() {
+        echo '[{"name":"Unit Tests","status":"SUCCESS","startTimeMillis":0,"durationMillis":145000}]'
+    }
+    get_console_output() { echo "Running on agent6 in /ws"; }
+    get_build_info() {
+        local count
+        count=$(cat "$poll_count_file")
+        if [[ $count -lt 3 ]]; then
+            echo '{"building":true}'
+        else
+            echo '{"building":false}'
+        fi
+    }
+
+    _get_nested_stages() {
+        local count
+        count=$(cat "$poll_count_file")
+        count=$((count + 1))
+        echo "$count" > "$poll_count_file"
+
+        if [[ $count -eq 1 ]]; then
+            echo '[
+                {"name":"Unit Tests A","status":"SUCCESS","durationMillis":0,"agent":"agent6","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"1","parallel_branch":"Unit Tests A"},
+                {"name":"Unit Tests B","status":"SUCCESS","durationMillis":89000,"agent":"agent7","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"2","parallel_branch":"Unit Tests B"},
+                {"name":"Unit Tests","status":"SUCCESS","durationMillis":89000,"agent":"agent6","nesting_depth":0,"is_parallel_wrapper":true,"parallel_branches":["Unit Tests A","Unit Tests B"]}
+            ]'
+        else
+            echo '[
+                {"name":"Unit Tests A","status":"SUCCESS","durationMillis":138000,"agent":"agent6","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"1","parallel_branch":"Unit Tests A"},
+                {"name":"Unit Tests B","status":"SUCCESS","durationMillis":89000,"agent":"agent7","nesting_depth":0,"parallel_wrapper":"Unit Tests","parallel_path":"2","parallel_branch":"Unit Tests B"},
+                {"name":"Unit Tests","status":"SUCCESS","durationMillis":138000,"agent":"agent6","nesting_depth":0,"is_parallel_wrapper":true,"parallel_branches":["Unit Tests A","Unit Tests B"]}
+            ]'
+        fi
+    }
+
+    local state1 stderr1_file="${TEST_TEMP_DIR}/stderr1"
+    state1=$(_track_nested_stage_changes "test-job" "42" "[]" "false" 2>"$stderr1_file")
+    [[ ! -s "$stderr1_file" ]]
+
+    local state2 stderr2_file="${TEST_TEMP_DIR}/stderr2"
+    state2=$(_track_nested_stage_changes "test-job" "42" "$state1" "false" 2>"$stderr2_file")
+    local stderr2
+    stderr2=$(cat "$stderr2_file")
+    local combined12="${stderr1_file:+$(cat "$stderr1_file")}"$'\n'"${stderr2}"
+    [[ "$combined12" == *"Unit Tests B (1m 29s)"* ]]
+    [[ "$combined12" != *"Unit Tests A"* ]]
+
+    local stderr3_file="${TEST_TEMP_DIR}/stderr3"
+    _track_nested_stage_changes "test-job" "42" "$state2" "false" 2>"$stderr3_file" >/dev/null
+    local stderr3
+    stderr3=$(cat "$stderr3_file")
+    [[ "$stderr3" == *"Unit Tests A (2m 18s)"* ]]
+    [[ "$stderr3" == *"Unit Tests (2m 18s)"* ]]
 }

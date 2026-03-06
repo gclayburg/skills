@@ -138,6 +138,48 @@ teardown() {
     [[ "$_BANNER_STAGES_JSON" == *"IN_PROGRESS"* ]]
 }
 
+@test "display_completed_stages_uses_tracker_for_running_builds" {
+    get_build_info() {
+        echo '{"building":true}'
+    }
+    get_all_stages() {
+        echo '[
+            {"name":"Build","status":"SUCCESS","durationMillis":3000},
+            {"name":"Unit Tests A","status":"SUCCESS","durationMillis":0},
+            {"name":"Unit Tests","status":"SUCCESS","durationMillis":0}
+        ]'
+    }
+    _track_nested_stage_changes() {
+        echo "[12:34:56] ℹ   Stage: Build (3s)" >&2
+        jq -n '{
+            nested: [{name: "Build", status: "SUCCESS", durationMillis: 3000, nesting_depth: 0}],
+            printed: {Build: {terminal: true}},
+            parallel_state: {},
+            tracking_complete: false
+        }'
+    }
+
+    run bash -c "
+        source '${PROJECT_DIR}/lib/jenkins-common.sh'
+        export NO_COLOR=1
+        _init_colors
+        get_build_info() { echo '{\"building\":true}'; }
+        get_all_stages() {
+            echo '[{\"name\":\"Build\",\"status\":\"SUCCESS\",\"durationMillis\":3000},{\"name\":\"Unit Tests A\",\"status\":\"SUCCESS\",\"durationMillis\":0},{\"name\":\"Unit Tests\",\"status\":\"SUCCESS\",\"durationMillis\":0}]'
+        }
+        _track_nested_stage_changes() {
+            echo '[12:34:56] ℹ   Stage: Build (3s)' >&2
+            jq -n '{nested:[{name:\"Build\",status:\"SUCCESS\",durationMillis:3000,nesting_depth:0}],printed:{Build:{terminal:true}},parallel_state:{},tracking_complete:false}'
+        }
+        _display_completed_stages 'test-job' '42' 2>&1
+    "
+
+    assert_success
+    assert_output --partial "Stage: Build (3s)"
+    refute_output --partial "Unit Tests A"
+    refute_output --partial "Unit Tests (<1s)"
+}
+
 # -----------------------------------------------------------------------------
 # Test Case: Mixed statuses - only completed shown
 # Spec: bug-show-all-stages.md - matches the exact bug scenario
