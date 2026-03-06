@@ -297,6 +297,70 @@ Starting building: phandlemono-signalboot #25
     [[ $(echo "$result" | jq -r '.["Build SignalBoot"].build') == "25" ]]
 }
 
+@test "map_stages_to_downstream_ignores_parallel_log_bleed_without_stage_job_match" {
+    local console='[Pipeline] { (parallel build test)
+[Pipeline] parallel
+[Pipeline] { (Branch: synconsole build)
+[Pipeline] { (Branch: visualsync track)
+[Pipeline] { (Branch: dsltestharness)
+[Pipeline] stage
+[Pipeline] { (synconsole build)
+[Pipeline] stage
+[Pipeline] { (visualsync track)
+[Pipeline] stage
+[Pipeline] { (dsltestharness)
+[Pipeline] build
+Starting building: synconsole #1656
+[Pipeline] build
+Starting building: dsltestharness #1510
+[Pipeline] }'
+
+    local stages='[
+        {"name":"synconsole build","status":"FAILED","durationMillis":230000},
+        {"name":"visualsync track","status":"SUCCESS","durationMillis":76000},
+        {"name":"dsltestharness","status":"SUCCESS","durationMillis":58000}
+    ]'
+
+    local result
+    result=$(_map_stages_to_downstream "$console" "$stages")
+
+    [[ $(echo "$result" | jq -r '.["synconsole build"].job') == "synconsole" ]]
+    [[ $(echo "$result" | jq -r '.["synconsole build"].build') == "1656" ]]
+    [[ $(echo "$result" | jq -r '.["dsltestharness"].job') == "dsltestharness" ]]
+    [[ $(echo "$result" | jq -r '.["dsltestharness"].build') == "1510" ]]
+    [[ $(echo "$result" | jq -r '.["visualsync track"] // empty') == "" ]]
+}
+
+@test "map_stages_to_downstream_drops_generic_tests_token_false_positive" {
+    local console='[Pipeline] { (tests)
+[Pipeline] { (Branch: back front tests)
+[Pipeline] { (Branch: panorama)
+[Pipeline] stage
+[Pipeline] { (back front tests)
+[Pipeline] stage
+[Pipeline] { (panorama)
+[Pipeline] stage
+[Pipeline] { (backend tests)
+Starting building: panorama_integration_tests #1749
+[Pipeline] }'
+
+    local stages='[
+        {"name":"tests","status":"SUCCESS","durationMillis":100},
+        {"name":"back front tests","status":"SUCCESS","durationMillis":100},
+        {"name":"panorama","status":"FAILED","durationMillis":135000},
+        {"name":"backend tests","status":"SUCCESS","durationMillis":46000}
+    ]'
+
+    local result
+    result=$(_map_stages_to_downstream "$console" "$stages")
+
+    [[ $(echo "$result" | jq -r '.panorama.job') == "panorama_integration_tests" ]]
+    [[ $(echo "$result" | jq -r '.panorama.build') == "1749" ]]
+    [[ $(echo "$result" | jq -r '.tests // empty') == "" ]]
+    [[ $(echo "$result" | jq -r '.["back front tests"] // empty') == "" ]]
+    [[ $(echo "$result" | jq -r '.["backend tests"] // empty') == "" ]]
+}
+
 # =============================================================================
 # Test Cases: print_stage_line with indent and agent_prefix
 # =============================================================================

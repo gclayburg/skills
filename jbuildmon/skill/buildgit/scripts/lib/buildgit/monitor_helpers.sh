@@ -179,6 +179,8 @@ __buildgit_monitor_build_impl() {
             tracking_complete=$(echo "$stage_state" | jq -r '.tracking_complete // false' 2>/dev/null || echo false)
             while [[ $settle_elapsed -lt $MONITOR_SETTLE_MAX_SECONDS && ( $stable_polls -lt $MONITOR_SETTLE_STABLE_POLLS || "$tracking_complete" != "true" ) ]]; do
                 sleep 1
+                local settle_iteration_start settle_iteration_end settle_iteration_cost
+                settle_iteration_start=$(date +%s)
                 local settle_stage_output=""
                 if [[ "$render_progress" == "true" && -n "$stage_log_file" ]]; then
                     stage_state=$(_track_nested_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE" 2>"$stage_log_file")
@@ -190,6 +192,11 @@ __buildgit_monitor_build_impl() {
                 else
                     stage_state=$(_track_nested_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE")
                 fi
+                settle_iteration_end=$(date +%s)
+                settle_iteration_cost=$((settle_iteration_end - settle_iteration_start + 1))
+                if [[ "$settle_iteration_cost" -lt 1 ]]; then
+                    settle_iteration_cost=1
+                fi
                 local current_state_fingerprint
                 current_state_fingerprint=$(_stage_state_settle_fingerprint "$stage_state")
                 tracking_complete=$(echo "$stage_state" | jq -r '.tracking_complete // false' 2>/dev/null || echo false)
@@ -199,7 +206,7 @@ __buildgit_monitor_build_impl() {
                     stable_polls=0
                     prev_state_fingerprint="$current_state_fingerprint"
                 fi
-                settle_elapsed=$((settle_elapsed + 1))
+                settle_elapsed=$((settle_elapsed + settle_iteration_cost))
             done
             if [[ "$render_progress" == "true" && -n "$stage_log_file" ]]; then
                 stage_state=$(_track_nested_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE" 2>"$stage_log_file")
@@ -216,6 +223,8 @@ __buildgit_monitor_build_impl() {
                 local flush_elapsed=0
                 while [[ $flush_elapsed -lt $MONITOR_SETTLE_MAX_SECONDS && "$tracking_complete" != "true" ]]; do
                     sleep 1
+                    local flush_iteration_start flush_iteration_end flush_iteration_cost
+                    flush_iteration_start=$(date +%s)
                     if [[ "$render_progress" == "true" && -n "$stage_log_file" ]]; then
                         stage_state=$(_force_flush_completion_stages "$job_name" "$build_number" "$stage_state" 2>"$stage_log_file")
                         stage_output=$(cat "$stage_log_file")
@@ -226,8 +235,13 @@ __buildgit_monitor_build_impl() {
                     else
                         stage_state=$(_force_flush_completion_stages "$job_name" "$build_number" "$stage_state")
                     fi
+                    flush_iteration_end=$(date +%s)
+                    flush_iteration_cost=$((flush_iteration_end - flush_iteration_start + 1))
+                    if [[ "$flush_iteration_cost" -lt 1 ]]; then
+                        flush_iteration_cost=1
+                    fi
                     tracking_complete=$(echo "$stage_state" | jq -r '.tracking_complete // false' 2>/dev/null || echo false)
-                    flush_elapsed=$((flush_elapsed + 1))
+                    flush_elapsed=$((flush_elapsed + flush_iteration_cost))
                 done
             fi
             rm -f "$stage_log_file" 2>/dev/null || true

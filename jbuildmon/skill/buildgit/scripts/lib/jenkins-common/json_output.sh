@@ -504,6 +504,7 @@ _map_stages_to_downstream() {
     local stages_json="$2"
 
     local result="{}"
+    local claimed_positive_downstreams="{}"
     local stage_count
     stage_count=$(echo "$stages_json" | jq 'length' 2>/dev/null) || stage_count=0
 
@@ -525,16 +526,29 @@ _map_stages_to_downstream() {
                 # Select best downstream match for this stage
                 local ds_job ds_build
                 local selected_downstream
-                selected_downstream=$(_select_downstream_build_for_stage "$stage_name" "$downstream")
+                selected_downstream=$(_select_downstream_build_for_stage "$stage_name" "$downstream" "$stage_logs")
                 ds_job=$(echo "$selected_downstream" | awk '{print $1}')
                 ds_build=$(echo "$selected_downstream" | awk '{print $2}')
 
                 if [[ -n "$ds_job" && -n "$ds_build" ]]; then
+                    local downstream_key selected_score already_claimed_by_positive
+                    downstream_key="${ds_job}#${ds_build}"
+                    selected_score=$(_downstream_stage_job_match_score "$stage_name" "$ds_job")
+                    already_claimed_by_positive=$(echo "$claimed_positive_downstreams" | jq -r --arg key "$downstream_key" '.[$key] // false' 2>/dev/null)
+                    if [[ "$selected_score" -le 0 && "$already_claimed_by_positive" == "true" ]]; then
+                        i=$((i + 1))
+                        continue
+                    fi
                     result=$(echo "$result" | jq \
                         --arg stage "$stage_name" \
                         --arg job "$ds_job" \
                         --argjson build "$ds_build" \
                         '. + {($stage): {"job": $job, "build": $build}}')
+                    if [[ "$selected_score" -gt 0 ]]; then
+                        claimed_positive_downstreams=$(echo "$claimed_positive_downstreams" | jq \
+                            --arg key "$downstream_key" \
+                            '. + {($key): true}')
+                    fi
                 fi
             fi
         fi

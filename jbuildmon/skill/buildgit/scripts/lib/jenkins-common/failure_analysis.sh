@@ -28,24 +28,79 @@ detect_all_downstream_builds() {
 
 # Select the best downstream build match for a given stage when multiple exist.
 # This avoids mis-association when stage log extraction contains extra branch lines.
-# Usage: _select_downstream_build_for_stage "Stage Name" "$downstream_lines"
+# Usage: _select_downstream_build_for_stage "Stage Name" "$downstream_lines" "$stage_logs"
 # Returns: "job-name build-number" or empty
+_downstream_stage_job_match_score() {
+    local stage_name="$1"
+    local job_name="$2"
+
+    local normalized_stage_name
+    normalized_stage_name=$(echo "$stage_name" | tr '[:upper:]' '[:lower:]' | \
+        sed -E 's/[^a-z0-9]+/ /g; s/[[:space:]]+/ /g; s/^ //; s/ $//')
+    [[ -z "$normalized_stage_name" ]] && echo "0" && return
+
+    local job_lc
+    job_lc=$(echo "$job_name" | tr '[:upper:]' '[:lower:]')
+
+    # Split job name into segments for word-level matching
+    local job_segments
+    job_segments=$(echo "$job_lc" | tr '-' ' ')
+
+    local score=0
+    local token
+    for token in $normalized_stage_name; do
+        [[ ${#token} -lt 3 ]] && continue
+        case "$token" in
+            build|trigger|stage|component|components|parallel|test|tests)
+                continue
+                ;;
+        esac
+        # Prefer exact segment match (score 2) over substring match (score 1)
+        local seg matched_segment=false
+        for seg in $job_segments; do
+            if [[ "$seg" == "$token" ]]; then
+                matched_segment=true
+                break
+            fi
+        done
+        if [[ "$matched_segment" == "true" ]]; then
+            score=$((score + 2))
+        elif [[ "$job_lc" == *"$token"* ]]; then
+            score=$((score + 1))
+        fi
+    done
+
+    echo "$score"
+}
+
 _select_downstream_build_for_stage() {
     local stage_name="$1"
     local downstream_lines="$2"
+    local stage_logs="${3:-}"
 
     [[ -z "$downstream_lines" ]] && return
+
+    local stage_start_count=0
+    if [[ -n "$stage_logs" ]]; then
+        stage_start_count=$(printf '%s\n' "$stage_logs" | grep -c '^\[Pipeline\] { (' 2>/dev/null || true)
+    fi
+    local contaminated_parallel_logs=false
+    if [[ "$stage_start_count" -gt 1 ]]; then
+        contaminated_parallel_logs=true
+    fi
 
     local line_count
     line_count=$(echo "$downstream_lines" | sed '/^[[:space:]]*$/d' | wc -l | tr -d '[:space:]')
     if [[ "$line_count" -le 1 ]]; then
-        echo "$downstream_lines" | sed '/^[[:space:]]*$/d' | head -1
+        local single_line single_job single_score
+        single_line=$(echo "$downstream_lines" | sed '/^[[:space:]]*$/d' | head -1)
+        single_job=$(echo "$single_line" | awk '{print $1}')
+        single_score=$(_downstream_stage_job_match_score "$stage_name" "$single_job")
+        if [[ "$single_score" -gt 0 || "$contaminated_parallel_logs" != "true" ]]; then
+            echo "$single_line"
+        fi
         return
     fi
-
-    local stage_tokens
-    stage_tokens=$(echo "$stage_name" | tr '[:upper:]' '[:lower:]' | \
-        sed -E 's/[^a-z0-9]+/ /g; s/\b(build|trigger|stage|component|components)\b/ /g; s/[[:space:]]+/ /g; s/^ //; s/ $//')
 
     local best_line=""
     local best_score=-1
@@ -56,30 +111,8 @@ _select_downstream_build_for_stage() {
         build=$(echo "$line" | awk '{print $2}')
         [[ -z "$job" || -z "$build" ]] && continue
 
-        local job_lc score
-        job_lc=$(echo "$job" | tr '[:upper:]' '[:lower:]')
-        # Split job name into segments for word-level matching
-        local job_segments
-        job_segments=$(echo "$job_lc" | tr '-' ' ')
-        score=0
-
-        local token
-        for token in $stage_tokens; do
-            [[ ${#token} -lt 3 ]] && continue
-            # Prefer exact segment match (score 2) over substring match (score 1)
-            local seg matched_segment=false
-            for seg in $job_segments; do
-                if [[ "$seg" == "$token" ]]; then
-                    matched_segment=true
-                    break
-                fi
-            done
-            if [[ "$matched_segment" == "true" ]]; then
-                score=$((score + 2))
-            elif [[ "$job_lc" == *"$token"* ]]; then
-                score=$((score + 1))
-            fi
-        done
+        local score
+        score=$(_downstream_stage_job_match_score "$stage_name" "$job")
 
         if [[ "$score" -gt "$best_score" ]]; then
             best_score="$score"
@@ -93,10 +126,8 @@ _select_downstream_build_for_stage() {
         fi
     done <<< "$downstream_lines"
 
-    if [[ -n "$best_line" ]]; then
+    if [[ -n "$best_line" && "$best_score" -gt 0 ]]; then
         echo "$best_line"
-    else
-        echo "$downstream_lines" | sed '/^[[:space:]]*$/d' | tail -1
     fi
 }
 
