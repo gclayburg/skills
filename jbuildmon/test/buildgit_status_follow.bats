@@ -242,6 +242,9 @@ _get_nested_stages() {
         parallel_lagged)
             echo '[{"name":"Unit Tests A","status":"SUCCESS","durationMillis":35,"agent":"","parallel_branch":"Unit Tests A","parallel_wrapper":"Unit Tests"},{"name":"Unit Tests B","status":"IN_PROGRESS","startTimeMillis":1706699945000,"durationMillis":29205,"agent":"agent7 guthrie","parallel_branch":"Unit Tests B","parallel_wrapper":"Unit Tests"},{"name":"Unit Tests C","status":"SUCCESS","durationMillis":-12,"agent":"","parallel_branch":"Unit Tests C","parallel_wrapper":"Unit Tests"},{"name":"Unit Tests D","status":"SUCCESS","durationMillis":-11,"agent":"agent8_sixcore","parallel_branch":"Unit Tests D","parallel_wrapper":"Unit Tests"},{"name":"Unit Tests","status":"SUCCESS","durationMillis":29340,"agent":"","is_parallel_wrapper":true,"parallel_branches":["Unit Tests A","Unit Tests B","Unit Tests C","Unit Tests D"]}]'
             ;;
+        wrapper_agent_fallback|wrapper_agent_no_console|wrapper_agent_no_pipeline_scope)
+            echo '[{"name":"Build Handle->Compile","status":"IN_PROGRESS","startTimeMillis":1706700010000,"durationMillis":0,"agent":"agent8_sixcore","parallel_branch":"Build Handle","parallel_wrapper":"Trigger Component Builds"},{"name":"Build SignalBoot->System Diagnostics","status":"IN_PROGRESS","startTimeMillis":1706700011000,"durationMillis":0,"agent":"agent7 guthrie","parallel_branch":"Build SignalBoot","parallel_wrapper":"Trigger Component Builds"},{"name":"Trigger Component Builds","status":"IN_PROGRESS","startTimeMillis":1706700005000,"durationMillis":0,"agent":"orchestrator1","is_parallel_wrapper":true,"parallel_branches":["Build Handle","Build SignalBoot"]}]'
+            ;;
         unknown)
             echo '[{"name":"Brand New Stage","status":"IN_PROGRESS","startTimeMillis":1706700023000,"durationMillis":0,"agent":"agent6 guthrie"}]'
             ;;
@@ -258,6 +261,9 @@ get_all_stages() {
     case "${MOCK_WFAPI_STATE:-single}" in
         parallel_lagged)
             echo '[{"name":"Unit Tests","status":"SUCCESS","startTimeMillis":1706699945000,"durationMillis":135},{"name":"Unit Tests A","status":"SUCCESS","startTimeMillis":1706699945000,"durationMillis":35},{"name":"Unit Tests B","status":"IN_PROGRESS","startTimeMillis":1706699945000,"durationMillis":29176},{"name":"Unit Tests C","status":"SUCCESS","startTimeMillis":1706699945000,"durationMillis":-12},{"name":"Unit Tests D","status":"SUCCESS","startTimeMillis":1706699945000,"durationMillis":-11}]'
+            ;;
+        wrapper_agent_fallback|wrapper_agent_no_console|wrapper_agent_no_pipeline_scope)
+            echo '[{"name":"Trigger Component Builds","status":"IN_PROGRESS","startTimeMillis":1706700005000,"durationMillis":29000},{"name":"Build Handle","status":"IN_PROGRESS","startTimeMillis":1706700005000,"durationMillis":28000},{"name":"Build SignalBoot","status":"IN_PROGRESS","startTimeMillis":1706700006000,"durationMillis":27000}]'
             ;;
         *)
             command echo '[]'
@@ -292,6 +298,45 @@ Running on agent7 guthrie in /tmp/ws
 [Pipeline] node
 Running on agent6 guthrie in /tmp/ws
 EOF
+            ;;
+        wrapper_agent_fallback)
+            cat <<'EOF'
+Running on orchestrator1 in /tmp/ws
+[Pipeline] stage
+[Pipeline] { (Trigger Component Builds)
+[Pipeline] parallel
+[Pipeline] { (Branch: Build Handle)
+[Pipeline] { (Branch: Build SignalBoot)
+[Pipeline] stage
+[Pipeline] { (Build Handle)
+[Pipeline] build
+[Pipeline] node
+Running on agent8_sixcore in /tmp/ws@2
+[Pipeline] stage
+[Pipeline] { (Build SignalBoot->System Diagnostics)
+[Pipeline] node
+Running on agent7 guthrie in /tmp/ws@3
+EOF
+            ;;
+        wrapper_agent_no_pipeline_scope)
+            cat <<'EOF'
+[Pipeline] stage
+[Pipeline] { (Trigger Component Builds)
+[Pipeline] parallel
+[Pipeline] { (Branch: Build Handle)
+[Pipeline] { (Branch: Build SignalBoot)
+[Pipeline] stage
+[Pipeline] { (Build Handle->Compile)
+[Pipeline] node
+Running on agent8_sixcore in /tmp/ws@2
+[Pipeline] stage
+[Pipeline] { (Build SignalBoot->System Diagnostics)
+[Pipeline] node
+Running on agent7 guthrie in /tmp/ws@3
+EOF
+            ;;
+        wrapper_agent_no_console)
+            echo ""
             ;;
         *)
             echo ""
@@ -374,6 +419,26 @@ case "${1:-}" in
         FAKE_NOW_SECONDS=1706700035
         THREADS_MODE=true
         MOCK_WFAPI_STATE=parallel_lagged
+        _prime_follow_progress_estimates "ralph1"
+        estimate_ms="${_FOLLOW_BUILD_ESTIMATE_MS:-}"
+        _display_follow_line_progress "ralph1" "42" '{"timestamp":1706700000000,"building":true}' "$estimate_ms" "0" "false" "$(_get_follow_active_stages "ralph1" "42")"
+        ;;
+    active_wrapper_agent_fallback)
+        MOCK_WFAPI_STATE=wrapper_agent_fallback
+        _get_follow_active_stages "ralph1" "42"
+        ;;
+    active_wrapper_agent_no_console)
+        MOCK_WFAPI_STATE=wrapper_agent_no_console
+        _get_follow_active_stages "ralph1" "42"
+        ;;
+    active_wrapper_agent_no_pipeline_scope)
+        MOCK_WFAPI_STATE=wrapper_agent_no_pipeline_scope
+        _get_follow_active_stages "ralph1" "42"
+        ;;
+    threads_wrapper_agent_fallback)
+        FAKE_NOW_SECONDS=1706700035
+        THREADS_MODE=true
+        MOCK_WFAPI_STATE=wrapper_agent_fallback
         _prime_follow_progress_estimates "ralph1"
         estimate_ms="${_FOLLOW_BUILD_ESTIMATE_MS:-}"
         _display_follow_line_progress "ralph1" "42" '{"timestamp":1706700000000,"building":true}' "$estimate_ms" "0" "false" "$(_get_follow_active_stages "ralph1" "42")"
@@ -1870,6 +1935,85 @@ WRAPPER_END
     refute_output --partial "Unit Tests C [>                   ] 0% 0s"
     refute_output --partial "Unit Tests D [>                   ] 0% 0s"
     refute_output --partial "  [agent6 guthrie] Unit Tests ["
+}
+
+@test "status_follow_threads_wrapper_stage_uses_pipeline_scope_agent_for_synthetic_branches" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" active_wrapper_agent_fallback
+
+    assert_success
+    [[ "$(echo "$output" | jq -r '.[] | select(.name == "Build Handle") | .agent')" == "orchestrator1" ]]
+    [[ "$(echo "$output" | jq -r '.[] | select(.name == "Build SignalBoot") | .agent')" == "orchestrator1" ]]
+}
+
+@test "status_follow_threads_wrapper_stage_assigns_agents_to_both_parallel_branches" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" active_wrapper_agent_fallback
+
+    assert_success
+    [[ "$(echo "$output" | jq '[.[] | select(.synthetic_parallel_branch == true and (.agent // "") != "")] | length')" == "2" ]]
+}
+
+@test "status_follow_threads_downstream_stages_keep_downstream_agents_when_wrapper_is_synthesized" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" active_wrapper_agent_fallback
+
+    assert_success
+    [[ "$(echo "$output" | jq -r '.[] | select(.name == "Build Handle->Compile") | .agent')" == "agent8_sixcore" ]]
+    [[ "$(echo "$output" | jq -r '.[] | select(.name == "Build SignalBoot->System Diagnostics") | .agent')" == "agent7 guthrie" ]]
+}
+
+@test "status_follow_threads_wrapper_stage_gracefully_degrades_without_console_output" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" active_wrapper_agent_no_console
+
+    assert_success
+    [[ "$(echo "$output" | jq -r '.[] | select(.name == "Build Handle") | .agent')" == "" ]]
+    [[ "$(echo "$output" | jq -r '.[] | select(.name == "Build SignalBoot") | .agent')" == "" ]]
+}
+
+@test "status_follow_threads_wrapper_stage_gracefully_degrades_without_pipeline_scope_agent" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" active_wrapper_agent_no_pipeline_scope
+
+    assert_success
+    [[ "$(echo "$output" | jq -r '.[] | select(.name == "Build Handle") | .agent')" == "" ]]
+    [[ "$(echo "$output" | jq -r '.[] | select(.name == "Build SignalBoot") | .agent')" == "" ]]
+}
+
+@test "status_follow_threads_wrapper_stage_render_uses_orchestrator_agent" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" threads_wrapper_agent_fallback
+
+    assert_success
+    assert_output --partial "  [orchestrator1 ] Build Handle ["
+    assert_output --partial "  [orchestrator1 ] Build SignalBoot ["
+    assert_output --partial "  [agent8_sixcore] Build Handle->Compile ["
+    assert_output --partial "  [agent7 guthrie] Build SignalBoot->Sy..."
 }
 
 @test "status_follow_threads_unknown_stage_uses_indeterminate_bar" {

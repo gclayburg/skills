@@ -1,9 +1,9 @@
 ## Fix empty agent name on wrapper stages in --threads mode
 
 - **Date:** `2026-03-06T10:30:00-0700`
-- **References:** `specs/todo/bug-agent-name-missed.md`
+- **References:** `specs/done-reports/bug-agent-name-missed.md`
 - **Supersedes:** none
-- **State:** `DRAFT`
+- **State:** `IMPLEMENTED`
 
 ## Background
 

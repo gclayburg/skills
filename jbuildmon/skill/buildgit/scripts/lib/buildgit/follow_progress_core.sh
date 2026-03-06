@@ -162,13 +162,15 @@ _get_follow_active_stages() {
         return 0
     fi
 
-    local base_stages_json console_output stage_agent_map
+    local base_stages_json console_output stage_agent_map pipeline_scope_agent
     base_stages_json=$(get_all_stages "$job_name" "$build_number" 2>/dev/null) || base_stages_json="[]"
     [[ -z "$base_stages_json" || "$base_stages_json" == "null" ]] && base_stages_json="[]"
     console_output=$(get_console_output "$job_name" "$build_number" 2>/dev/null) || console_output=""
     stage_agent_map="{}"
+    pipeline_scope_agent=""
     if [[ -n "$console_output" ]]; then
         stage_agent_map=$(_build_stage_agent_map "$console_output" 2>/dev/null) || stage_agent_map="{}"
+        pipeline_scope_agent=$(_extract_pre_stage_agent_from_console "$console_output" 2>/dev/null) || pipeline_scope_agent=""
     fi
 
     local result="$nested_stages_json"
@@ -249,7 +251,11 @@ _get_follow_active_stages() {
             esac
 
             local branch_agent
-            branch_agent=$(echo "$stage_agent_map" | jq -r --arg n "$branch_name" '.[$n] // empty' 2>/dev/null) || branch_agent=""
+            if [[ -n "$pipeline_scope_agent" ]]; then
+                branch_agent="$pipeline_scope_agent"
+            else
+                branch_agent=$(echo "$stage_agent_map" | jq -r --arg n "$branch_name" '.[$n] // empty' 2>/dev/null) || branch_agent=""
+            fi
             result=$(echo "$result" | jq -c \
                 --arg name "$branch_name" \
                 --arg wrapper "$wrapper_name" \
@@ -752,4 +758,3 @@ _monitor_build_line_mode() {
 
     _status_line_for_build_json "$job_name" "$build_number" "$build_json" "$no_tests"
 }
-
