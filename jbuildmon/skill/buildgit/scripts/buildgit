@@ -38,6 +38,7 @@ source "${SCRIPT_DIR}/lib/jenkins-common.sh"
 JOB_NAME=""
 VERBOSE_MODE=false
 CONSOLE_MODE=""
+THREADS_MODE=false
 COMMAND=""
 COMMAND_ARGS=()
 
@@ -53,6 +54,8 @@ MAX_BUILD_TIME="${MAX_BUILD_TIME:-1800}"
 MONITOR_SETTLE_MAX_SECONDS="${MONITOR_SETTLE_MAX_SECONDS:-45}"
 MONITOR_SETTLE_STABLE_POLLS="${MONITOR_SETTLE_STABLE_POLLS:-3}"
 _PROGRESS_BAR_LINE_COUNT=0
+_FOLLOW_BUILD_ESTIMATE_MS=""
+_FOLLOW_STAGE_ESTIMATES_JSON="{}"
 
 # =============================================================================
 # Interrupt Handler for Follow Mode
@@ -85,6 +88,7 @@ A unified interface for git operations with Jenkins CI/CD integration.
 Global Options:
   -j, --job <name>               Specify Jenkins job name (or multibranch job/branch)
   -c, --console <mode>           Show console log output (auto or line count)
+  --threads                      Show live active-stage progress during TTY monitoring
   -h, --help                     Show this help message
   -v, --verbose                  Enable verbose output for debugging
   --version                      Show version number and exit
@@ -121,13 +125,16 @@ Monitor ongoing Jenkins build jobs:
   buildgit status -n 3 -f          # Show 3 prior builds, then follow indefinitely
   buildgit status -n 3 -f --once   # Show 3 prior builds, then follow once with timeout
   buildgit status -f --line        # Follow builds with one-line output + progress bar (TTY only)
+  buildgit --threads status -f --line # Add active-stage progress rows above the main bar
   buildgit status -f --once --line # Follow one build in one-line mode, then exit
   buildgit status -n 5 -f --line   # Show 5 prior one-line rows, then follow in one-line mode
   buildgit push                    # Push + monitor build
   buildgit push --prior-jobs 5     # Push + show last 5 builds before monitoring
   buildgit push --prior-jobs 0     # Push + suppress prior-jobs display
   buildgit push --line             # Push + compact one-line monitoring with progress bar
+  buildgit --threads push          # Push + show live active-stage progress rows on TTY
   buildgit build --line            # Trigger + compact one-line monitoring with progress bar
+  buildgit --threads build         # Trigger + show live active-stage progress rows on TTY
   buildgit status -f --prior-jobs 5  # Follow with last 5 builds shown first
   buildgit --job myjob build       # Trigger build for specific job
   buildgit --job myjob/main status # Query explicit multibranch branch job
@@ -206,6 +213,10 @@ parse_global_options() {
             -h|--help)
                 show_usage
                 exit 0
+                ;;
+            --threads)
+                THREADS_MODE=true
+                shift
                 ;;
             -v|--verbose)
                 VERBOSE_MODE=true
@@ -746,9 +757,58 @@ _status_stdout_is_tty() {
     [[ -t 1 ]]
 }
 
-# Fetch duration estimate (ms) from Jenkins lastSuccessfulBuild endpoint.
-# Returns empty string when unavailable.
-_get_last_successful_build_duration() {
+_get_follow_progress_terminal_rows() {
+    if [[ "${LINES:-}" =~ ^[1-9][0-9]*$ ]]; then
+        echo "$LINES"
+        return 0
+    fi
+    if command -v tput >/dev/null 2>&1; then
+        local rows
+        rows=$(tput lines 2>/dev/null) || rows=""
+        if [[ "$rows" =~ ^[1-9][0-9]*$ ]]; then
+            echo "$rows"
+            return 0
+        fi
+    fi
+    echo "24"
+}
+
+_get_follow_progress_terminal_cols() {
+    if [[ "${COLUMNS:-}" =~ ^[1-9][0-9]*$ ]]; then
+        echo "$COLUMNS"
+        return 0
+    fi
+    if command -v tput >/dev/null 2>&1; then
+        local cols
+        cols=$(tput cols 2>/dev/null) || cols=""
+        if [[ "$cols" =~ ^[1-9][0-9]*$ ]]; then
+            echo "$cols"
+            return 0
+        fi
+    fi
+    echo "80"
+}
+
+_truncate_follow_progress_text() {
+    local text="$1"
+    local max_width="$2"
+
+    if [[ "$max_width" -le 0 ]]; then
+        echo ""
+        return 0
+    fi
+    if [[ ${#text} -le "$max_width" ]]; then
+        echo "$text"
+        return 0
+    fi
+    if [[ "$max_width" -le 3 ]]; then
+        printf '%.*s' "$max_width" "$text"
+        return 0
+    fi
+    printf '%s...' "${text:0:$((max_width - 3))}"
+}
+
+_get_last_successful_build_metadata() {
     local job_name="$1"
     local job_path
     job_path=$(jenkins_job_path "$job_name")
@@ -756,8 +816,23 @@ _get_last_successful_build_duration() {
         echo ""
         return 0
     fi
+
     local response
     response=$(jenkins_api "${job_path}/lastSuccessfulBuild/api/json" 2>/dev/null) || true
+    if [[ -z "$response" ]]; then
+        echo ""
+        return 0
+    fi
+
+    echo "$response"
+}
+
+# Fetch duration estimate (ms) from Jenkins lastSuccessfulBuild endpoint.
+# Returns empty string when unavailable.
+_get_last_successful_build_duration() {
+    local job_name="$1"
+    local response
+    response=$(_get_last_successful_build_metadata "$job_name")
     if [[ -z "$response" ]]; then
         echo ""
         return 0
@@ -770,6 +845,180 @@ _get_last_successful_build_duration() {
     else
         echo ""
     fi
+}
+
+_get_stage_duration_estimates_for_build() {
+    local job_name="$1"
+    local build_number="$2"
+    if ! [[ "$build_number" =~ ^[1-9][0-9]*$ ]]; then
+        echo "{}"
+        return 0
+    fi
+
+    local nested_stages_json
+    nested_stages_json=$(_get_nested_stages "$job_name" "$build_number" 2>/dev/null) || nested_stages_json="[]"
+    if [[ -z "$nested_stages_json" || "$nested_stages_json" == "null" ]]; then
+        echo "{}"
+        return 0
+    fi
+
+    echo "$nested_stages_json" | jq -c '
+        reduce .[] as $stage ({};
+            if (($stage.durationMillis // 0) > 0) then
+                . + { (($stage.name // "unknown")): ($stage.durationMillis // 0) }
+            else
+                .
+            end
+        )
+    ' 2>/dev/null || echo "{}"
+}
+
+_prime_follow_progress_estimates() {
+    local job_name="$1"
+    _FOLLOW_BUILD_ESTIMATE_MS=""
+    _FOLLOW_STAGE_ESTIMATES_JSON="{}"
+
+    local last_success_json
+    last_success_json=$(_get_last_successful_build_metadata "$job_name")
+    if [[ -z "$last_success_json" ]]; then
+        return 0
+    fi
+
+    local duration build_number
+    duration=$(echo "$last_success_json" | jq -r '.duration // empty' 2>/dev/null) || duration=""
+    build_number=$(echo "$last_success_json" | jq -r '.number // empty' 2>/dev/null) || build_number=""
+
+    if [[ "$THREADS_MODE" == "true" ]]; then
+        _FOLLOW_STAGE_ESTIMATES_JSON=$(_get_stage_duration_estimates_for_build "$job_name" "$build_number")
+    fi
+
+    if [[ "$duration" =~ ^[0-9]+$ ]]; then
+        _FOLLOW_BUILD_ESTIMATE_MS="$duration"
+    fi
+}
+
+_get_follow_active_stages() {
+    local job_name="$1"
+    local build_number="$2"
+    if ! [[ "$build_number" =~ ^[1-9][0-9]*$ ]]; then
+        echo "[]"
+        return 0
+    fi
+
+    local nested_stages_json
+    nested_stages_json=$(_get_nested_stages "$job_name" "$build_number" 2>/dev/null) || nested_stages_json="[]"
+    if [[ -z "$nested_stages_json" || "$nested_stages_json" == "null" ]]; then
+        echo "[]"
+        return 0
+    fi
+
+    local base_stages_json console_output stage_agent_map
+    base_stages_json=$(get_all_stages "$job_name" "$build_number" 2>/dev/null) || base_stages_json="[]"
+    [[ -z "$base_stages_json" || "$base_stages_json" == "null" ]] && base_stages_json="[]"
+    console_output=$(get_console_output "$job_name" "$build_number" 2>/dev/null) || console_output=""
+    stage_agent_map="{}"
+    if [[ -n "$console_output" ]]; then
+        stage_agent_map=$(_build_stage_agent_map "$console_output" 2>/dev/null) || stage_agent_map="{}"
+    fi
+
+    local result="$nested_stages_json"
+    local base_stage_names_json
+    base_stage_names_json=$(echo "$base_stages_json" | jq -c '[.[].name]' 2>/dev/null) || base_stage_names_json="[]"
+    local wrapper_lines
+    wrapper_lines=$(echo "$base_stages_json" | jq -r '.[] | [.name, (.status // ""), (.startTimeMillis // 0), (.durationMillis // 0)] | @tsv' 2>/dev/null) || wrapper_lines=""
+
+    local wrapper_name wrapper_status wrapper_start_ms wrapper_duration_ms
+    while IFS=$'\t' read -r wrapper_name wrapper_status wrapper_start_ms wrapper_duration_ms; do
+        [[ -z "$wrapper_name" ]] && continue
+        [[ -z "$console_output" ]] && continue
+
+        local branch_names
+        branch_names=$(_detect_parallel_branches "$console_output" "$wrapper_name")
+        [[ -z "$branch_names" || "$branch_names" == "[]" ]] && continue
+
+        local active_branch_count
+        active_branch_count=$(echo "$result" | jq -r --argjson branches "$branch_names" '
+            [.[] | select((.status // "") == "IN_PROGRESS") | .name as $stage_name | select(any($branches[]; . == $stage_name))] | length
+        ' 2>/dev/null) || active_branch_count=0
+        local later_non_branch_started
+        later_non_branch_started=$(echo "$base_stages_json" | jq -r \
+            --arg wrapper "$wrapper_name" \
+            --argjson branches "$branch_names" '
+                ([.[] | .name] | index($wrapper)) as $wrapper_idx
+                | if $wrapper_idx == null then
+                    0
+                  else
+                    [.[$wrapper_idx + 1:][]?
+                     | select(.name != $wrapper)
+                     | .name as $stage_name
+                     | select(any($branches[]; . == $stage_name) | not)
+                     | select((.status // "NOT_EXECUTED") != "NOT_EXECUTED")
+                    ] | length
+                  end
+            ' 2>/dev/null) || later_non_branch_started=0
+
+        if [[ "$wrapper_status" != "IN_PROGRESS" && "$active_branch_count" -le 0 && "$later_non_branch_started" -gt 0 ]]; then
+            continue
+        fi
+
+        local branch_name
+        while IFS= read -r branch_name; do
+            [[ -z "$branch_name" ]] && continue
+
+            local branch_base_status
+            branch_base_status=$(echo "$base_stages_json" | jq -r --arg n "$branch_name" '.[] | select(.name == $n) | .status // empty' 2>/dev/null | head -1) || branch_base_status=""
+            local branch_base_duration branch_estimate_ms
+            branch_base_duration=$(echo "$base_stages_json" | jq -r --arg n "$branch_name" '.[] | select(.name == $n) | .durationMillis // 0' 2>/dev/null | head -1) || branch_base_duration=0
+            branch_estimate_ms=$(echo "$_FOLLOW_STAGE_ESTIMATES_JSON" | jq -r --arg n "$branch_name" '.[$n] // empty' 2>/dev/null) || branch_estimate_ms=""
+
+            local branch_present
+            branch_present=$(echo "$result" | jq -r --arg n "$branch_name" 'any(.[]; .name == $n and (.status // "") == "IN_PROGRESS")' 2>/dev/null) || branch_present="false"
+            if [[ "$branch_present" == "true" ]]; then
+                continue
+            fi
+
+            local stale_terminal_branch=false
+            if [[ "$branch_base_status" == "SUCCESS" && "$later_non_branch_started" -le 0 ]]; then
+                if ! [[ "$branch_base_duration" =~ ^-?[0-9]+$ ]]; then
+                    stale_terminal_branch=true
+                elif [[ "$branch_base_duration" -le 1000 ]]; then
+                    stale_terminal_branch=true
+                elif [[ "$branch_estimate_ms" =~ ^[1-9][0-9]*$ ]] && [[ "$branch_base_duration" -lt $((branch_estimate_ms / 10)) ]]; then
+                    stale_terminal_branch=true
+                fi
+            fi
+
+            case "$branch_base_status" in
+                SUCCESS|FAILED|UNSTABLE|ABORTED|NOT_BUILT)
+                    if [[ "$stale_terminal_branch" == "true" ]]; then
+                        :
+                    else
+                    continue
+                    fi
+                    ;;
+            esac
+
+            local branch_agent
+            branch_agent=$(echo "$stage_agent_map" | jq -r --arg n "$branch_name" '.[$n] // empty' 2>/dev/null) || branch_agent=""
+            result=$(echo "$result" | jq -c \
+                --arg name "$branch_name" \
+                --arg wrapper "$wrapper_name" \
+                --arg agent "$branch_agent" \
+                --argjson start_ms "${wrapper_start_ms:-0}" \
+                '. + [{
+                    name: $name,
+                    status: "IN_PROGRESS",
+                    startTimeMillis: $start_ms,
+                    durationMillis: 0,
+                    agent: $agent,
+                    parallel_branch: $name,
+                    parallel_wrapper: $wrapper,
+                    synthetic_parallel_branch: true
+                }]' 2>/dev/null) || true
+        done <<< "$(echo "$branch_names" | jq -r '.[]' 2>/dev/null)"
+    done <<< "$wrapper_lines"
+
+    echo "$result" | jq -c '.' 2>/dev/null || echo "[]"
 }
 
 _render_follow_line_progress_bar_determinate() {
@@ -951,6 +1200,106 @@ _render_follow_line_queued() {
     fi
 }
 
+_render_follow_thread_progress_line() {
+    local stage_json="$1"
+    local estimates_json="$2"
+    local frame="${3:-0}"
+    local terminal_cols="${4:-80}"
+
+    local stage_name agent_name start_ms duration_ms
+    stage_name=$(echo "$stage_json" | jq -r '.name // "unknown"' 2>/dev/null) || stage_name="unknown"
+    agent_name=$(echo "$stage_json" | jq -r '.agent // .execNode // .node // "unknown"' 2>/dev/null) || agent_name="unknown"
+    start_ms=$(echo "$stage_json" | jq -r '.startTimeMillis // 0' 2>/dev/null) || start_ms=0
+    duration_ms=$(echo "$stage_json" | jq -r '.durationMillis // 0' 2>/dev/null) || duration_ms=0
+
+    local now_ms elapsed_ms
+    now_ms=$(($(date +%s) * 1000))
+    elapsed_ms=0
+    if [[ "$duration_ms" =~ ^[1-9][0-9]*$ ]]; then
+        elapsed_ms="$duration_ms"
+    elif [[ "$start_ms" =~ ^[1-9][0-9]*$ ]]; then
+        elapsed_ms=$((now_ms - start_ms))
+        if [[ "$elapsed_ms" -lt 0 ]]; then
+            elapsed_ms=0
+        fi
+    fi
+
+    local estimate_ms
+    estimate_ms=$(echo "$estimates_json" | jq -r --arg name "$stage_name" '.[$name] // empty' 2>/dev/null) || estimate_ms=""
+
+    local agent_display bar tail
+    agent_display=$(_format_agent_prefix "[${agent_name}] ")
+    if [[ "$estimate_ms" =~ ^[1-9][0-9]*$ ]]; then
+        local pct_raw pct_clamped
+        pct_raw=$((elapsed_ms * 100 / estimate_ms))
+        pct_clamped="$pct_raw"
+        if [[ "$pct_clamped" -lt 0 ]]; then
+            pct_clamped=0
+        fi
+        if [[ "$pct_clamped" -gt 100 ]]; then
+            pct_clamped=100
+        fi
+        bar=$(_render_follow_line_progress_bar_determinate "$pct_clamped")
+        tail=" ${bar} ${pct_raw}% $(format_duration "$elapsed_ms") / ~$(format_duration "$estimate_ms")"
+    else
+        bar=$(_render_follow_line_progress_bar_unknown "$frame")
+        tail=" ${bar} $(format_duration "$elapsed_ms") / ~unknown"
+    fi
+
+    local fixed_prefix="  ${agent_display}"
+    local available_name_width=$((terminal_cols - ${#fixed_prefix} - ${#tail}))
+    if [[ "$available_name_width" -lt 1 ]]; then
+        available_name_width=1
+    fi
+    stage_name=$(_truncate_follow_progress_text "$stage_name" "$available_name_width")
+
+    echo "${fixed_prefix}${stage_name}${tail}"
+}
+
+_render_follow_thread_progress_lines() {
+    local job_name="$1"
+    local build_number="$2"
+    local frame="${3:-0}"
+    local stages_json="${4:-}"
+
+    if [[ "$THREADS_MODE" != "true" ]]; then
+        return 0
+    fi
+
+    if [[ -z "$stages_json" ]]; then
+        stages_json=$(_get_follow_active_stages "$job_name" "$build_number")
+    fi
+    [[ -z "$stages_json" || "$stages_json" == "null" ]] && stages_json="[]"
+
+    local active_stages
+    active_stages=$(echo "$stages_json" | jq -c '[.[] | select((.status // "") == "IN_PROGRESS" and (.is_parallel_wrapper // false) != true)]' 2>/dev/null) || active_stages="[]"
+
+    local active_count
+    active_count=$(echo "$active_stages" | jq -r 'length' 2>/dev/null) || active_count=0
+    if [[ "$active_count" -le 0 ]]; then
+        return 0
+    fi
+
+    local terminal_rows terminal_cols max_stage_lines
+    terminal_rows=$(_get_follow_progress_terminal_rows)
+    terminal_cols=$(_get_follow_progress_terminal_cols)
+    max_stage_lines=$((terminal_rows - 3))
+    if [[ "$max_stage_lines" -le 0 ]]; then
+        return 0
+    fi
+
+    local entries idx=0
+    entries=$(echo "$active_stages" | jq -c '.[]' 2>/dev/null) || entries=""
+    while IFS= read -r stage_entry; do
+        [[ -z "$stage_entry" ]] && continue
+        if [[ "$idx" -ge "$max_stage_lines" ]]; then
+            break
+        fi
+        _render_follow_thread_progress_line "$stage_entry" "$_FOLLOW_STAGE_ESTIMATES_JSON" "$frame" "$terminal_cols"
+        idx=$((idx + 1))
+    done <<< "$entries"
+}
+
 _redraw_follow_line_progress_lines() {
     local old_count="${_PROGRESS_BAR_LINE_COUNT:-0}"
     local new_lines=("$@")
@@ -998,6 +1347,7 @@ _display_follow_line_progress() {
     local estimate_ms="$4"
     local frame="${5:-0}"
     local include_queue_lines="${6:-false}"
+    local stages_json="${7:-}"
 
     local primary_ts
     primary_ts=$(echo "$build_json" | jq -r '.timestamp // 0' 2>/dev/null) || primary_ts=0
@@ -1008,6 +1358,17 @@ _display_follow_line_progress() {
     max_running_build=$(echo "$running_builds" | jq -r 'if length == 0 then 0 else (map(.number) | max) end' 2>/dev/null) || max_running_build=0
 
     local lines=()
+    if [[ "$THREADS_MODE" == "true" ]]; then
+        local thread_lines
+        thread_lines=$(_render_follow_thread_progress_lines "$job_name" "$build_number" "$frame" "$stages_json")
+        if [[ -n "$thread_lines" ]]; then
+            local thread_line
+            while IFS= read -r thread_line; do
+                [[ -z "$thread_line" ]] && continue
+                lines+=("$thread_line")
+            done <<< "$thread_lines"
+        fi
+    fi
     local primary_line
     primary_line=$(_render_follow_line_in_progress "$job_name" "$build_number" "$primary_ts" "$estimate_ms" "$frame")
     lines+=("$primary_line")
@@ -1094,7 +1455,8 @@ _monitor_build_line_mode() {
     local build_json building
 
     if [[ "$interactive_line_mode" == "true" ]]; then
-        estimate_ms=$(_get_last_successful_build_duration "$job_name")
+        _prime_follow_progress_estimates "$job_name"
+        estimate_ms="${_FOLLOW_BUILD_ESTIMATE_MS:-}"
     fi
 
     while [[ $elapsed -lt $MAX_BUILD_TIME ]]; do
@@ -1112,7 +1474,11 @@ _monitor_build_line_mode() {
         fi
 
         if [[ "$interactive_line_mode" == "true" ]]; then
-            _display_follow_line_progress "$job_name" "$build_number" "$build_json" "$estimate_ms" "$line_frame" "$include_queue_lines"
+            local stages_json=""
+            if [[ "$THREADS_MODE" == "true" ]]; then
+                stages_json=$(_get_follow_active_stages "$job_name" "$build_number")
+            fi
+            _display_follow_line_progress "$job_name" "$build_number" "$build_json" "$estimate_ms" "$line_frame" "$include_queue_lines" "$stages_json"
             showed_progress=true
         fi
 
@@ -1565,7 +1931,8 @@ _monitor_build() {
     if [[ "$show_progress_footer" == "true" ]]; then
         if _status_stdout_is_tty; then
             render_progress=true
-            estimate_ms=$(_get_last_successful_build_duration "$job_name")
+            _prime_follow_progress_estimates "$job_name"
+            estimate_ms="${_FOLLOW_BUILD_ESTIMATE_MS:-}"
             stage_log_file="$(mktemp "${TMPDIR:-/tmp}/buildgit-stage-log.XXXXXX")"
             deferred_log_file="$(mktemp "${TMPDIR:-/tmp}/buildgit-deferred-log.XXXXXX")"
         fi
@@ -1742,7 +2109,11 @@ _monitor_build() {
         fi
 
         if [[ "$render_progress" == "true" ]]; then
-            _display_follow_line_progress "$job_name" "$build_number" "$build_info" "$estimate_ms" "$line_frame" "$include_queue_lines"
+            local stages_json=""
+            if [[ "$THREADS_MODE" == "true" ]]; then
+                stages_json=$(_get_follow_active_stages "$job_name" "$build_number")
+            fi
+            _display_follow_line_progress "$job_name" "$build_number" "$build_info" "$estimate_ms" "$line_frame" "$include_queue_lines" "$stages_json"
             showed_progress=true
         fi
 

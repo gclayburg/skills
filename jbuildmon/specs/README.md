@@ -62,3 +62,4 @@ These files represent completed specifications in the specs/ directory.  This li
 - 2026-03-04_short-status-sandbox-fail-spec.md  distinguish test-report communication failures from missing reports, show `Tests=!err!` in line mode, add one-time warning, and expose JSON `testResultsError` for communication failures
 - 2026-03-04_status-all-wrong-node-name-spec.md  fix stage agent attribution to use per-stage console mapping, preserve full `Running on` names (including spaces), and keep Build Info header agent extraction accurate
 - 2026-03-04_realtime-timing-fix-spec.md  make monitoring-mode parallel stage timing, ordering, and settle-loop completion match snapshot output for completed builds
+- 2026-03-05_threads-display-tty-spec.md  add `--threads` TTY monitoring rows for live active-stage progress, per-stage duration estimates, terminal-size truncation, and redraw integration above the overall progress bar

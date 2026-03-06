@@ -1,9 +1,9 @@
 ## Add `--threads` flag for live active-stage progress display during monitoring
 
 - **Date:** `2026-03-05T09:12:00-0700`
-- **References:** `specs/todo/threads-display-tty.md`
+- **References:** `specs/done-reports/threads-display-tty.md`
 - **Supersedes:** none
-- **State:** `DRAFT`
+- **State:** `IMPLEMENTED`
 
 ## Background
 

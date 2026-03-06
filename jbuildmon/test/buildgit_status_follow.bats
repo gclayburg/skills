@@ -151,8 +151,17 @@ get_current_stage() {
 # Set job name to skip auto-detection
 JOB_NAME="test-repo"
 
+wrapper_args=()
+for arg in "$@"; do
+    if [[ "$arg" == "--threads" ]]; then
+        THREADS_MODE=true
+        continue
+    fi
+    wrapper_args+=("$arg")
+done
+
 # Call the status command with follow mode
-cmd_status -f --prior-jobs 0 "$@"
+cmd_status -f --prior-jobs 0 "${wrapper_args[@]}"
 WRAPPER_END
 
     # Replace placeholders with actual values (portable: temp file + mv works on both macOS and Linux)
@@ -188,7 +197,7 @@ jenkins_api() {
         if [[ "${MOCK_LAST_SUCCESS_KIND:-duration}" == "none" ]]; then
             echo '{}'
         else
-            echo '{"duration":250000}'
+            echo '{"number":41,"duration":250000}'
         fi
         return 0
     fi
@@ -212,6 +221,82 @@ jenkins_api() {
     fi
     echo ""
     return 1
+}
+
+_get_nested_stages() {
+    local job_name="$1"
+    local build_number="$2"
+
+    if [[ "$build_number" == "41" ]]; then
+        echo '[{"name":"Build","status":"SUCCESS","durationMillis":4000,"agent":"agent6 guthrie"},{"name":"Unit Tests A","status":"SUCCESS","durationMillis":138000,"agent":"agent6 guthrie"},{"name":"Unit Tests B","status":"SUCCESS","durationMillis":89000,"agent":"agent7 guthrie"},{"name":"Unit Tests C","status":"SUCCESS","durationMillis":126000,"agent":"agent8 guthrie"}]'
+        return 0
+    fi
+
+    case "${MOCK_WFAPI_STATE:-single}" in
+        single)
+            echo '[{"name":"Build","status":"IN_PROGRESS","startTimeMillis":1706700000000,"durationMillis":0,"agent":"agent6 guthrie"}]'
+            ;;
+        parallel)
+            echo '[{"name":"Setup","status":"SUCCESS","startTimeMillis":1706699900000,"durationMillis":5000,"agent":"orch1"},{"name":"Unit Tests A","status":"IN_PROGRESS","startTimeMillis":1706699945000,"durationMillis":0,"agent":"agent6 guthrie","parallel_branch":"Unit Tests A"},{"name":"Unit Tests B","status":"IN_PROGRESS","startTimeMillis":1706699997000,"durationMillis":0,"agent":"agent7 guthrie","parallel_branch":"Unit Tests B"},{"name":"Unit Tests C","status":"IN_PROGRESS","startTimeMillis":1706700013000,"durationMillis":0,"agent":"agent8 guthrie","parallel_branch":"Unit Tests C"}]'
+            ;;
+        parallel_lagged)
+            echo '[{"name":"Unit Tests A","status":"SUCCESS","durationMillis":35,"agent":"","parallel_branch":"Unit Tests A","parallel_wrapper":"Unit Tests"},{"name":"Unit Tests B","status":"IN_PROGRESS","startTimeMillis":1706699945000,"durationMillis":29205,"agent":"agent7 guthrie","parallel_branch":"Unit Tests B","parallel_wrapper":"Unit Tests"},{"name":"Unit Tests C","status":"SUCCESS","durationMillis":-12,"agent":"","parallel_branch":"Unit Tests C","parallel_wrapper":"Unit Tests"},{"name":"Unit Tests D","status":"SUCCESS","durationMillis":-11,"agent":"agent8_sixcore","parallel_branch":"Unit Tests D","parallel_wrapper":"Unit Tests"},{"name":"Unit Tests","status":"SUCCESS","durationMillis":29340,"agent":"","is_parallel_wrapper":true,"parallel_branches":["Unit Tests A","Unit Tests B","Unit Tests C","Unit Tests D"]}]'
+            ;;
+        unknown)
+            echo '[{"name":"Brand New Stage","status":"IN_PROGRESS","startTimeMillis":1706700023000,"durationMillis":0,"agent":"agent6 guthrie"}]'
+            ;;
+        overflow)
+            echo '[{"name":"Stage 1","status":"IN_PROGRESS","startTimeMillis":1706700000000,"durationMillis":0,"agent":"agent1"},{"name":"Stage 2","status":"IN_PROGRESS","startTimeMillis":1706700001000,"durationMillis":0,"agent":"agent2"},{"name":"Stage 3","status":"IN_PROGRESS","startTimeMillis":1706700002000,"durationMillis":0,"agent":"agent3"},{"name":"Stage 4","status":"IN_PROGRESS","startTimeMillis":1706700003000,"durationMillis":0,"agent":"agent4"},{"name":"Stage 5","status":"IN_PROGRESS","startTimeMillis":1706700004000,"durationMillis":0,"agent":"agent5"},{"name":"Stage 6","status":"IN_PROGRESS","startTimeMillis":1706700005000,"durationMillis":0,"agent":"agent6"},{"name":"Stage 7","status":"IN_PROGRESS","startTimeMillis":1706700006000,"durationMillis":0,"agent":"agent7"},{"name":"Stage 8","status":"IN_PROGRESS","startTimeMillis":1706700007000,"durationMillis":0,"agent":"agent8"},{"name":"Stage 9","status":"IN_PROGRESS","startTimeMillis":1706700008000,"durationMillis":0,"agent":"agent9"},{"name":"Stage 10","status":"IN_PROGRESS","startTimeMillis":1706700009000,"durationMillis":0,"agent":"agent10"},{"name":"Stage 11","status":"IN_PROGRESS","startTimeMillis":1706700010000,"durationMillis":0,"agent":"agent11"},{"name":"Stage 12","status":"IN_PROGRESS","startTimeMillis":1706700011000,"durationMillis":0,"agent":"agent12"}]'
+            ;;
+        long_name)
+            echo '[{"name":"A very long stage name that should be truncated before the progress bar moves","status":"IN_PROGRESS","startTimeMillis":1706700000000,"durationMillis":0,"agent":"agent6 guthrie"}]'
+            ;;
+    esac
+}
+
+get_all_stages() {
+    case "${MOCK_WFAPI_STATE:-single}" in
+        parallel_lagged)
+            echo '[{"name":"Unit Tests","status":"SUCCESS","startTimeMillis":1706699945000,"durationMillis":135},{"name":"Unit Tests A","status":"SUCCESS","startTimeMillis":1706699945000,"durationMillis":35},{"name":"Unit Tests B","status":"IN_PROGRESS","startTimeMillis":1706699945000,"durationMillis":29176},{"name":"Unit Tests C","status":"SUCCESS","startTimeMillis":1706699945000,"durationMillis":-12},{"name":"Unit Tests D","status":"SUCCESS","startTimeMillis":1706699945000,"durationMillis":-11}]'
+            ;;
+        *)
+            command echo '[]'
+            ;;
+    esac
+}
+
+get_console_output() {
+    case "${MOCK_WFAPI_STATE:-single}" in
+        parallel_lagged)
+            cat <<'EOF'
+[Pipeline] { (Unit Tests)
+[Pipeline] parallel
+[Pipeline] { (Branch: Unit Tests A)
+[Pipeline] { (Branch: Unit Tests B)
+[Pipeline] { (Branch: Unit Tests C)
+[Pipeline] { (Branch: Unit Tests D)
+[Pipeline] stage
+[Pipeline] { (Unit Tests A)
+[Pipeline] stage
+[Pipeline] { (Unit Tests B)
+[Pipeline] stage
+[Pipeline] { (Unit Tests C)
+[Pipeline] stage
+[Pipeline] { (Unit Tests D)
+[Pipeline] node
+Running on agent8_sixcore in /tmp/ws
+[Pipeline] node
+Running on agent8_sixcore in /tmp/ws@2
+[Pipeline] node
+Running on agent7 guthrie in /tmp/ws
+[Pipeline] node
+Running on agent6 guthrie in /tmp/ws
+EOF
+            ;;
+        *)
+            echo ""
+            ;;
+    esac
 }
 
 case "${1:-}" in
@@ -242,6 +327,56 @@ case "${1:-}" in
         FAKE_NOW_SECONDS=1706700035
         MOCK_RUNNING_BUILDS=mixed-order
         _display_follow_line_progress "ralph1" "43" '{"timestamp":1706700010000,"building":true}' "100000" "0"
+        ;;
+    threads_single)
+        FAKE_NOW_SECONDS=1706700035
+        THREADS_MODE=true
+        MOCK_WFAPI_STATE=single
+        _prime_follow_progress_estimates "ralph1"
+        estimate_ms="${_FOLLOW_BUILD_ESTIMATE_MS:-}"
+        _display_follow_line_progress "ralph1" "42" '{"timestamp":1706700000000,"building":true}' "$estimate_ms" "0" "false" "$(_get_follow_active_stages "ralph1" "42")"
+        ;;
+    threads_parallel)
+        FAKE_NOW_SECONDS=1706700035
+        THREADS_MODE=true
+        MOCK_WFAPI_STATE=parallel
+        _prime_follow_progress_estimates "ralph1"
+        estimate_ms="${_FOLLOW_BUILD_ESTIMATE_MS:-}"
+        _display_follow_line_progress "ralph1" "42" '{"timestamp":1706700000000,"building":true}' "$estimate_ms" "0" "false" "$(_get_follow_active_stages "ralph1" "42")"
+        ;;
+    threads_unknown)
+        FAKE_NOW_SECONDS=1706700035
+        THREADS_MODE=true
+        MOCK_WFAPI_STATE=unknown
+        _prime_follow_progress_estimates "ralph1"
+        estimate_ms="${_FOLLOW_BUILD_ESTIMATE_MS:-}"
+        _display_follow_line_progress "ralph1" "42" '{"timestamp":1706700000000,"building":true}' "$estimate_ms" "3" "false" "$(_get_follow_active_stages "ralph1" "42")"
+        ;;
+    threads_overflow)
+        FAKE_NOW_SECONDS=1706700035
+        THREADS_MODE=true
+        MOCK_WFAPI_STATE=overflow
+        export LINES=10
+        _prime_follow_progress_estimates "ralph1"
+        estimate_ms="${_FOLLOW_BUILD_ESTIMATE_MS:-}"
+        _display_follow_line_progress "ralph1" "42" '{"timestamp":1706700000000,"building":true}' "$estimate_ms" "0" "false" "$(_get_follow_active_stages "ralph1" "42")"
+        ;;
+    threads_long_name)
+        FAKE_NOW_SECONDS=1706700035
+        THREADS_MODE=true
+        MOCK_WFAPI_STATE=long_name
+        export COLUMNS=70
+        _prime_follow_progress_estimates "ralph1"
+        estimate_ms="${_FOLLOW_BUILD_ESTIMATE_MS:-}"
+        _display_follow_line_progress "ralph1" "42" '{"timestamp":1706700000000,"building":true}' "$estimate_ms" "0" "false" "$(_get_follow_active_stages "ralph1" "42")"
+        ;;
+    threads_parallel_lagged)
+        FAKE_NOW_SECONDS=1706700035
+        THREADS_MODE=true
+        MOCK_WFAPI_STATE=parallel_lagged
+        _prime_follow_progress_estimates "ralph1"
+        estimate_ms="${_FOLLOW_BUILD_ESTIMATE_MS:-}"
+        _display_follow_line_progress "ralph1" "42" '{"timestamp":1706700000000,"building":true}' "$estimate_ms" "0" "false" "$(_get_follow_active_stages "ralph1" "42")"
         ;;
     estimate)
         _get_last_successful_build_duration "ralph1"
@@ -1074,6 +1209,19 @@ WRAPPER
     assert_output --partial "SUCCESS"
 }
 
+@test "status_follow_threads_non_tty_ignored" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_test_wrapper "true" "SUCCESS" "2"
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line --threads --once 2>&1"
+
+    assert_success
+    refute_output --partial "[agent"
+    assert_output --partial "SUCCESS"
+}
+
 @test "status_follow_full_mode_tty_keeps_full_completion_output" {
     cd "${TEST_REPO}"
     export PROJECT_DIR
@@ -1670,6 +1818,97 @@ WRAPPER_END
     assert_success
     assert_output --partial "QUEUED      Job ralph1 #44 ["
     assert_output --partial "35s in queue / ~1m 40s"
+}
+
+@test "status_follow_threads_single_stage_line_renders_above_primary_bar" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" threads_single
+
+    assert_success
+    assert_output --partial "  [agent6 guthrie] Build [====================] 875% 35s / ~4s"
+    assert_output --partial "IN_PROGRESS Job ralph1 #42 [=>                  ] 14% 35s / ~4m 10s"
+}
+
+@test "status_follow_threads_parallel_stage_lines_follow_pipeline_order" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" threads_parallel
+
+    assert_success
+    assert_output --partial "  [agent6 guthrie] Unit Tests A [============>       ] 65% 1m 30s / ~2m 18s"
+    assert_output --partial "  [agent7 guthrie] Unit Tests B [=======>            ] 42% 38s / ~1m 29s"
+    assert_output --partial "  [agent8 guthrie] Unit Tests C [==>                 ] 17% 22s / ~2m 6s"
+    local before_a before_b before_c
+    before_a="${output%%Unit Tests A*}"
+    before_b="${output%%Unit Tests B*}"
+    before_c="${output%%Unit Tests C*}"
+    [[ ${#before_a} -lt ${#before_b} ]]
+    [[ ${#before_b} -lt ${#before_c} ]]
+}
+
+@test "status_follow_threads_synthesizes_missing_parallel_branches_when_wfapi_lags" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" threads_parallel_lagged
+
+    assert_success
+    assert_output --partial "Unit Tests A"
+    assert_output --partial "Unit Tests B"
+    assert_output --partial "Unit Tests C"
+    assert_output --partial "Unit Tests D"
+    refute_output --partial "Unit Tests A [>                   ] 0% 0s"
+    refute_output --partial "Unit Tests C [>                   ] 0% 0s"
+    refute_output --partial "Unit Tests D [>                   ] 0% 0s"
+    refute_output --partial "  [agent6 guthrie] Unit Tests ["
+}
+
+@test "status_follow_threads_unknown_stage_uses_indeterminate_bar" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" threads_unknown
+
+    assert_success
+    assert_output --partial "  [agent6 guthrie] Brand New Stage [   <===>            ] 12s / ~unknown"
+    refute_output --partial "Brand New Stage [   <===>            ] 12%"
+}
+
+@test "status_follow_threads_overflow_limits_stage_lines" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" threads_overflow
+
+    assert_success
+    assert_output --partial "Stage 7"
+    refute_output --partial "Stage 8"
+}
+
+@test "status_follow_threads_truncates_stage_name_to_terminal_width" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" threads_long_name
+
+    assert_success
+    assert_output --partial "A very lon..."
+    refute_output --partial "should be truncated before the progress bar moves"
 }
 
 @test "status_follow_line_once_timeout" {

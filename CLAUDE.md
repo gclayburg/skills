@@ -20,6 +20,7 @@ A unified interface for git operations with Jenkins CI/CD integration.
 Global Options:
   -j, --job <name>               Specify Jenkins job name (or multibranch job/branch)
   -c, --console <mode>           Show console log output (auto or line count)
+  --threads                      Show live active-stage progress during TTY monitoring
   -h, --help                     Show this help message
   -v, --verbose                  Enable verbose output for debugging
   --version                      Show version number and exit
@@ -56,13 +57,16 @@ Monitor ongoing Jenkins build jobs:
   buildgit status -n 3 -f          # Show 3 prior builds, then follow indefinitely
   buildgit status -n 3 -f --once   # Show 3 prior builds, then follow once with timeout
   buildgit status -f --line        # Follow builds with one-line output + progress bar (TTY only)
+  buildgit --threads status -f --line # Add active-stage progress rows above the main bar
   buildgit status -f --once --line # Follow one build in one-line mode, then exit
   buildgit status -n 5 -f --line   # Show 5 prior one-line rows, then follow in one-line mode
   buildgit push                    # Push + monitor build
   buildgit push --prior-jobs 5     # Push + show last 5 builds before monitoring
   buildgit push --prior-jobs 0     # Push + suppress prior-jobs display
   buildgit push --line             # Push + compact one-line monitoring with progress bar
+  buildgit --threads push          # Push + show live active-stage progress rows on TTY
   buildgit build --line            # Trigger + compact one-line monitoring with progress bar
+  buildgit --threads build         # Trigger + show live active-stage progress rows on TTY
   buildgit status -f --prior-jobs 5  # Follow with last 5 builds shown first
   buildgit --job myjob build       # Trigger build for specific job
   buildgit --job myjob/main status # Query explicit multibranch branch job

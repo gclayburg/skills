@@ -56,6 +56,7 @@ source "${PROJECT_DIR}/lib/jenkins-common.sh"
 # Global variables
 JOB_NAME=""
 VERBOSE_MODE=false
+THREADS_MODE=false
 COMMAND=""
 COMMAND_ARGS=()
 
@@ -68,6 +69,7 @@ A unified interface for git operations with Jenkins CI/CD integration.
 
 Global Options:
   -j, --job <name>    Specify Jenkins job name (overrides auto-detection)
+  --threads           Show live active-stage progress during TTY monitoring
   -h, --help          Show this help message
   -v, --verbose       Enable verbose output for debugging
 
@@ -105,6 +107,10 @@ parse_global_options() {
                 show_usage
                 exit 0
                 ;;
+            --threads)
+                THREADS_MODE=true
+                shift
+                ;;
             -v|--verbose)
                 VERBOSE_MODE=true
                 shift
@@ -134,6 +140,7 @@ main() {
     # Output parsed values for test verification
     echo "JOB_NAME: ${JOB_NAME}"
     echo "VERBOSE_MODE: ${VERBOSE_MODE}"
+    echo "THREADS_MODE: ${THREADS_MODE}"
     echo "COMMAND: ${COMMAND}"
     echo "COMMAND_ARGS: ${COMMAND_ARGS[*]:-}"
 }
@@ -207,6 +214,17 @@ EOF
     assert_output --partial "COMMAND: status"
 }
 
+@test "parse_global_threads_flag" {
+    export PROJECT_DIR
+    create_args_test_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_test.sh" --threads status
+
+    assert_success
+    assert_output --partial "THREADS_MODE: true"
+    assert_output --partial "COMMAND: status"
+}
+
 # -----------------------------------------------------------------------------
 # Test Case: -v appears in help output
 # Spec: 2026-02-21_expand-verbose-flag-spec.md
@@ -216,6 +234,13 @@ EOF
 
     assert_success
     assert_output --partial "-v, --verbose"
+}
+
+@test "help_shows_threads_flag" {
+    run "${PROJECT_DIR}/buildgit" --help
+
+    assert_success
+    assert_output --partial "--threads"
 }
 
 # -----------------------------------------------------------------------------
@@ -253,11 +278,12 @@ EOF
     export PROJECT_DIR
     create_args_test_wrapper
 
-    run bash "${TEST_TEMP_DIR}/buildgit_test.sh" -j myjob --verbose status
+    run bash "${TEST_TEMP_DIR}/buildgit_test.sh" -j myjob --verbose --threads status
 
     assert_success
     assert_output --partial "JOB_NAME: myjob"
     assert_output --partial "VERBOSE_MODE: true"
+    assert_output --partial "THREADS_MODE: true"
     assert_output --partial "COMMAND: status"
 }
 
