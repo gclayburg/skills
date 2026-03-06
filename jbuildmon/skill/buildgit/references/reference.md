@@ -29,14 +29,6 @@ SUCCESS     #56 id=0046c54 Tests=19/0/0 Took 6m 39s on 2026-02-24T10:14:10-0700 
 
 Use `--prior-jobs 0` to suppress the prior-jobs block.
 
-On TTY monitoring commands, use the global flag `--threads` before the subcommand to show active pipeline stages above the overall build bar:
-
-```bash
-$ buildgit --threads status -f --line
-  [agent6 guthrie] Build [====================] 875% 35s / ~4s
-IN_PROGRESS Job ralph1 #42 [=>                  ] 14% 35s / ~4m 10s
-```
-
 ```bash
 $ buildgit push
 To ssh://scranton2:2233/home/git/phandlemono.git
