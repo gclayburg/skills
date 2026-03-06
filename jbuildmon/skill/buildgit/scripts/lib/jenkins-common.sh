@@ -3993,6 +3993,31 @@ _extract_agent_name() {
     _extract_running_agent_from_console "$console_output" || true
 }
 
+# Extract a pipeline-scope agent from console output when Jenkins allocates the
+# node before the first named stage.
+# Usage: _extract_pre_stage_agent_from_console "$console_output"
+# Returns: agent name string, or empty if the first stage starts before any
+#          "Running on" line appears.
+_extract_pre_stage_agent_from_console() {
+    local console_output="$1"
+    local stripped_console
+
+    stripped_console=$(printf "%s\n" "$console_output" | sed -E 's/\x1B\[[0-9;]*[[:alpha:]]//g')
+
+    printf "%s\n" "$stripped_console" | awk '
+        /^\[Pipeline\] \{ \(.+\)$/ { exit }
+        /Running on[[:space:]]+.+[[:space:]]+in[[:space:]]+\// {
+            agent_name = $0
+            sub(/^.*Running on[[:space:]]+/, "", agent_name)
+            sub(/[[:space:]]+in[[:space:]]+\/.*$/, "", agent_name)
+            sub(/^[[:space:]]+/, "", agent_name)
+            sub(/[[:space:]]+$/, "", agent_name)
+            print agent_name
+            exit
+        }
+    ' || true
+}
+
 # Build a map of pipeline stage name -> Jenkins agent name from console output.
 # Usage: _build_stage_agent_map "$console_output"
 # Returns: JSON object like {"Build":"agent6 guthrie","Unit Tests A":"agent7"}
@@ -4140,8 +4165,10 @@ _get_nested_stages() {
     console_output=$(get_console_output "$job_name" "$build_number" 2>/dev/null) || true
 
     local stage_agent_map="{}"
+    local pipeline_scope_agent=""
     if [[ -n "$console_output" ]]; then
         stage_agent_map=$(_build_stage_agent_map "$console_output")
+        pipeline_scope_agent=$(_extract_pre_stage_agent_from_console "$console_output")
     fi
 
     local parallel_info="{}"
@@ -4217,6 +4244,9 @@ _get_nested_stages() {
         local stage_agent=""
         if [[ "$stage_agent_map" != "{}" ]]; then
             stage_agent=$(echo "$stage_agent_map" | jq -r --arg s "$stage_name" '.[$s] // empty')
+        fi
+        if [[ -z "$stage_agent" && -n "$pipeline_scope_agent" ]]; then
+            stage_agent="$pipeline_scope_agent"
         fi
 
         local is_parallel_wrapper="false"

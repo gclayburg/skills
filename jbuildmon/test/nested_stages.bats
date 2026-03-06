@@ -85,6 +85,30 @@ Running on buildagent9 in /var/jenkins/workspace/myjob
     [[ "$agent" == "agent8_sixcore" ]]
 }
 
+@test "extract_pre_stage_agent_from_console_returns_pipeline_scope_agent" {
+    local console='[Pipeline] Start of Pipeline
+[Pipeline] node
+Running on agent8_sixcore in /var/jenkins/workspace/phandlemono-IT
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (Checkout)'
+
+    local agent
+    agent=$(_extract_pre_stage_agent_from_console "$console")
+    [[ "$agent" == "agent8_sixcore" ]]
+}
+
+@test "extract_pre_stage_agent_from_console_ignores_stage_scoped_agents" {
+    local console='[Pipeline] stage
+[Pipeline] { (Build)
+[Pipeline] node
+Running on agent7 guthrie in /var/jenkins/workspace/ralph1'
+
+    local agent
+    agent=$(_extract_pre_stage_agent_from_console "$console")
+    [[ -z "$agent" ]]
+}
+
 # =============================================================================
 # Test Cases: _build_stage_agent_map
 # =============================================================================
@@ -143,6 +167,31 @@ echo build
     result=$(_build_stage_agent_map "$console")
 
     [[ "$(echo "$result" | jq -c '.')" == "{}" ]]
+}
+
+@test "build_stage_agent_map_keeps_only_explicit_stage_assignments" {
+    local console='[Pipeline] Start of Pipeline
+[Pipeline] node
+Running on orchestrator1 in /workspace
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (Checkout)
+[Pipeline] echo
+checkout
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Deploy)
+[Pipeline] node
+Running on deploy-agent in /workspace
+[Pipeline] }
+[Pipeline] // stage'
+
+    local result
+    result=$(_build_stage_agent_map "$console")
+
+    [[ $(echo "$result" | jq -r '.["Checkout"] // empty') == "" ]]
+    [[ $(echo "$result" | jq -r '.["Deploy"]') == "deploy-agent" ]]
 }
 
 @test "parse_build_metadata_header_uses_full_agent_name" {
@@ -371,6 +420,77 @@ Running on agent7 in /workspace
     [[ $(echo "$result" | jq -r '.[] | select(.name == "Unit Tests A").agent') == "agent7" ]]
 }
 
+@test "get_nested_stages_pipeline_scope_agent_applies_when_node_starts_before_first_stage" {
+    get_all_stages() {
+        echo '[
+            {"name":"Declarative: Checkout SCM","status":"SUCCESS","startTimeMillis":0,"durationMillis":500},
+            {"name":"Checkout","status":"SUCCESS","startTimeMillis":0,"durationMillis":600},
+            {"name":"Trigger Component Builds","status":"SUCCESS","startTimeMillis":0,"durationMillis":120000}
+        ]'
+    }
+
+    get_console_output() {
+        echo '[Pipeline] Start of Pipeline
+[Pipeline] node
+Running on agent8_sixcore in /workspace
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (Declarative: Checkout SCM)
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Checkout)
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Trigger Component Builds)
+[Pipeline] parallel
+[Pipeline] }
+[Pipeline] // stage'
+    }
+
+    local result
+    result=$(_get_nested_stages "test-job" "42")
+
+    [[ $(echo "$result" | jq -r '.[] | select(.name == "Declarative: Checkout SCM").agent') == "agent8_sixcore" ]]
+    [[ $(echo "$result" | jq -r '.[] | select(.name == "Checkout").agent') == "agent8_sixcore" ]]
+    [[ $(echo "$result" | jq -r '.[] | select(.name == "Trigger Component Builds").agent') == "agent8_sixcore" ]]
+}
+
+@test "get_nested_stages_pipeline_scope_agent_fills_unmapped_stages_only" {
+    get_all_stages() {
+        echo '[
+            {"name":"Checkout","status":"SUCCESS","startTimeMillis":0,"durationMillis":500},
+            {"name":"Deploy","status":"SUCCESS","startTimeMillis":0,"durationMillis":3000}
+        ]'
+    }
+
+    get_console_output() {
+        echo '[Pipeline] Start of Pipeline
+[Pipeline] node
+Running on orchestrator1 in /workspace
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (Checkout)
+[Pipeline] echo
+checkout
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Deploy)
+[Pipeline] node
+Running on deploy-agent in /workspace
+[Pipeline] }
+[Pipeline] // stage'
+    }
+
+    local result
+    result=$(_get_nested_stages "test-job" "42")
+
+    [[ $(echo "$result" | jq -r '.[] | select(.name == "Checkout").agent') == "orchestrator1" ]]
+    [[ $(echo "$result" | jq -r '.[] | select(.name == "Deploy").agent') == "deploy-agent" ]]
+}
+
 @test "get_nested_stages_with_downstream" {
     # Tracking which job is requested
     local _call_job=""
@@ -547,6 +667,60 @@ Running on leaf-agent in /ws'
     [[ $(echo "$result" | jq -r '.[2].name') == "Trigger" ]]
     [[ $(echo "$result" | jq '.[2].nesting_depth') == "0" ]]
     [[ $(echo "$result" | jq '.[2].has_downstream') == "true" ]]
+}
+
+@test "get_nested_stages_downstream_pipeline_scope_agent_applies_recursively" {
+    get_all_stages() {
+        local job="$1"
+        case "$job" in
+            parent-job)
+                echo '[{"name":"Build Handle","status":"SUCCESS","startTimeMillis":0,"durationMillis":38000}]'
+                ;;
+            downstream-job)
+                echo '[
+                    {"name":"Checkout","status":"SUCCESS","startTimeMillis":0,"durationMillis":500},
+                    {"name":"Package","status":"SUCCESS","startTimeMillis":0,"durationMillis":1200}
+                ]'
+                ;;
+            *)
+                echo '[]'
+                ;;
+        esac
+    }
+
+    get_console_output() {
+        local job="$1"
+        case "$job" in
+            parent-job)
+                echo '[Pipeline] { (Build Handle)
+Starting building: downstream-job #10
+[Pipeline] }'
+                ;;
+            downstream-job)
+                echo '[Pipeline] Start of Pipeline
+[Pipeline] node
+Running on buildagent9 in /workspace
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (Checkout)
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Package)
+[Pipeline] }
+[Pipeline] // stage'
+                ;;
+            *)
+                echo ''
+                ;;
+        esac
+    }
+
+    local result
+    result=$(_get_nested_stages "parent-job" "1")
+
+    [[ $(echo "$result" | jq -r '.[] | select(.name == "Build Handle->Checkout").agent') == "buildagent9" ]]
+    [[ $(echo "$result" | jq -r '.[] | select(.name == "Build Handle->Package").agent') == "buildagent9" ]]
 }
 
 @test "get_nested_stages_parallel_wrapper_printed_after_branches" {
