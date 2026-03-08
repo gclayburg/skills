@@ -50,6 +50,7 @@ create_banner_test_wrapper() {
     cat > "${TEST_TEMP_DIR}/banner_test.sh" << WRAPPER_EOF
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 PROJECT_DIR="${PROJECT_DIR}"
 

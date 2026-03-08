@@ -1359,7 +1359,7 @@ cmd_status -f --once --prior-jobs 0
 WRAPPER_END
     chmod +x "${TEST_TEMP_DIR}/follow_footer_probe.sh"
 
-    run bash -c "BUILDGIT_FORCE_TTY=1 bash \"${TEST_TEMP_DIR}/follow_footer_probe.sh\" 2>&1"
+    run bash -c "BUILDGIT_FORCE_TTY=1 bash \"${TEST_TEMP_DIR}/follow_footer_probe.sh\" 3>&- 2>&1"
 
     assert_success
     assert_output --partial "BUILD IN PROGRESS"
@@ -1456,7 +1456,7 @@ cmd_status -f --once --prior-jobs 0
 WRAPPER_END
     chmod +x "${TEST_TEMP_DIR}/follow_settle_stage_probe.sh"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/follow_settle_stage_probe.sh\" 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/follow_settle_stage_probe.sh\" 3>&- 2>&1"
 
     assert_success
     assert_output --partial "Stage: [agent7        ] Deploy (3s)"
@@ -1665,7 +1665,7 @@ cmd_status -f --once --prior-jobs 0
 WRAPPER_END
     chmod +x "${TEST_TEMP_DIR}/follow_force_flush_probe.sh"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/follow_force_flush_probe.sh\" 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/follow_force_flush_probe.sh\" 3>&- 2>&1"
 
     assert_success
     assert_output --partial "Stage: Deploy (3s)"
@@ -1764,7 +1764,7 @@ echo "TRACK_CALLS=$(cat "${TEST_TEMP_DIR}/track_calls")"
 WRAPPER_END
     chmod +x "${TEST_TEMP_DIR}/follow_settle_counter_probe.sh"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/follow_settle_counter_probe.sh\" 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/follow_settle_counter_probe.sh\" 3>&- 2>&1"
 
     assert_success
     assert_output --partial "Finished: SUCCESS"

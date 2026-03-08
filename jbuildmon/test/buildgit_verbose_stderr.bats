@@ -46,6 +46,7 @@ create_stderr_test_wrapper() {
     cat > "${TEST_TEMP_DIR}/stderr_test.sh" << 'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 PROJECT_DIR="${PROJECT_DIR}"
 
@@ -161,6 +162,7 @@ EOF
     cat > "${TEST_TEMP_DIR}/capture_test.sh" << 'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 # Capture stdout (the return value) - stderr goes to terminal
 result=$(bash "${TEST_TEMP_DIR}/stderr_test.sh" test_return_value --verbose 2>/dev/null)
@@ -192,12 +194,12 @@ EOF
     create_stderr_test_wrapper
 
     # Test info - no output in quiet mode (no --verbose)
-    run bash -c "bash '${TEST_TEMP_DIR}/stderr_test.sh' test_info 2>&1"
+    run bash -c "bash '${TEST_TEMP_DIR}/stderr_test.sh' test_info 3>&- 2>&1"
     assert_success
     assert_output ""
 
     # Test success - no output in quiet mode (no --verbose)
-    run bash -c "bash '${TEST_TEMP_DIR}/stderr_test.sh' test_success 2>&1"
+    run bash -c "bash '${TEST_TEMP_DIR}/stderr_test.sh' test_success 3>&- 2>&1"
     assert_success
     assert_output ""
 }

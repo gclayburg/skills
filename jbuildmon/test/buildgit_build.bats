@@ -76,6 +76,7 @@ create_build_test_wrapper() {
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << 'WRAPPER_END'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
@@ -210,6 +211,7 @@ create_build_no_job_wrapper() {
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << 'WRAPPER'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
@@ -292,6 +294,7 @@ WRAPPER
     cat > "${TEST_TEMP_DIR}/build_completion_stage_wrapper.sh" << 'WRAPPER_END'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
@@ -380,7 +383,7 @@ cmd_build --prior-jobs 0
 WRAPPER_END
     chmod +x "${TEST_TEMP_DIR}/build_completion_stage_wrapper.sh"
 
-    run bash -c "BUILDGIT_FORCE_TTY=1 bash \"${TEST_TEMP_DIR}/build_completion_stage_wrapper.sh\" 2>&1"
+    run bash -c "BUILDGIT_FORCE_TTY=1 bash \"${TEST_TEMP_DIR}/build_completion_stage_wrapper.sh\" 3>&- 2>&1"
 
     assert_success
     assert_output --partial "Stage: Deploy (3s)"
@@ -393,7 +396,7 @@ WRAPPER_END
     echo "0" > "${TEST_TEMP_DIR}/build_info_calls"
     echo "0" > "${TEST_TEMP_DIR}/track_calls"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/build_completion_stage_wrapper.sh\" 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/build_completion_stage_wrapper.sh\" 3>&- 2>&1"
 
     assert_success
     assert_output --partial "Stage: Deploy (3s)"
@@ -471,7 +474,7 @@ WRAPPER_END
     export TEST_TEMP_DIR
     create_build_test_wrapper "SUCCESS" "2" "true"
 
-    run bash -c "BUILDGIT_FORCE_TTY=1 bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line 2>&1"
+    run bash -c "BUILDGIT_FORCE_TTY=1 bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line 3>&- 2>&1"
 
     assert_success
     assert_output --partial "IN_PROGRESS Job test-repo #43 ["
@@ -487,7 +490,7 @@ WRAPPER_END
     export TEST_TEMP_DIR
     create_build_test_wrapper "SUCCESS" "2" "true"
 
-    run bash -c "MOCK_QUEUE_STATE=queued BUILDGIT_FORCE_TTY=1 bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line 2>&1"
+    run bash -c "MOCK_QUEUE_STATE=queued BUILDGIT_FORCE_TTY=1 bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line 3>&- 2>&1"
 
     assert_success
     assert_output --partial "QUEUED      Job test-repo #44 ["
@@ -500,7 +503,7 @@ WRAPPER_END
     export TEST_TEMP_DIR
     create_build_test_wrapper "SUCCESS" "2" "true"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line 3>&- 2>&1"
 
     assert_success
     refute_output --partial "IN_PROGRESS Job test-repo #43 ["
@@ -515,7 +518,7 @@ WRAPPER_END
     export TEST_TEMP_DIR
     create_build_test_wrapper "SUCCESS" "10" "true"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line --no-follow 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line --no-follow 3>&- 2>&1"
 
     assert_success
     assert_output --partial "monitoring disabled"
@@ -714,6 +717,7 @@ WRAPPER_END
     cat > "${TEST_TEMP_DIR}/queue_wait_wrapper.sh" << 'WRAPPER'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
 POLL_INTERVAL=1
@@ -797,6 +801,7 @@ WRAPPER
     cat > "${TEST_TEMP_DIR}/queue_tty_transition_wrapper.sh" << 'WRAPPER'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
 POLL_INTERVAL=1
@@ -870,6 +875,7 @@ WRAPPER
     cat > "${TEST_TEMP_DIR}/queue_non_tty_wrapper.sh" << 'WRAPPER'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
 POLL_INTERVAL=1
@@ -955,6 +961,7 @@ WRAPPER
     cat > "${TEST_TEMP_DIR}/queue_capture_wrapper.sh" << 'WRAPPER'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
 POLL_INTERVAL=1
@@ -1025,6 +1032,7 @@ WRAPPER
     cat > "${TEST_TEMP_DIR}/queue_timeout_wrapper.sh" << 'WRAPPER'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
 POLL_INTERVAL=1
@@ -1065,6 +1073,7 @@ WRAPPER
     cat > "${TEST_TEMP_DIR}/queue_tty_sticky_wrapper.sh" << 'WRAPPER'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
 POLL_INTERVAL=1
@@ -1142,6 +1151,7 @@ WRAPPER
     cat > "${TEST_TEMP_DIR}/queue_tty_estimate_wrapper.sh" << 'WRAPPER'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
 POLL_INTERVAL=1
@@ -1201,6 +1211,7 @@ WRAPPER
     cat > "${TEST_TEMP_DIR}/queue_nameref_wrapper.sh" << 'WRAPPER'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
 POLL_INTERVAL=1

@@ -90,6 +90,7 @@ create_push_test_wrapper() {
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << 'WRAPPER_END'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
@@ -214,6 +215,7 @@ create_push_git_failure_wrapper() {
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << 'WRAPPER'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
@@ -270,6 +272,7 @@ WRAPPER
     cat > "${TEST_TEMP_DIR}/queue_wait_wrapper.sh" << 'WRAPPER'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
 POLL_INTERVAL=1
@@ -357,6 +360,7 @@ WRAPPER
     cat > "${TEST_TEMP_DIR}/push_completion_stage_wrapper.sh" << 'WRAPPER_END'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
@@ -443,7 +447,7 @@ cmd_push --prior-jobs 0
 WRAPPER_END
     chmod +x "${TEST_TEMP_DIR}/push_completion_stage_wrapper.sh"
 
-    run bash -c "BUILDGIT_FORCE_TTY=1 bash \"${TEST_TEMP_DIR}/push_completion_stage_wrapper.sh\" 2>&1"
+    run bash -c "BUILDGIT_FORCE_TTY=1 bash \"${TEST_TEMP_DIR}/push_completion_stage_wrapper.sh\" 3>&- 2>&1"
 
     assert_success
     assert_output --partial "Stage: Deploy (3s)"
@@ -461,7 +465,7 @@ WRAPPER_END
     echo "0" > "${TEST_TEMP_DIR}/build_info_calls"
     echo "0" > "${TEST_TEMP_DIR}/track_calls"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/push_completion_stage_wrapper.sh\" 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/push_completion_stage_wrapper.sh\" 3>&- 2>&1"
 
     assert_success
     assert_output --partial "Stage: Deploy (3s)"
@@ -557,7 +561,7 @@ WRAPPER_END
     export TEST_TEMP_DIR
     create_push_test_wrapper "SUCCESS" "2"
 
-    run bash -c "BUILDGIT_FORCE_TTY=1 bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line 2>&1"
+    run bash -c "BUILDGIT_FORCE_TTY=1 bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line 3>&- 2>&1"
 
     assert_success
     assert_output --partial "IN_PROGRESS Job test-repo #43 ["
@@ -577,7 +581,7 @@ WRAPPER_END
     export TEST_TEMP_DIR
     create_push_test_wrapper "SUCCESS" "2"
 
-    run bash -c "MOCK_QUEUE_STATE=queued BUILDGIT_FORCE_TTY=1 bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line 2>&1"
+    run bash -c "MOCK_QUEUE_STATE=queued BUILDGIT_FORCE_TTY=1 bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line 3>&- 2>&1"
 
     assert_success
     assert_output --partial "QUEUED      Job test-repo #44 ["
@@ -594,7 +598,7 @@ WRAPPER_END
     export TEST_TEMP_DIR
     create_push_test_wrapper "SUCCESS" "2"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line 3>&- 2>&1"
 
     assert_success
     refute_output --partial "IN_PROGRESS Job test-repo #43 ["
@@ -613,7 +617,7 @@ WRAPPER_END
     export TEST_TEMP_DIR
     create_push_test_wrapper "SUCCESS" "10"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line --no-follow 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line --no-follow 3>&- 2>&1"
 
     assert_success
     assert_output --partial "Push completed (monitoring disabled)"

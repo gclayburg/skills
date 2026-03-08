@@ -38,6 +38,7 @@ _create_monitor_test_wrapper() {
     cat > "${TEST_TEMP_DIR}/monitor_test.sh" << OUTEREOF
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 export PROJECT_DIR="${PROJECT_DIR}"
 export _BUILDGIT_TESTING=1
@@ -134,6 +135,7 @@ OUTEREOF
     cat > "${TEST_TEMP_DIR}/monitor_test.sh" << OUTEREOF
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 export PROJECT_DIR="${PROJECT_DIR}"
 export _BUILDGIT_TESTING=1

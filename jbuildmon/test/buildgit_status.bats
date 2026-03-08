@@ -70,6 +70,7 @@ create_status_test_wrapper() {
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER_START
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 export PROJECT_DIR="${PROJECT_DIR}"
 export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
@@ -138,6 +139,7 @@ create_status_line_count_wrapper() {
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER_START
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 export PROJECT_DIR="${PROJECT_DIR}"
 export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
@@ -189,6 +191,7 @@ create_status_full_count_latest_failure_wrapper() {
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER_START
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 export PROJECT_DIR="${PROJECT_DIR}"
 export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
@@ -232,6 +235,7 @@ create_status_line_alignment_wrapper() {
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER_START
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 export PROJECT_DIR="${PROJECT_DIR}"
 export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
@@ -281,6 +285,7 @@ create_status_forced_color_wrapper() {
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER_START
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 export PROJECT_DIR="${PROJECT_DIR}"
 export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
@@ -327,6 +332,7 @@ create_status_forced_color_fail_wrapper() {
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER_START
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 export PROJECT_DIR="${PROJECT_DIR}"
 export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
@@ -373,6 +379,7 @@ create_status_tests_unknown_wrapper() {
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER_START
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 export PROJECT_DIR="${PROJECT_DIR}"
 export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
@@ -412,6 +419,7 @@ create_status_tests_comm_error_wrapper() {
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER_START
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 export PROJECT_DIR="${PROJECT_DIR}"
 export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
@@ -449,6 +457,7 @@ create_status_forced_color_comm_error_wrapper() {
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER_START
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 export PROJECT_DIR="${PROJECT_DIR}"
 export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
@@ -493,6 +502,7 @@ create_status_no_tests_guard_wrapper() {
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER_START
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 export PROJECT_DIR="${PROJECT_DIR}"
 export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
@@ -542,6 +552,7 @@ create_jenkins_unavailable_wrapper() {
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 export PROJECT_DIR="${PROJECT_DIR}"
 export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
@@ -614,7 +625,7 @@ WRAPPER
     export PROJECT_DIR
     create_status_tests_comm_error_wrapper
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --json 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --json 3>&- 2>&1"
 
     assert_success
     assert_output --partial '"test_results": null'
@@ -629,7 +640,7 @@ WRAPPER
     export PROJECT_DIR
     create_status_tests_unknown_wrapper
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --json 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --json 3>&- 2>&1"
 
     assert_success
     refute_output --partial '"testResultsError"'
@@ -657,6 +668,7 @@ WRAPPER
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 export PROJECT_DIR="${PROJECT_DIR}"
 export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
@@ -708,6 +720,7 @@ WRAPPER
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 export PROJECT_DIR="${PROJECT_DIR}"
 export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
@@ -838,6 +851,7 @@ create_build_number_test_wrapper() {
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 export PROJECT_DIR="${PROJECT_DIR}"
 export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
@@ -878,6 +892,7 @@ create_build_not_found_wrapper() {
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 export PROJECT_DIR="${PROJECT_DIR}"
 export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
@@ -1667,7 +1682,7 @@ WRAPPER
     export PROJECT_DIR
     create_status_tests_comm_error_wrapper
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line 3>&- 2>&1"
 
     assert_success
     assert_output --partial "Tests=!err!"
@@ -1679,7 +1694,7 @@ WRAPPER
     export PROJECT_DIR
     create_status_forced_color_comm_error_wrapper
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line 3>&- 2>&1"
 
     assert_success
     if ! printf "%s" "$output" | grep -Fq $' \033[33mTests=!err!\033[0m Took '; then
@@ -1692,7 +1707,7 @@ WRAPPER
     export PROJECT_DIR
     create_status_tests_comm_error_wrapper
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --all 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --all 3>&- 2>&1"
 
     assert_success
     assert_output --partial "Test Results: ⚠ Communication error retrieving test results"
@@ -1710,6 +1725,7 @@ WRAPPER
     cat > "${TEST_TEMP_DIR}/dedup_wrapper.sh" << 'WRAPPER_START'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
@@ -1722,7 +1738,7 @@ _status_line_for_build_json "test-repo" "42" "$build_json" "false"
 WRAPPER_START
     chmod +x "${TEST_TEMP_DIR}/dedup_wrapper.sh"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/dedup_wrapper.sh\" 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/dedup_wrapper.sh\" 3>&- 2>&1"
 
     assert_success
     warning_count="$(printf "%s\n" "$output" | grep -c "Could not retrieve test results (communication error)" || true)"
@@ -1768,6 +1784,7 @@ create_format_test_wrapper() {
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER_START
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 export PROJECT_DIR="${PROJECT_DIR}"
 export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
@@ -1805,6 +1822,7 @@ create_format_git_test_wrapper() {
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER_START
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 export PROJECT_DIR="${PROJECT_DIR}"
 export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
@@ -1981,6 +1999,7 @@ WRAPPER_START
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER_START
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 export PROJECT_DIR="${PROJECT_DIR}"
 export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
@@ -2027,6 +2046,7 @@ create_status_prior_jobs_wrapper() {
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << 'WRAPPER_START'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"

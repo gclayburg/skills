@@ -46,6 +46,7 @@ create_verbosity_test_wrapper() {
     cat > "${TEST_TEMP_DIR}/verbosity_test.sh" << 'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 PROJECT_DIR="${PROJECT_DIR}"
 
@@ -285,6 +286,7 @@ EOF
     cat > "${TEST_TEMP_DIR}/check_verbose.sh" << 'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 PROJECT_DIR="${PROJECT_DIR}"
 

@@ -36,6 +36,7 @@ create_multibranch_wrapper() {
     cat > "${TEST_TEMP_DIR}/mb_wrapper.sh" << 'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"

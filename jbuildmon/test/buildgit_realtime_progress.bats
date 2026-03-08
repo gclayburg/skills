@@ -46,6 +46,7 @@ create_progress_test_wrapper() {
     cat > "${TEST_TEMP_DIR}/progress_test.sh" << 'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 PROJECT_DIR="${PROJECT_DIR}"
 
@@ -185,6 +186,7 @@ EOF
     cat > "${TEST_TEMP_DIR}/capture_test.sh" << 'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 # Capture stdout (the return value) - stderr goes to terminal
 result=$(bash "${TEST_TEMP_DIR}/progress_test.sh" test_return_value 2>/dev/null)

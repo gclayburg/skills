@@ -46,6 +46,7 @@ create_args_test_wrapper() {
     cat > "${TEST_TEMP_DIR}/buildgit_test.sh" << 'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="${PROJECT_DIR}"
