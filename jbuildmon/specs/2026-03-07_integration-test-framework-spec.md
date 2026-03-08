@@ -229,9 +229,18 @@ _get_integration_job() {
 }
 
 setup() {
-    # Verify Jenkins credentials are available
-    if [[ -z "${JENKINS_URL:-}" || -z "${JENKINS_USER_ID:-}" || -z "${JENKINS_API_TOKEN:-}" ]]; then
-        skip "Jenkins credentials not configured"
+    # Integration tests require Jenkins credentials — fail immediately if missing
+    if [[ -z "${JENKINS_URL:-}" ]]; then
+        echo "JENKINS_URL is not set" >&2
+        return 1
+    fi
+    if [[ -z "${JENKINS_USER_ID:-}" ]]; then
+        echo "JENKINS_USER_ID is not set" >&2
+        return 1
+    fi
+    if [[ -z "${JENKINS_API_TOKEN:-}" ]]; then
+        echo "JENKINS_API_TOKEN is not set" >&2
+        return 1
     fi
 
     INTEGRATION_JOB=$(_get_integration_job)
@@ -244,19 +253,27 @@ _ensure_build_complete() {
         return 0
     fi
 
-    # Trigger a new build
+    # Trigger a new build — fail if trigger fails
     local trigger_output
-    trigger_output=$("$BUILDGIT" --job "$INTEGRATION_JOB" build --no-follow 2>&1) || true
+    trigger_output=$("$BUILDGIT" --job "$INTEGRATION_JOB" build --no-follow 2>&1)
 
-    # Wait for it to complete
-    "$BUILDGIT" --job "$INTEGRATION_JOB" status -f --once=180 2>/dev/null || true
+    # Wait for it to complete — fail if wait times out or errors
+    "$BUILDGIT" --job "$INTEGRATION_JOB" status -f --once=180 2>/dev/null
 
     # Capture the latest build number for subsequent queries
     _INTTEST_BUILD_NUMBER=$("$BUILDGIT" --job "$INTEGRATION_JOB" status --json 2>/dev/null \
-        | jq -r '.number // empty') || _INTTEST_BUILD_NUMBER=""
+        | jq -r '.number // empty')
+    if [[ -z "$_INTTEST_BUILD_NUMBER" ]]; then
+        echo "Failed to capture build number for $INTEGRATION_JOB" >&2
+        return 1
+    fi
 
     # Capture the full status --all output
-    _INTTEST_STATUS_OUTPUT=$("$BUILDGIT" --job "$INTEGRATION_JOB" status --all 2>/dev/null) || true
+    _INTTEST_STATUS_OUTPUT=$("$BUILDGIT" --job "$INTEGRATION_JOB" status --all 2>/dev/null)
+    if [[ -z "$_INTTEST_STATUS_OUTPUT" ]]; then
+        echo "Failed to capture status output for $INTEGRATION_JOB #$_INTTEST_BUILD_NUMBER" >&2
+        return 1
+    fi
 }
 
 @test "parallel-substages: build completes successfully" {
@@ -355,12 +372,12 @@ _ensure_build_complete() {
 
 ### 6. Always-on execution
 
-Integration tests run as part of every normal build on every branch. There is no opt-in flag. The tests depend on:
+Integration tests run as part of every normal build on every branch. There is no opt-in flag. The tests **must always execute and must never be silently skipped**. They require:
 
-- Valid Jenkins credentials (`JENKINS_URL`, `JENKINS_USER_ID`, `JENKINS_API_TOKEN`) — available in the Jenkins build environment. When running locally without credentials, tests are skipped.
-- The `buildgit-integration-test` multibranch pipeline job being configured in Jenkins.
+- Valid Jenkins credentials (`JENKINS_URL`, `JENKINS_USER_ID`, `JENKINS_API_TOKEN`)
+- The `buildgit-integration-test` multibranch pipeline job configured in Jenkins
 
-When credentials are not available (e.g., local development without Jenkins access), all integration tests skip with a descriptive message. This means they effectively run in CI but not on developer machines without Jenkins access.
+If any prerequisite is missing (credentials not set, Jenkins job not found, branch not indexed), the tests **fail** with a clear error message explaining what is missing. A skipped or silently passing integration test provides false confidence and defeats the purpose of end-to-end verification. The environment must be correctly configured for the tests to run — if it isn't, that is a broken environment that must be surfaced as a failure.
 
 ### 7. Jenkinsfile stage for integration tests
 
@@ -402,10 +419,10 @@ When a new branch is pushed for the first time:
 2. The Integration Tests stage triggers `buildgit-integration-test/<branch>`
 3. If `buildgit-integration-test` hasn't scanned this branch yet, Jenkins will return a 404 or queue the build pending scan
 
-To handle this gracefully:
+To handle this:
 - The `build job:` step in the bats test should retry or wait if the branch hasn't been indexed yet
 - The `buildgit build` command handles queue wait already via `--once=180` (3 minute timeout)
-- If the integration test job doesn't exist for this branch (scan hasn't happened), the test should fail gracefully with a clear message rather than crash the entire build
+- If the integration test job doesn't exist for this branch after the timeout (scan hasn't happened), the test **fails** with a clear error message identifying the missing job/branch
 
 ### 9. Adding future test scenarios
 
@@ -436,7 +453,7 @@ Each integration test run triggers a **new** build of the test pipeline. To prev
 
 ### Verification of the framework itself
 
-1. **Skip without credentials**: Run locally without Jenkins credentials. Verify all tests are skipped with descriptive message.
+1. **Fail without credentials**: Run without Jenkins credentials. Verify all tests fail with clear error messages identifying the missing variables.
 2. **Branch resolution**: Verify `_get_integration_job()` correctly constructs the job path from `BRANCH_NAME` (Jenkins env) or `git rev-parse` (local fallback).
 3. **Trigger and capture**: In Jenkins, verify the test successfully triggers `buildgit-integration-test/<branch>`, waits for completion, and captures output.
 4. **Pattern matching**: Verify the stage output assertions correctly identify parallel markers, agent names, nesting notation, and ordering.
