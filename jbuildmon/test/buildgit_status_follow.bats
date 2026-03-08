@@ -78,6 +78,9 @@ create_follow_test_wrapper() {
 cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << 'WRAPPER_END'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
+# Ignore SIGPIPE: internal jq|head-1 patterns cause SIGPIPE under bats --jobs
+trap '' PIPE
 
 # Source buildgit without executing main
 _BUILDGIT_TESTING=1
@@ -180,6 +183,7 @@ create_follow_line_progress_wrapper() {
     cat > "${TEST_TEMP_DIR}/follow_line_progress.sh" << 'WRAPPER_END'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
@@ -475,6 +479,7 @@ create_follow_n_prior_wrapper() {
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << 'WRAPPER_END'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
@@ -567,6 +572,7 @@ create_new_build_detection_wrapper() {
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << 'WRAPPER'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 export PROJECT_DIR="__PROJECT_DIR__"
 export TEST_TEMP_DIR="__TEST_TEMP_DIR__"
@@ -719,6 +725,7 @@ WRAPPER
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << 'WRAPPER_END'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
@@ -813,6 +820,7 @@ WRAPPER_END
     cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << 'WRAPPER'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
@@ -1296,6 +1304,7 @@ WRAPPER
     cat > "${TEST_TEMP_DIR}/follow_footer_probe.sh" << 'WRAPPER_END'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
@@ -1367,6 +1376,7 @@ WRAPPER_END
     cat > "${TEST_TEMP_DIR}/follow_settle_stage_probe.sh" << 'WRAPPER_END'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
@@ -1468,6 +1478,7 @@ WRAPPER_END
     cat > "${TEST_TEMP_DIR}/follow_completion_stage_wrapper.sh" << 'WRAPPER_END'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
@@ -1576,6 +1587,7 @@ WRAPPER_END
     cat > "${TEST_TEMP_DIR}/follow_force_flush_probe.sh" << 'WRAPPER_END'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
@@ -1669,6 +1681,7 @@ WRAPPER_END
     cat > "${TEST_TEMP_DIR}/follow_settle_counter_probe.sh" << 'WRAPPER_END'
 #!/usr/bin/env bash
 set -euo pipefail
+trap '' PIPE
 
 _BUILDGIT_TESTING=1
 source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
