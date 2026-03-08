@@ -2,31 +2,53 @@
 
 load ../test_helper
 
+_remove_test_mock_bin_from_path() {
+    local entry
+    local filtered=()
+
+    IFS=':' read -r -a _path_entries <<< "${PATH}"
+    for entry in "${_path_entries[@]}"; do
+        if [[ "$entry" == "${TEST_DIR}/bin" ]]; then
+            continue
+        fi
+        filtered+=("$entry")
+    done
+
+    PATH=$(IFS=:; echo "${filtered[*]}")
+    export PATH
+}
+
 setup() {
     PROJECT_DIR="$(cd "${BATS_TEST_DIRNAME}/../.." && pwd)"
     BUILDGIT="${PROJECT_DIR}/buildgit"
+    _remove_test_mock_bin_from_path
+
+    if [[ -z "${JENKINS_URL:-}" ]]; then
+        echo "JENKINS_URL is not set" >&2
+        return 1
+    fi
+    if [[ -z "${JENKINS_USER_ID:-}" ]]; then
+        echo "JENKINS_USER_ID is not set" >&2
+        return 1
+    fi
+    if [[ -z "${JENKINS_API_TOKEN:-}" ]]; then
+        echo "JENKINS_API_TOKEN is not set" >&2
+        return 1
+    fi
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "jq is required for integration tests" >&2
+        return 1
+    fi
+    if ! command -v curl >/dev/null 2>&1; then
+        echo "curl is required for integration tests" >&2
+        return 1
+    fi
+    if [[ ! -x "${BUILDGIT}" ]]; then
+        echo "buildgit script not found at ${BUILDGIT}" >&2
+        return 1
+    fi
+
     INTEGRATION_JOB="$(_get_integration_job)"
-}
-
-_require_integration_env() {
-    local jenkins_http_code
-
-    if [[ -z "${JENKINS_URL:-}" || -z "${JENKINS_USER_ID:-}" || -z "${JENKINS_API_TOKEN:-}" ]]; then
-        skip "Jenkins credentials not configured"
-    fi
-
-    command -v jq >/dev/null 2>&1 || skip "jq is required for Jenkins integration tests"
-    command -v curl >/dev/null 2>&1 || skip "curl is required for Jenkins integration tests"
-    [[ -x "${BUILDGIT}" ]] || skip "buildgit script not found at ${BUILDGIT}"
-
-    if ! jenkins_http_code=$(curl -s -o /dev/null -w '%{http_code}' \
-        -u "${JENKINS_USER_ID}:${JENKINS_API_TOKEN}" \
-        "${JENKINS_URL}/api/json" 2>/dev/null); then
-        jenkins_http_code="000"
-    fi
-    if [[ "$jenkins_http_code" != "200" ]]; then
-        skip "Jenkins is not reachable for integration tests (HTTP ${jenkins_http_code})"
-    fi
 }
 
 _get_integration_job() {
@@ -46,6 +68,43 @@ _cache_dir() {
 _cache_file() {
     local name="$1"
     echo "$(_cache_dir)/${name}"
+}
+
+_jenkins_job_api_url() {
+    local job_name="$1"
+    local top_job="${job_name%%/*}"
+    local branch_job="${job_name#*/}"
+    local encoded_branch
+
+    encoded_branch=$(printf '%s' "$branch_job" | jq -sRr @uri)
+    echo "${JENKINS_URL}/job/${top_job}/job/${encoded_branch}/api/json"
+}
+
+_wait_for_integration_job_indexed() {
+    local job_name="$1"
+    local timeout_seconds="${2:-180}"
+    local job_api_url
+    local deadline=$((SECONDS + timeout_seconds))
+    local http_code
+
+    job_api_url=$(_jenkins_job_api_url "$job_name")
+
+    while (( SECONDS < deadline )); do
+        if http_code=$(curl -s -o /dev/null -w '%{http_code}' \
+            -u "${JENKINS_USER_ID}:${JENKINS_API_TOKEN}" \
+            "$job_api_url" 2>/dev/null); then
+            if [[ "$http_code" == "200" ]]; then
+                return 0
+            fi
+        else
+            http_code="000"
+        fi
+
+        sleep 5
+    done
+
+    echo "Integration job branch was not indexed within ${timeout_seconds}s: ${job_name} (${job_api_url})" >&2
+    return 1
 }
 
 _wait_for_queue_build_number() {
@@ -188,14 +247,28 @@ _duration_to_seconds() {
 }
 
 _ensure_build_complete() {
-    _require_integration_env
-
     local cache_dir
+    local failure_file
     cache_dir="$(_cache_dir)"
+    failure_file="$(_cache_file failure.txt)"
     mkdir -p "$cache_dir"
 
     if [[ -f "$(_cache_file ready)" ]]; then
         return 0
+    fi
+    if [[ -f "$failure_file" ]]; then
+        cat "$failure_file" >&2
+        return 1
+    fi
+
+    _record_failure() {
+        printf '%s\n' "$1" > "$failure_file"
+        echo "$1" >&2
+        return 1
+    }
+
+    if ! _wait_for_integration_job_indexed "$INTEGRATION_JOB" 180; then
+        _record_failure "Integration job branch was not indexed within 180s: ${INTEGRATION_JOB}"
     fi
 
     local trigger_output trigger_rc queue_url build_number
@@ -207,17 +280,19 @@ _ensure_build_complete() {
 
     if [[ $trigger_rc -ne 0 ]]; then
         echo "$trigger_output" >&2
-        fail "Failed to trigger integration pipeline job ${INTEGRATION_JOB}"
+        _record_failure "Failed to trigger integration pipeline job ${INTEGRATION_JOB}"
     fi
 
     queue_url=$(printf '%s\n' "$trigger_output" | sed -n 's/^.*Queue item: //p' | tail -1)
     if [[ -z "$queue_url" ]]; then
         echo "$trigger_output" >&2
-        fail "buildgit did not report a Jenkins queue URL for ${INTEGRATION_JOB}"
+        _record_failure "buildgit did not report a Jenkins queue URL for ${INTEGRATION_JOB}"
     fi
     printf '%s\n' "$queue_url" > "$(_cache_file queue_url.txt)"
 
-    build_number=$(_wait_for_queue_build_number "$queue_url" 180) || fail "Could not resolve Jenkins build number for ${INTEGRATION_JOB}"
+    if ! build_number=$(_wait_for_queue_build_number "$queue_url" 180); then
+        _record_failure "Could not resolve Jenkins build number for ${INTEGRATION_JOB}"
+    fi
     printf '%s\n' "$build_number" > "$(_cache_file build_number.txt)"
 
     local monitor_output monitor_rc
@@ -227,8 +302,14 @@ _ensure_build_complete() {
     set -e
     printf '%s\n' "$monitor_output" > "$(_cache_file monitor_output.txt)"
     printf '%s\n' "$monitor_rc" > "$(_cache_file monitor_exit_code.txt)"
+    if [[ $monitor_rc -ne 0 ]]; then
+        echo "$monitor_output" >&2
+        _record_failure "Monitoring failed for ${INTEGRATION_JOB} #${build_number}"
+    fi
 
-    _wait_for_specific_build_completion "$INTEGRATION_JOB" "$build_number" 180 || fail "Integration pipeline build #${build_number} did not complete in time"
+    if ! _wait_for_specific_build_completion "$INTEGRATION_JOB" "$build_number" 180; then
+        _record_failure "Integration pipeline build #${build_number} did not complete in time"
+    fi
 
     local json_output json_rc snapshot_output snapshot_rc
     set +e
@@ -237,6 +318,10 @@ _ensure_build_complete() {
     set -e
     printf '%s\n' "$json_output" > "$(_cache_file status.json)"
     printf '%s\n' "$json_rc" > "$(_cache_file status_json_exit_code.txt)"
+    if [[ $json_rc -ne 0 || -z "$json_output" ]]; then
+        echo "$json_output" >&2
+        _record_failure "Failed to capture JSON status for ${INTEGRATION_JOB} #${build_number}"
+    fi
 
     set +e
     snapshot_output=$("${BUILDGIT}" --job "$INTEGRATION_JOB" status "$build_number" --all 2>&1)
@@ -244,6 +329,10 @@ _ensure_build_complete() {
     set -e
     printf '%s\n' "$snapshot_output" > "$(_cache_file status_all.txt)"
     printf '%s\n' "$snapshot_rc" > "$(_cache_file status_all_exit_code.txt)"
+    if [[ $snapshot_rc -ne 0 || -z "$snapshot_output" ]]; then
+        echo "$snapshot_output" >&2
+        _record_failure "Failed to capture full status output for ${INTEGRATION_JOB} #${build_number}"
+    fi
 
     touch "$(_cache_file ready)"
 }
