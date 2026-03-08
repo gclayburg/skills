@@ -32,8 +32,7 @@ pipeline {
                         sh 'git submodule update --init --recursive --depth 1'
                         dir('jbuildmon') {
                             sh '''
-                                PARALLEL_OPTS=""
-                                command -v parallel >/dev/null 2>&1 && PARALLEL_OPTS="--jobs 2"
+                                PARALLEL_OPTS="--jobs 2"
                                 ./test/bats/bin/bats --formatter tap --report-formatter junit --output . $PARALLEL_OPTS \
                                     test/buildgit_status.bats \
                                     test/buildgit_build.bats \
@@ -60,8 +59,7 @@ pipeline {
                         sh 'git submodule update --init --recursive --depth 1'
                         dir('jbuildmon') {
                             sh '''
-                                PARALLEL_OPTS=""
-                                command -v parallel >/dev/null 2>&1 && PARALLEL_OPTS="--jobs 2"
+                                PARALLEL_OPTS="--jobs 6"
                                 ./test/bats/bin/bats --formatter tap --report-formatter junit --output . $PARALLEL_OPTS \
                                     test/nested_stages.bats \
                                     test/parallel_stages.bats \
@@ -95,8 +93,7 @@ pipeline {
                         sh 'git submodule update --init --recursive --depth 1'
                         dir('jbuildmon') {
                             sh '''
-                                PARALLEL_OPTS=""
-                                command -v parallel >/dev/null 2>&1 && PARALLEL_OPTS="--jobs 2"
+                                PARALLEL_OPTS="--jobs 6"
                                 ./test/bats/bin/bats --formatter tap --report-formatter junit --output . $PARALLEL_OPTS \
                                     test/display_stages.bats \
                                     test/buildgit_routing.bats \
@@ -142,8 +139,7 @@ pipeline {
                         sh 'git submodule update --init --recursive --depth 1'
                         dir('jbuildmon') {
                             sh '''
-                                PARALLEL_OPTS=""
-                                command -v parallel >/dev/null 2>&1 && PARALLEL_OPTS="--jobs 2"
+                                PARALLEL_OPTS="--jobs 6"
 
                                 # Files explicitly assigned to Groups A, B, C
                                 ASSIGNED_FILES="
