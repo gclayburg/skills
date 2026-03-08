@@ -1,0 +1,83 @@
+pipeline {
+    agent {
+        docker {
+            image 'registry:5000/shell-jenkins-agent:latest'
+            alwaysPull true
+            label 'fastnode'
+        }
+    }
+    options {
+        timestamps()
+        ansiColor('xterm')
+        timeout(time: 5, unit: 'MINUTES')
+    }
+    stages {
+        stage('Setup') {
+            steps {
+                echo 'Integration test pipeline: parallel-substages'
+                sleep 2
+            }
+        }
+        stage('Parallel Work') {
+            parallel {
+                stage('Quick Task') {
+                    steps {
+                        echo 'Simple parallel branch, no sub-stages'
+                        sleep 3
+                    }
+                }
+                stage('Slow Pipeline') {
+                    agent {
+                        docker {
+                            image 'registry:5000/shell-jenkins-agent:latest'
+                            alwaysPull true
+                            label 'slownode'
+                        }
+                    }
+                    stages {
+                        stage('Compile') {
+                            steps {
+                                echo 'Compiling on slownode...'
+                                sleep 4
+                            }
+                        }
+                        stage('Package') {
+                            steps {
+                                echo 'Packaging on slownode...'
+                                sleep 3
+                            }
+                        }
+                    }
+                }
+                stage('Default Pipeline') {
+                    stages {
+                        stage('Lint') {
+                            steps {
+                                echo 'Linting on default agent...'
+                                sleep 2
+                            }
+                        }
+                        stage('Analyze') {
+                            steps {
+                                echo 'Analyzing on default agent...'
+                                sleep 3
+                            }
+                        }
+                        stage('Report') {
+                            steps {
+                                echo 'Reporting on default agent...'
+                                sleep 2
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        stage('Finalize') {
+            steps {
+                echo 'All parallel work complete'
+                sleep 1
+            }
+        }
+    }
+}

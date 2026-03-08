@@ -65,3 +65,4 @@ These files represent completed specifications in the specs/ directory.  This li
 - 2026-03-05_threads-display-tty-spec.md  add `--threads` TTY monitoring rows for live active-stage progress, per-stage duration estimates, terminal-size truncation, and redraw integration above the overall progress bar
 - 2026-03-06_bug-agent-name-missed-spec.md  fix `--threads` synthetic parallel wrapper rows to use the orchestrator pipeline agent instead of blank or downstream agent names
 - 2026-03-07_parallel-branch-substages-spec.md  nest branch-local sequential substages under their parallel branch, inherit branch agent/path, and aggregate branch/wrapper durations consistently across snapshot, follow, threads, and JSON output
+- 2026-03-07_integration-test-framework-spec.md  add always-on Jenkins integration tests that trigger branch-matched multibranch pipelines and verify buildgit snapshot/follow output against a real parallel-substages pipeline

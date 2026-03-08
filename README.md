@@ -189,6 +189,12 @@ See[jbuildmon/skill/buildgit/references/buildgit-setup.md](jbuildmon/skill/build
 See [jbuildmon/skill/buildgit/references/reference.md](jbuildmon/skill/buildgit/references/reference.md)
 for full examples: push with failure, parallel pipeline stages, progress bars, and live follow mode.
 
+## Testing
+
+- `jbuildmon/test/` contains the bats test suite for `buildgit`.
+- `jbuildmon/test/integration/integration_tests.bats` triggers the multibranch Jenkins job `buildgit-integration-test/<branch>` and verifies `buildgit` snapshot/follow output against a real pipeline defined in `jbuildmon/test/integration/Jenkinsfile-parallel-substages`.
+- The integration tests are always part of the main Jenkins pipeline and skip automatically on machines without `JENKINS_URL`, `JENKINS_USER_ID`, and `JENKINS_API_TOKEN`.
+
 # Usage
 
 ```bash

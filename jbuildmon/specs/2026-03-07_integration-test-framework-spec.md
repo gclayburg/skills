@@ -3,7 +3,7 @@
 - **Date:** `2026-03-07T10:00:00-0700`
 - **References:** `specs/2026-03-07_parallel-branch-substages-spec.md`
 - **Supersedes:** none
-- **State:** `DRAFT`
+- **State:** `IMPLEMENTED`
 
 ## Background
 

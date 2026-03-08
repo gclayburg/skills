@@ -210,6 +210,30 @@ pipeline {
             }
         }
 
+        stage('Integration Tests') {
+            agent {
+                docker {
+                    image 'registry:5000/shell-jenkins-agent:latest'
+                    alwaysPull true
+                    label 'fastnode'
+                }
+            }
+            steps {
+                sh 'git submodule update --init --recursive --depth 1'
+                dir('jbuildmon') {
+                    sh '''
+                        ./test/bats/bin/bats --formatter tap --report-formatter junit --output . \
+                            test/integration/integration_tests.bats || true
+                    '''
+                }
+            }
+            post {
+                always {
+                    junit skipPublishingChecks: true, testResults: 'jbuildmon/report.xml'
+                }
+            }
+        }
+
         stage('Deploy') {
             agent {
                 docker {
