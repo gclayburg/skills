@@ -377,6 +377,9 @@ _detect_branch_substages() {
         return 0
     fi
 
+    local all_branch_names
+    all_branch_names=$(echo "$branches_json" | jq -r 'join("\u001c")')
+
     local result="{}"
     local branch_name
     while IFS= read -r branch_name; do
@@ -434,6 +437,24 @@ _detect_branch_substages() {
         ')
         if [[ -n "$nested_branch_names" ]]; then
             substages=$(printf "%s\n" "$substages" | awk -v exclude="$nested_branch_names" '
+                BEGIN {
+                    split(exclude, excluded, "\034")
+                    for (i in excluded) {
+                        if (excluded[i] != "") {
+                            skip[excluded[i]] = 1
+                        }
+                    }
+                }
+
+                {
+                    if (!($0 in skip)) {
+                        print
+                    }
+                }
+            ')
+        fi
+        if [[ -n "$all_branch_names" ]]; then
+            substages=$(printf "%s\n" "$substages" | awk -v exclude="$all_branch_names" '
                 BEGIN {
                     split(exclude, excluded, "\034")
                     for (i in excluded) {

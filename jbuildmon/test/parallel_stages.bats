@@ -273,6 +273,28 @@ three
     [[ "$(echo "$output" | jq -c '.')" == '{"Unit Tests A":[],"Unit Tests B":["package"]}' ]]
 }
 
+@test "detect_branch_substages_ignores_sibling_branch_stage_log_bleed" {
+    local console_output='[Pipeline] { (Unit Tests)
+[Pipeline] parallel
+[Pipeline] { (Branch: Unit Tests A)
+[Pipeline] { (Branch: Unit Tests B)
+[Pipeline] { (Branch: Unit Tests C)
+[Pipeline] { (Branch: Unit Tests D)
+[Pipeline] stage
+[Pipeline] { (Unit Tests A)
+[Pipeline] stage
+[Pipeline] { (Unit Tests B)
+[Pipeline] stage
+[Pipeline] { (Unit Tests C)
+[Pipeline] stage
+[Pipeline] { (Unit Tests D)
+[Pipeline] }'
+
+    run _detect_branch_substages "$console_output" "Unit Tests"
+    assert_success
+    [[ "$(echo "$output" | jq -c '.')" == '{"Unit Tests A":[],"Unit Tests B":[],"Unit Tests C":[],"Unit Tests D":[]}' ]]
+}
+
 # =============================================================================
 # extract_stage_logs with Branch: prefix tests
 # =============================================================================
