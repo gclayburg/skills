@@ -1,9 +1,9 @@
 ## Display sub-stages within parallel branches with correct nesting, agents, and durations
 
 - **Date:** `2026-03-07T09:15:00-0700`
-- **References:** `specs/todo/display-completed-stages.md`, `jbuildmon/testcasedata/Jenkinsfile-panorama-integration-tests`
+- **References:** `specs/done-reports/display-completed-stages.md`, `jbuildmon/testcasedata/Jenkinsfile-panorama-integration-tests`
 - **Supersedes:** none (amends `bug-parallel-stages-display-spec.md`, `feature2026-02-14-numbered-parallel-stage-display-spec.md`)
-- **State:** `DRAFT`
+- **State:** `IMPLEMENTED`
 
 ## Background
 

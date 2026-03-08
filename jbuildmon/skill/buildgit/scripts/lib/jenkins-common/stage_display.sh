@@ -501,21 +501,27 @@ _build_parallel_tracking_state() {
         fi
         local branch_index=0
         while [[ $branch_index -lt $observed_count ]]; do
-            local branch_name branch_status branch_duration branch_fingerprint prev_branch_fingerprint branch_stable_polls branch_ready
+            local branch_name branch_status branch_duration branch_fingerprint prev_branch_fingerprint prev_branch_status branch_stable_polls branch_ready
             branch_name=$(echo "$branch_entries" | jq -r ".[$branch_index].name")
             branch_status=$(echo "$branch_entries" | jq -r ".[$branch_index].status")
             branch_duration=$(echo "$branch_entries" | jq -r ".[$branch_index].durationMillis")
             branch_fingerprint=$(echo "$branch_entries" | jq -c ".[$branch_index] | {status, durationMillis}" 2>/dev/null)
             prev_branch_fingerprint=$(echo "$previous_parallel_state" | jq -c --arg w "$wrapper_name" --arg b "$branch_name" '.[$w].branch_state[$b].fingerprint // {}' 2>/dev/null)
+            prev_branch_status=$(echo "$previous_parallel_state" | jq -r --arg w "$wrapper_name" --arg b "$branch_name" '.[$w].branch_state[$b].fingerprint.status // empty' 2>/dev/null)
             if [[ -n "$branch_fingerprint" && "$branch_fingerprint" == "$prev_branch_fingerprint" ]]; then
                 branch_stable_polls=$(echo "$previous_parallel_state" | jq -r --arg w "$wrapper_name" --arg b "$branch_name" '(.[$w].branch_state[$b].stable_polls // 0) + 1' 2>/dev/null)
             else
                 branch_stable_polls=1
             fi
             branch_ready="false"
+            local terminal_transition=false
+            if [[ -n "$prev_branch_status" ]] && ! _stage_status_is_terminal "$prev_branch_status" && _stage_status_is_terminal "$branch_status"; then
+                terminal_transition=true
+            fi
             if _stage_status_is_terminal "$branch_status" \
-                && [[ -n "$branch_duration" && "$branch_duration" != "null" && "$branch_duration" =~ ^[0-9]+$ && "$branch_stable_polls" -ge 2 ]] \
-                && [[ "$branch_duration" -ge 1000 || "$current_building" == "false" ]]; then
+                && [[ -n "$branch_duration" && "$branch_duration" != "null" && "$branch_duration" =~ ^[0-9]+$ ]] \
+                && [[ "$branch_duration" -ge 1000 || "$current_building" == "false" ]] \
+                && ([[ "$terminal_transition" == "true" && "$wrapper_terminal" != "true" ]] || [[ "$branch_stable_polls" -ge 2 ]]); then
                 branch_ready="true"
             fi
             if ! _stage_status_is_terminal "$branch_status"; then

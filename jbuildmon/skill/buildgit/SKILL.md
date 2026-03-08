@@ -102,6 +102,7 @@ For failures, summarize the failed stage name, error logs, and test failure deta
 
 For snapshot mode defaults, `scripts/buildgit status` prints one-line output by default on both TTY and non-TTY stdout (TTY adds color).
 - Monitoring commands (`push`, `build`, `status -f`) print prior-jobs + estimated build time before monitoring starts
+- Parallel branches with local `stages {}` blocks print as `Branch->Substage` rows under the branch, reuse the branch `║` marker and agent, and expose `parallel_path` plus `parent_branch_stage` in `--json`.
 
 Build reference rules:
 - `0` and `-0` mean latest/current build

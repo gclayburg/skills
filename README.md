@@ -56,6 +56,7 @@ IN_PROGRESS Job upbanner #158 [=>                  ] 10% 19s / ~3m 5s
 You'll see the basics about the build, along with build pipeline stages as they are finished.
 The IN_PROGRESS indicator shows as long as the build is running.
 When Jenkins queues additional builds for the same job, monitoring also shows `QUEUED` rows so you can see backlog pressure while the primary build is still running.
+When a parallel branch contains local sequential substages, buildgit keeps them nested under the branch as `Branch->Substage`, reuses the branch's `║` marker/agent, and includes those substages in the parent branch duration instead of printing them again as top-level stages.
 
 At the completion you'll see the final message:
 

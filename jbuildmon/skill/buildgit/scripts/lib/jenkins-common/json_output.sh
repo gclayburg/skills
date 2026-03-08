@@ -126,6 +126,12 @@ output_json() {
                 parallel_branch: .parallel_branch
             } + (if .parallel_wrapper then {
                 parallel_wrapper: .parallel_wrapper
+            } else {} end)
+              + (if .parallel_path then {
+                parallel_path: .parallel_path
+            } else {} end)
+              + (if .parent_branch_stage then {
+                parent_branch_stage: .parent_branch_stage
             } else {} end) else {} end)]
         ' 2>/dev/null) || stages_for_json="[]"
 
@@ -590,7 +596,10 @@ _get_nested_stages() {
     local parallel_info="{}"
     local _branch_to_wrapper="{}"
     local _branch_to_path="{}"
+    local _branch_to_local_substages="{}"
+    local _substage_to_branch="{}"
     local _wrapper_last_branch_index="{}"
+    local _branch_aggregate_duration="{}"
     if [[ -n "$console_output" ]]; then
         local stage_count_for_parallel
         stage_count_for_parallel=$(echo "$stages_json" | jq 'length')
@@ -601,8 +610,12 @@ _get_nested_stages() {
             local branches
             branches=$(_detect_parallel_branches "$console_output" "$pi_stage_name")
             if [[ -n "$branches" && "$branches" != "[]" ]]; then
+                local branch_substages
+                branch_substages=$(_detect_branch_substages "$console_output" "$pi_stage_name")
                 parallel_info=$(echo "$parallel_info" | jq \
-                    --arg s "$pi_stage_name" --argjson b "$branches" '. + {($s): {"branches": $b}}')
+                    --arg s "$pi_stage_name" \
+                    --argjson b "$branches" \
+                    '. + {($s): {"branches": $b}}')
 
                 local branch_index=1
                 local max_branch_idx=-1
@@ -617,6 +630,19 @@ _get_nested_stages() {
                     fi
                     _branch_to_path=$(echo "$_branch_to_path" | jq \
                         --arg b "$branch_name" --arg p "$branch_path" '. + {($b): $p}')
+                    local branch_local_substages
+                    branch_local_substages=$(echo "${branch_substages:-{}}" | jq --arg b "$branch_name" '.[$b] // []')
+                    _branch_to_local_substages=$(echo "$_branch_to_local_substages" | jq \
+                        --arg b "$branch_name" \
+                        --argjson substages "$branch_local_substages" \
+                        '. + {($b): $substages}')
+                    while IFS= read -r substage_name; do
+                        [[ -z "$substage_name" ]] && continue
+                        _substage_to_branch=$(echo "$_substage_to_branch" | jq \
+                            --arg s "$substage_name" \
+                            --arg b "$branch_name" \
+                            '. + {($s): $b}')
+                    done <<< "$(echo "$branch_local_substages" | jq -r '.[]')"
 
                     local branch_pos
                     branch_pos=$(echo "$stages_json" | jq -r --arg n "$branch_name" 'to_entries[] | select(.value.name == $n) | .key' | head -1)
@@ -633,6 +659,34 @@ _get_nested_stages() {
             pi=$((pi + 1))
         done
     fi
+
+    local branch_name
+    while IFS= read -r branch_name; do
+        [[ -z "$branch_name" ]] && continue
+        local branch_duration aggregate_duration
+        branch_duration=$(echo "$stages_json" | jq -r --arg n "$branch_name" '[.[] | select(.name == $n)][0].durationMillis // 0')
+        aggregate_duration="$branch_duration"
+        if ! [[ "$aggregate_duration" =~ ^[0-9]+$ ]]; then
+            aggregate_duration=0
+        fi
+
+        local branch_local_substages
+        branch_local_substages=$(echo "$_branch_to_local_substages" | jq -r --arg b "$branch_name" '.[$b] // [] | .[]')
+        local substage_name
+        while IFS= read -r substage_name; do
+            [[ -z "$substage_name" ]] && continue
+            local substage_duration
+            substage_duration=$(echo "$stages_json" | jq -r --arg n "$substage_name" '[.[] | select(.name == $n)][0].durationMillis // 0')
+            if [[ "$substage_duration" =~ ^[0-9]+$ ]]; then
+                aggregate_duration=$((aggregate_duration + substage_duration))
+            fi
+        done <<< "$branch_local_substages"
+
+        _branch_aggregate_duration=$(echo "$_branch_aggregate_duration" | jq \
+            --arg b "$branch_name" \
+            --argjson d "$aggregate_duration" \
+            '. + {($b): $d}')
+    done <<< "$(echo "$_branch_to_wrapper" | jq -r 'keys[]?')"
 
     local stage_downstream_map="{}"
     if [[ -n "$console_output" ]]; then
@@ -657,6 +711,14 @@ _get_nested_stages() {
         stage_name=$(echo "$stages_json" | jq -r ".[$i].name")
         status=$(echo "$stages_json" | jq -r ".[$i].status")
         duration_ms=$(echo "$stages_json" | jq -r ".[$i].durationMillis")
+
+        local local_parent_branch
+        local_parent_branch=$(echo "$_substage_to_branch" | jq -r --arg s "$stage_name" '.[$s] // empty')
+        if [[ -n "$local_parent_branch" && "$local_parent_branch" != "null" ]]; then
+            i=$((i + 1))
+            continue
+        fi
+
         local stage_agent=""
         if [[ "$stage_agent_map" != "{}" ]]; then
             stage_agent=$(echo "$stage_agent_map" | jq -r --arg s "$stage_name" '.[$s] // empty')
@@ -682,7 +744,7 @@ _get_nested_stages() {
             while IFS= read -r branch_name; do
                 [[ -z "$branch_name" ]] && continue
                 local bd
-                bd=$(echo "$stages_json" | jq -r --arg n "$branch_name" '.[] | select(.name == $n) | .durationMillis // 0')
+                bd=$(echo "$_branch_aggregate_duration" | jq -r --arg n "$branch_name" '.[$n] // 0')
                 if [[ "$bd" =~ ^[0-9]+$ && "$bd" -gt "$max_branch_dur" ]]; then
                     max_branch_dur="$bd"
                 fi
@@ -698,6 +760,7 @@ _get_nested_stages() {
             parallel_branch="$stage_name"
             parallel_wrapper="$bw_check"
             stage_parallel_path=$(echo "$_branch_to_path" | jq -r --arg b "$stage_name" '.[$b] // empty')
+            duration_ms=$(echo "$_branch_aggregate_duration" | jq -r --arg b "$stage_name" '.[$b] // empty')
         fi
 
         local ds_info
@@ -710,6 +773,84 @@ _get_nested_stages() {
             display_name="${stage_name}"
         fi
 
+        local branch_local_substages_json="[]"
+        if [[ -n "$parallel_branch" ]]; then
+            branch_local_substages_json=$(echo "$_branch_to_local_substages" | jq --arg b "$stage_name" '.[$b] // []')
+        fi
+
+        if [[ "$branch_local_substages_json" != "[]" ]]; then
+            local local_substage_name
+            while IFS= read -r local_substage_name; do
+                [[ -z "$local_substage_name" ]] && continue
+
+                local local_substage_json local_substage_status local_substage_duration
+                local_substage_json=$(echo "$stages_json" | jq -c --arg n "$local_substage_name" '[.[] | select(.name == $n)][0]')
+                [[ -z "$local_substage_json" || "$local_substage_json" == "null" ]] && continue
+                local_substage_status=$(echo "$local_substage_json" | jq -r '.status')
+                local_substage_duration=$(echo "$local_substage_json" | jq -r '.durationMillis')
+
+                local local_substage_agent=""
+                if [[ "$stage_agent_map" != "{}" ]]; then
+                    local_substage_agent=$(echo "$stage_agent_map" | jq -r --arg s "$local_substage_name" '.[$s] // empty')
+                fi
+                if [[ -z "$local_substage_agent" ]]; then
+                    local_substage_agent="$stage_agent"
+                fi
+                if [[ -z "$local_substage_agent" && -n "$pipeline_scope_agent" ]]; then
+                    local_substage_agent="$pipeline_scope_agent"
+                fi
+
+                local local_substage_display_name="${display_name}->${local_substage_name}"
+                local local_substage_ds_info
+                local_substage_ds_info=$(echo "$stage_downstream_map" | jq -r --arg s "$local_substage_name" '.[$s] // empty')
+                if [[ -n "$local_substage_ds_info" && "$local_substage_ds_info" != "null" ]]; then
+                    local ds_job ds_build nested_stages
+                    ds_job=$(echo "$local_substage_ds_info" | jq -r '.job')
+                    ds_build=$(echo "$local_substage_ds_info" | jq -r '.build')
+                    nested_stages=$(_get_nested_stages "$ds_job" "$ds_build" "$local_substage_display_name" "$((nesting_depth + 1))" "$local_substage_name" "$stage_parallel_path" 2>/dev/null) || nested_stages="[]"
+
+                    nested_stages=$(echo "$nested_stages" | jq \
+                        --arg pb "$parallel_branch" \
+                        --arg pw "$parallel_wrapper" \
+                        --arg pp "$stage_parallel_path" \
+                        '[.[] |
+                            . + (if $pb != "" and ((.parallel_branch // "") == "") then {parallel_branch: $pb} else {} end)
+                              + (if $pw != "" and ((.parallel_wrapper // "") == "") then {parallel_wrapper: $pw} else {} end)
+                              + (if $pp != "" and ((.parallel_path // "") == "") then {parallel_path: $pp} else {} end)
+                        ]')
+
+                    if [[ "$nested_stages" != "[]" ]]; then
+                        result=$(echo "$result" "$nested_stages" | jq -s '.[0] + .[1]')
+                    fi
+                fi
+
+                local local_substage_entry
+                local_substage_entry=$(jq -n \
+                    --arg name "$local_substage_display_name" \
+                    --arg status "$local_substage_status" \
+                    --argjson duration_ms "$local_substage_duration" \
+                    --arg agent "$local_substage_agent" \
+                    --argjson nesting_depth "$nesting_depth" \
+                    --arg parallel_branch "$parallel_branch" \
+                    --arg parallel_wrapper "$parallel_wrapper" \
+                    --arg parallel_path "${stage_parallel_path:-}" \
+                    --arg parent_branch_stage "$stage_name" \
+                    --argjson has_downstream "$(if [[ "$local_substage_ds_info" != "" && "$local_substage_ds_info" != "null" ]]; then echo true; else echo false; fi)" \
+                    '{
+                        name: $name,
+                        status: $status,
+                        durationMillis: $duration_ms,
+                        agent: $agent,
+                        nesting_depth: $nesting_depth,
+                        has_downstream: $has_downstream,
+                        parent_branch_stage: $parent_branch_stage
+                    }
+                    + (if $parallel_branch != "" then {parallel_branch: $parallel_branch, parallel_wrapper: $parallel_wrapper} else {} end)
+                    + (if $parallel_path != "" then {parallel_path: $parallel_path} else {} end)')
+                result=$(echo "$result" | jq --argjson entry "$local_substage_entry" '. + [$entry]')
+            done <<< "$(echo "$branch_local_substages_json" | jq -r '.[]')"
+        fi
+
         local nested_stages="[]"
         if [[ -n "$ds_info" && "$ds_info" != "null" ]]; then
             local ds_job ds_build
@@ -718,9 +859,13 @@ _get_nested_stages() {
             nested_stages=$(_get_nested_stages "$ds_job" "$ds_build" "$display_name" "$((nesting_depth + 1))" "$stage_name" "$stage_parallel_path" 2>/dev/null) || nested_stages="[]"
 
             if [[ -n "$parallel_branch" ]]; then
-                nested_stages=$(echo "$nested_stages" | jq --arg pb "$parallel_branch" --arg pp "$stage_parallel_path" \
+                nested_stages=$(echo "$nested_stages" | jq \
+                    --arg pb "$parallel_branch" \
+                    --arg pw "$parallel_wrapper" \
+                    --arg pp "$stage_parallel_path" \
                     '[.[] |
                         . + (if ((.parallel_branch // "") == "") then {parallel_branch: $pb} else {} end)
+                          + (if $pw != "" and ((.parallel_wrapper // "") == "") then {parallel_wrapper: $pw} else {} end)
                           + (if $pp != "" and ((.parallel_path // "") == "") then {parallel_path: $pp} else {} end)
                     ]')
             fi
@@ -786,7 +931,13 @@ _get_nested_stages() {
         fi
 
         if [[ "$is_parallel_wrapper" == "true" ]]; then
-            deferred_wrappers=$(echo "$deferred_wrappers" | jq --arg w "$stage_name" --argjson e "$stage_entry" '. + {($w): $e}')
+            local wrapper_emit_after_idx
+            wrapper_emit_after_idx=$(echo "$_wrapper_last_branch_index" | jq -r --arg w "$stage_name" '.[$w] // empty' 2>/dev/null)
+            if [[ "$wrapper_emit_after_idx" =~ ^[0-9]+$ && "$i" -ge "$wrapper_emit_after_idx" ]]; then
+                result=$(echo "$result" | jq --argjson entry "$stage_entry" '. + [$entry]')
+            else
+                deferred_wrappers=$(echo "$deferred_wrappers" | jq --arg w "$stage_name" --argjson e "$stage_entry" '. + {($w): $e}')
+            fi
         else
             result=$(echo "$result" | jq --argjson entry "$stage_entry" '. + [$entry]')
         fi

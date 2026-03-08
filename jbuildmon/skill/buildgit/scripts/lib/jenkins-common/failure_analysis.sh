@@ -350,6 +350,79 @@ _detect_parallel_branches() {
     echo "$json_array"
 }
 
+# Detect ordered named substages contained within each parallel branch block.
+# Usage: _detect_branch_substages "$console_output" "wrapper-stage-name"
+# Returns: JSON object like {"Branch A":["Setup","Test"],"Branch B":[]}
+_detect_branch_substages() {
+    local console_output="$1"
+    local wrapper_stage="$2"
+
+    local branches_json
+    branches_json=$(_detect_parallel_branches "$console_output" "$wrapper_stage")
+    if [[ -z "$branches_json" || "$branches_json" == "[]" ]]; then
+        echo "{}"
+        return 0
+    fi
+
+    local result="{}"
+    local branch_name
+    while IFS= read -r branch_name; do
+        [[ -z "$branch_name" ]] && continue
+
+        local branch_logs substages
+        branch_logs=$(extract_stage_logs "$console_output" "$branch_name")
+        substages=$(printf "%s\n" "$branch_logs" | awk -v branch="$branch_name" '
+            BEGIN {
+                depth=0
+            }
+
+            /^\[Pipeline\] \{ \(.+\)$/ {
+                stage_name = $0
+                sub(/^\[Pipeline\] \{ \(/, "", stage_name)
+                sub(/\)$/, "", stage_name)
+
+                if (depth > 0 && stage_name != branch && stage_name !~ /^Branch:[[:space:]]+/) {
+                    if (!(stage_name in seen)) {
+                        seen[stage_name] = 1
+                        print stage_name
+                    }
+                }
+
+                depth++
+                next
+            }
+
+            /^\[Pipeline\] \{$/ {
+                depth++
+                next
+            }
+
+            /^\[Pipeline\] \}/ {
+                if (depth > 0) {
+                    depth--
+                }
+                next
+            }
+        ')
+
+        result=$(echo "$result" | jq --arg b "$branch_name" '. + {($b): []}')
+        while IFS= read -r substage_name; do
+            [[ -z "$substage_name" ]] && continue
+            result=$(echo "$result" | jq \
+                --arg b "$branch_name" \
+                --arg s "$substage_name" \
+                '. + {
+                    ($b): (
+                        (.[$b] // [])
+                        + (if ((.[$b] // []) | index($s)) == null then [$s] else [] end)
+                    )
+                }')
+        done <<< "$substages"
+    done <<< "$(echo "$branches_json" | jq -r '.[]')"
+
+    echo "$result"
+}
+
 # Parse build metadata from console output
 # Usage: _parse_build_metadata "$console_output"
 # Sets: _META_STARTED_BY, _META_AGENT, _META_PIPELINE

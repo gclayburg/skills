@@ -171,6 +171,55 @@ not a parallel wrapper here
     echo "$parsed" | grep -q "dsltestharness"
 }
 
+@test "detect_branch_substages_returns_ordered_substages_per_parallel_branch" {
+    local console_output='[Pipeline] Start of Pipeline
+[Pipeline] node
+Running on agent6 guthrie in /workspace
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (parallel tests)
+[Pipeline] parallel
+[Pipeline] { (Branch: policyStart bounce)
+[Pipeline] echo
+policyStart bounce
+[Pipeline] }
+[Pipeline] { (Branch: palmer tests)
+[Pipeline] node
+Running on agent1paton in /workspace
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (batchrun)
+[Pipeline] sh
+batchrun
+[Pipeline] }
+[Pipeline] }
+[Pipeline] }
+[Pipeline] { (Branch: guthrie tests)
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (synconsolemongo42)
+[Pipeline] sh
+one
+[Pipeline] }
+[Pipeline] stage
+[Pipeline] { (bundletest)
+[Pipeline] sh
+two
+[Pipeline] }
+[Pipeline] stage
+[Pipeline] { (TLSauth)
+[Pipeline] sh
+three
+[Pipeline] }
+[Pipeline] }
+[Pipeline] }
+[Pipeline] }'
+
+    run _detect_branch_substages "$console_output" "parallel tests"
+    assert_success
+    [[ "$(echo "$output" | jq -c '.')" == '{"policyStart bounce":[],"palmer tests":["batchrun"],"guthrie tests":["synconsolemongo42","bundletest","TLSauth"]}' ]]
+}
+
 # =============================================================================
 # extract_stage_logs with Branch: prefix tests
 # =============================================================================
