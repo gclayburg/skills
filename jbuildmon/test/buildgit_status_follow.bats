@@ -657,7 +657,7 @@ WRAPPER
     # Build in-progress: follow mode should monitor it and show result when done
     create_follow_test_wrapper "true" "SUCCESS" "2"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 3>&- 2>&1"
     assert_success
 
     # Should show follow mode entered the monitoring path for an in-progress build.
@@ -677,7 +677,7 @@ WRAPPER
     # Build already complete (not building)
     create_follow_test_wrapper "false" "SUCCESS" "1"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once=1 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once=1 3>&- 2>&1"
     assert_failure
 
     assert_output --partial "no new build detected for 1 seconds"
@@ -694,7 +694,7 @@ WRAPPER
     export TEST_TEMP_DIR
     create_new_build_detection_wrapper
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once=20 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once=20 3>&- 2>&1"
     assert_success
     assert_output --partial "#43"
 }
@@ -748,7 +748,7 @@ WRAPPER_END
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
     # Run in once mode to exercise follow path without external process control.
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once=1 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once=1 3>&- 2>&1"
     assert_failure
 
     # Verify follow mode entered once mode path.
@@ -770,7 +770,7 @@ WRAPPER_END
     # Build in-progress: completes after 2 polls
     create_follow_test_wrapper "true" "SUCCESS" "2"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 3>&- 2>&1"
     assert_success
 
     # Should show build information
@@ -788,7 +788,7 @@ WRAPPER_END
     export TEST_TEMP_DIR
     create_follow_test_wrapper "false" "SUCCESS" "1"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once=1 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once=1 3>&- 2>&1"
     assert_failure
 
     # Should enter follow mode (shows waiting message or build status)
@@ -841,7 +841,7 @@ WRAPPER
 
     chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once=1 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once=1 3>&- 2>&1"
     assert_failure
 
     # Should enter follow mode
@@ -865,7 +865,7 @@ WRAPPER
     # Tests that follow mode shows header after monitoring an in-progress build
     create_follow_test_wrapper "true" "SUCCESS" "2"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 3>&- 2>&1"
     assert_success
 
     # Monitoring path shows BUILD IN PROGRESS banner followed by Finished line
@@ -893,7 +893,7 @@ WRAPPER
     # Build in-progress (building=true), result=FAILURE, completes after 2 polls
     create_follow_test_wrapper "true" "FAILURE" "2"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 3>&- 2>&1"
     assert_failure
 
     # Monitoring path shows BUILD IN PROGRESS banner followed by Finished line
@@ -920,7 +920,7 @@ WRAPPER
     export TEST_TEMP_DIR
     create_follow_test_wrapper "true" "SUCCESS" "2"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 3>&- 2>&1"
     assert_success
 
     # Count occurrences of "Finished: SUCCESS" - should appear exactly once
@@ -940,7 +940,7 @@ WRAPPER
     export TEST_TEMP_DIR
     create_follow_test_wrapper "true" "SUCCESS" "2"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 3>&- 2>&1"
     assert_success
 
     # Should show console URL
@@ -959,7 +959,7 @@ WRAPPER
     # Build in-progress: --once monitors it and exits when done (no indefinite wait)
     create_follow_test_wrapper "true" "SUCCESS" "2"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 3>&- 2>&1"
 
     assert_success
     refute_output --partial "Waiting for next build"
@@ -991,7 +991,7 @@ WRAPPER
     export TEST_TEMP_DIR
     create_follow_test_wrapper "true" "FAILURE" "2"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 3>&- 2>&1"
 
     assert_failure
     assert_output --partial "Finished: FAILURE"
@@ -1008,7 +1008,7 @@ WRAPPER
     export TEST_TEMP_DIR
     create_follow_test_wrapper "true" "SUCCESS" "2"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once --json 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once --json 3>&- 2>&1"
 
     assert_success
     assert_output --partial '"status": "SUCCESS"'
@@ -1026,7 +1026,7 @@ WRAPPER
     export TEST_TEMP_DIR
     create_follow_test_wrapper "true" "SUCCESS" "2"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 3>&- 2>&1"
 
     assert_success
     assert_output --partial "Finished: SUCCESS"
@@ -1045,7 +1045,7 @@ WRAPPER
     # so _follow_wait_for_new_build_timeout will never find a new build
     create_follow_test_wrapper "false" "SUCCESS" "0"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once=1 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once=1 3>&- 2>&1"
 
     assert_failure
     assert_output --partial "no new build detected for 1 seconds"
@@ -1063,7 +1063,7 @@ WRAPPER
     # Build in-progress; --once=20 gives plenty of time, exits when build completes
     create_follow_test_wrapper "true" "SUCCESS" "2"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once=20 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once=20 3>&- 2>&1"
 
     assert_success
     assert_output --partial "Finished: SUCCESS"
@@ -1097,7 +1097,7 @@ WRAPPER
     # Build 42 is already completed; follow mode should NOT replay it
     create_follow_test_wrapper "false" "SUCCESS" "0"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once=1 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once=1 3>&- 2>&1"
     assert_failure
 
     # Stale build 42 should NOT be displayed
@@ -1122,7 +1122,7 @@ WRAPPER
     # Build 42 is already completed; --once=1 should time out (not display stale build)
     create_follow_test_wrapper "false" "SUCCESS" "0"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once=1 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once=1 3>&- 2>&1"
 
     assert_failure
     # Timeout error should appear
@@ -1142,7 +1142,7 @@ WRAPPER
     export TEST_TEMP_DIR
     create_follow_test_wrapper "true" "SUCCESS" "2"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 3>&- 2>&1"
 
     assert_success
     assert_output --partial "once, timeout=10s"
@@ -1161,7 +1161,7 @@ WRAPPER
     # Latest build is 42 (completed); builds 41 and 42 are available as prior
     create_follow_n_prior_wrapper "42" "false"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" -n 2 --once=1 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" -n 2 --once=1 3>&- 2>&1"
     assert_failure
 
     # Both prior builds should be displayed (41=FAILURE, 42=SUCCESS)
@@ -1181,7 +1181,7 @@ WRAPPER
     # Latest build is 42 (completed); builds 41 and 42 shown, then timeout
     create_follow_n_prior_wrapper "42" "false"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" -n 2 --once=1 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" -n 2 --once=1 3>&- 2>&1"
 
     assert_failure
     # Prior builds should have been displayed
@@ -1203,7 +1203,7 @@ WRAPPER
     # Latest build is 43 (in-progress); -n 2 should show 42 and 41, NOT 43
     create_follow_n_prior_wrapper "43" "true"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" -n 2 --once=20 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" -n 2 --once=20 3>&- 2>&1"
     assert_success
 
     # Build 41 (FAILURE) should be shown — proves 43 was skipped and we went back to 41
@@ -1224,7 +1224,7 @@ WRAPPER
     # Latest build is 42 (completed); --once=0 exits immediately after prior builds
     create_follow_n_prior_wrapper "42" "false"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" -n 2 --once=0 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" -n 2 --once=0 3>&- 2>&1"
 
     assert_failure
     # Prior builds MUST appear (displayed before timeout countdown)
@@ -1240,7 +1240,7 @@ WRAPPER
     export TEST_TEMP_DIR
     create_follow_test_wrapper "true" "SUCCESS" "2"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line --once 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line --once 3>&- 2>&1"
 
     assert_success
     assert_output --partial "SUCCESS"
@@ -1254,7 +1254,7 @@ WRAPPER
     export TEST_TEMP_DIR
     create_follow_test_wrapper "true" "FAILURE" "2"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line --once 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line --once 3>&- 2>&1"
 
     assert_failure
     assert_output --partial "FAILURE"
@@ -1267,7 +1267,7 @@ WRAPPER
     export TEST_TEMP_DIR
     create_follow_test_wrapper "true" "SUCCESS" "2"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line --once 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line --once 3>&- 2>&1"
 
     assert_success
     refute_output --partial "IN_PROGRESS #42 id="
@@ -1280,7 +1280,7 @@ WRAPPER
     export TEST_TEMP_DIR
     create_follow_test_wrapper "true" "SUCCESS" "2"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line --threads --once 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line --threads --once 3>&- 2>&1"
 
     assert_success
     refute_output --partial "[agent"
@@ -1543,7 +1543,7 @@ cmd_status -f --once --prior-jobs 0
 WRAPPER_END
     chmod +x "${TEST_TEMP_DIR}/follow_completion_stage_wrapper.sh"
 
-    run bash -c "BUILDGIT_FORCE_TTY=1 bash \"${TEST_TEMP_DIR}/follow_completion_stage_wrapper.sh\" 2>&1"
+    run bash -c "BUILDGIT_FORCE_TTY=1 bash \"${TEST_TEMP_DIR}/follow_completion_stage_wrapper.sh\" 3>&- 2>&1"
 
     assert_success
     assert_output --partial "Stage: Deploy (3s)"
@@ -1556,7 +1556,7 @@ WRAPPER_END
     echo "0" > "${TEST_TEMP_DIR}/build_info_calls"
     echo "0" > "${TEST_TEMP_DIR}/track_calls"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/follow_completion_stage_wrapper.sh\" 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/follow_completion_stage_wrapper.sh\" 3>&- 2>&1"
 
     assert_success
     assert_output --partial "Stage: Deploy (3s)"
@@ -1764,7 +1764,7 @@ WRAPPER_END
     export TEST_TEMP_DIR
     create_follow_n_prior_wrapper "42" "false"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" -n 3 --line --once=0 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" -n 3 --line --once=0 3>&- 2>&1"
 
     assert_failure
     assert_output --regexp "#40 id=[[:alnum:]]{7}"
@@ -2061,7 +2061,7 @@ WRAPPER_END
     export TEST_TEMP_DIR
     create_follow_test_wrapper "false" "SUCCESS" "0"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line --once=1 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --line --once=1 3>&- 2>&1"
 
     assert_failure
     assert_output --partial "no new build detected for 1 seconds"
@@ -2073,7 +2073,7 @@ WRAPPER_END
     export TEST_TEMP_DIR
     create_follow_test_wrapper "true" "SUCCESS" "2"
 
-    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once --prior-jobs 2 2>&1"
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once --prior-jobs 2 3>&- 2>&1"
 
     assert_success
     assert_output --partial "Prior 2 Jobs"
