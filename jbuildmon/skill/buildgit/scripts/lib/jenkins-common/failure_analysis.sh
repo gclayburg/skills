@@ -273,22 +273,26 @@ _detect_parallel_branches() {
             depth=0
             has_parallel=0
             branch_count=0
+            found_parallel_block=0
+            nested_same_name_depth=0
         }
 
         function flush_block(   i) {
-            if (has_parallel) {
+            if (has_parallel && !found_parallel_block) {
                 for (i = 1; i <= branch_count; i++) {
                     print branch_order[i]
                 }
+                found_parallel_block=1
             }
             delete branch_seen
             delete branch_order
             branch_count=0
             has_parallel=0
+            nested_same_name_depth=0
         }
 
         # Start a new matching stage block when not already inside one
-        /\[Pipeline\] \{ \(/ && index($0, "(" stage ")") && in_stage == 0 {
+        /\[Pipeline\] \{ \(/ && index($0, "(" stage ")") && in_stage == 0 && found_parallel_block == 0 {
             in_stage=1
             depth=1
             has_parallel=0
@@ -303,7 +307,13 @@ _detect_parallel_branches() {
                 has_parallel=1
             }
 
-            if (match($0, /\(Branch: [^)]+\)/)) {
+            if (index($0, "(" stage ")") && $0 ~ /\[Pipeline\] \{ \(/ && depth > 0) {
+                nested_same_name_depth = depth + 1
+                depth++
+                next
+            }
+
+            if (nested_same_name_depth == 0 && match($0, /\(Branch: [^)]+\)/)) {
                 branch = substr($0, RSTART + 9, RLENGTH - 10)
                 if (!(branch in branch_seen)) {
                     branch_seen[branch]=1
@@ -318,6 +328,9 @@ _detect_parallel_branches() {
 
             if ($0 ~ /\[Pipeline\] \}/) {
                 depth--
+                if (nested_same_name_depth > 0 && depth < nested_same_name_depth) {
+                    nested_same_name_depth=0
+                }
                 if (depth == 0) {
                     flush_block()
                     in_stage=0
@@ -330,7 +343,7 @@ _detect_parallel_branches() {
             # Monitoring mode often reads console output before the wrapper
             # closes. Flush any in-progress matching block so branch numbering
             # is available during live display, not only after completion.
-            if (in_stage == 1) {
+            if (in_stage == 1 && found_parallel_block == 0) {
                 flush_block()
             }
         }
@@ -369,8 +382,23 @@ _detect_branch_substages() {
     while IFS= read -r branch_name; do
         [[ -z "$branch_name" ]] && continue
 
-        local branch_logs substages
+        local branch_logs nested_branch_names substages
         branch_logs=$(extract_stage_logs "$console_output" "$branch_name")
+        nested_branch_names=$(printf "%s\n" "$branch_logs" | awk '
+            match($0, /\(Branch: [^)]+\)/) {
+                branch = substr($0, RSTART + 9, RLENGTH - 10)
+                if (!(branch in seen)) {
+                    seen[branch] = 1
+                    names[++count] = branch
+                }
+            }
+
+            END {
+                for (i = 1; i <= count; i++) {
+                    printf "%s%s", names[i], (i < count ? "\034" : "")
+                }
+            }
+        ')
         substages=$(printf "%s\n" "$branch_logs" | awk -v branch="$branch_name" '
             BEGIN {
                 depth=0
@@ -404,6 +432,24 @@ _detect_branch_substages() {
                 next
             }
         ')
+        if [[ -n "$nested_branch_names" ]]; then
+            substages=$(printf "%s\n" "$substages" | awk -v exclude="$nested_branch_names" '
+                BEGIN {
+                    split(exclude, excluded, "\034")
+                    for (i in excluded) {
+                        if (excluded[i] != "") {
+                            skip[excluded[i]] = 1
+                        }
+                    }
+                }
+
+                {
+                    if (!($0 in skip)) {
+                        print
+                    }
+                }
+            ')
+        fi
 
         result=$(echo "$result" | jq --arg b "$branch_name" '. + {($b): []}')
         while IFS= read -r substage_name; do
