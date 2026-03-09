@@ -171,9 +171,13 @@ _get_follow_active_stages() {
     local branch_to_wrapper_json substage_to_branch_json
     branch_to_wrapper_json="{}"
     substage_to_branch_json="{}"
+    local blue_nodes_json
+    blue_nodes_json="[]"
     if [[ -n "$console_output" ]]; then
         stage_agent_map=$(_build_stage_agent_map "$console_output" 2>/dev/null) || stage_agent_map="{}"
         pipeline_scope_agent=$(_extract_pre_stage_agent_from_console "$console_output" 2>/dev/null) || pipeline_scope_agent=""
+        blue_nodes_json=$(get_blue_ocean_nodes "$job_name" "$build_number" 2>/dev/null) || blue_nodes_json="[]"
+        [[ -z "$blue_nodes_json" || "$blue_nodes_json" == "null" ]] && blue_nodes_json="[]"
 
         local mapping_wrapper_names mapping_wrapper_name
         mapping_wrapper_names=$(echo "$base_stages_json" | jq -r '.[].name // empty' 2>/dev/null) || mapping_wrapper_names=""
@@ -186,6 +190,13 @@ _get_follow_active_stages() {
 
             mapping_branch_substages=$(_detect_branch_substages "$console_output" "$mapping_wrapper_name")
             [[ -z "$mapping_branch_substages" || "$mapping_branch_substages" == "null" ]] && mapping_branch_substages="{}"
+            if [[ "$blue_nodes_json" != "[]" ]]; then
+                local mapping_blue_branch_substages
+                mapping_blue_branch_substages=$(_detect_branch_substages_from_blue_ocean "$base_stages_json" "$blue_nodes_json" "$mapping_wrapper_name" "$mapping_branch_names")
+                if [[ -n "$mapping_blue_branch_substages" && "$mapping_blue_branch_substages" != "{}" && "$mapping_blue_branch_substages" != "null" ]]; then
+                    mapping_branch_substages="$mapping_blue_branch_substages"
+                fi
+            fi
 
             while IFS= read -r mapping_branch_name; do
                 [[ -z "$mapping_branch_name" ]] && continue
