@@ -256,6 +256,9 @@ _get_nested_stages() {
         nested_parallel_substages_step_b)
             echo '[{"name":"Simple Branch","status":"IN_PROGRESS","startTimeMillis":1706700023000,"durationMillis":0,"agent":"fastnode","parallel_branch":"Simple Branch","parallel_wrapper":"Parallel Work"},{"name":"Step A","status":"SUCCESS","startTimeMillis":1706700027000,"durationMillis":39000,"agent":"slownode"},{"name":"Step B","status":"IN_PROGRESS","startTimeMillis":1706700066000,"durationMillis":0,"agent":"slownode"},{"name":"Step X","status":"SUCCESS","startTimeMillis":1706700032000,"durationMillis":30000,"agent":"fastnode"},{"name":"Step Y","status":"IN_PROGRESS","startTimeMillis":1706700062000,"durationMillis":0,"agent":"fastnode"},{"name":"Parallel Work","status":"IN_PROGRESS","startTimeMillis":1706700023000,"durationMillis":0,"agent":"fastnode","is_parallel_wrapper":true,"parallel_branches":["Simple Branch","Nested Branch","Default Nested"]}]'
             ;;
+        nested_parallel_substages_stale_terminal)
+            echo '[{"name":"Quick Task","status":"IN_PROGRESS","startTimeMillis":1706700023000,"durationMillis":742,"agent":"agent6 guthrie","parallel_branch":"Quick Task","parallel_wrapper":"Parallel Work","parallel_path":"1"},{"name":"Slow Pipeline->Compile","status":"SUCCESS","startTimeMillis":1706700030000,"durationMillis":-698,"agent":"agent2paton","parallel_branch":"Slow Pipeline","parallel_wrapper":"Parallel Work","parallel_path":"2","parent_branch_stage":"Slow Pipeline"},{"name":"Slow Pipeline","status":"SUCCESS","startTimeMillis":1706700030000,"durationMillis":710,"agent":"agent2paton","parallel_branch":"Slow Pipeline","parallel_wrapper":"Parallel Work","parallel_path":"2"},{"name":"Default Pipeline->Lint","status":"SUCCESS","startTimeMillis":1706700032000,"durationMillis":-117,"agent":"agent6 guthrie","parallel_branch":"Default Pipeline","parallel_wrapper":"Parallel Work","parallel_path":"3","parent_branch_stage":"Default Pipeline"},{"name":"Default Pipeline","status":"SUCCESS","startTimeMillis":1706700032000,"durationMillis":93,"agent":"agent6 guthrie","parallel_branch":"Default Pipeline","parallel_wrapper":"Parallel Work","parallel_path":"3"},{"name":"Parallel Work","status":"SUCCESS","startTimeMillis":1706700023000,"durationMillis":874,"agent":"agent6 guthrie","is_parallel_wrapper":true,"parallel_branches":["Quick Task","Slow Pipeline","Default Pipeline"]}]'
+            ;;
         parallel_lagged)
             echo '[{"name":"Unit Tests A","status":"SUCCESS","durationMillis":35,"agent":"","parallel_branch":"Unit Tests A","parallel_wrapper":"Unit Tests"},{"name":"Unit Tests B","status":"IN_PROGRESS","startTimeMillis":1706699945000,"durationMillis":29205,"agent":"agent7 guthrie","parallel_branch":"Unit Tests B","parallel_wrapper":"Unit Tests"},{"name":"Unit Tests C","status":"SUCCESS","durationMillis":-12,"agent":"","parallel_branch":"Unit Tests C","parallel_wrapper":"Unit Tests"},{"name":"Unit Tests D","status":"SUCCESS","durationMillis":-11,"agent":"agent8_sixcore","parallel_branch":"Unit Tests D","parallel_wrapper":"Unit Tests"},{"name":"Unit Tests","status":"SUCCESS","durationMillis":29340,"agent":"","is_parallel_wrapper":true,"parallel_branches":["Unit Tests A","Unit Tests B","Unit Tests C","Unit Tests D"]}]'
             ;;
@@ -278,6 +281,9 @@ get_all_stages() {
     case "${MOCK_WFAPI_STATE:-single}" in
         nested_parallel_substages|nested_parallel_substages_step_b)
             echo '[{"name":"Parallel Work","status":"IN_PROGRESS","startTimeMillis":1706700023000,"durationMillis":0},{"name":"Simple Branch","status":"IN_PROGRESS","startTimeMillis":1706700023000,"durationMillis":0},{"name":"Nested Branch","status":"IN_PROGRESS","startTimeMillis":1706700027000,"durationMillis":0},{"name":"Default Nested","status":"IN_PROGRESS","startTimeMillis":1706700032000,"durationMillis":0}]'
+            ;;
+        nested_parallel_substages_stale_terminal)
+            echo '[{"name":"Parallel Work","status":"SUCCESS","startTimeMillis":1706700023000,"durationMillis":874},{"name":"Quick Task","status":"IN_PROGRESS","startTimeMillis":1706700023000,"durationMillis":742},{"name":"Slow Pipeline","status":"SUCCESS","startTimeMillis":1706700030000,"durationMillis":710},{"name":"Default Pipeline","status":"SUCCESS","startTimeMillis":1706700032000,"durationMillis":93}]'
             ;;
         parallel_lagged)
             echo '[{"name":"Unit Tests","status":"SUCCESS","startTimeMillis":1706699945000,"durationMillis":135},{"name":"Unit Tests A","status":"SUCCESS","startTimeMillis":1706699945000,"durationMillis":35},{"name":"Unit Tests B","status":"IN_PROGRESS","startTimeMillis":1706699945000,"durationMillis":29176},{"name":"Unit Tests C","status":"SUCCESS","startTimeMillis":1706699945000,"durationMillis":-12},{"name":"Unit Tests D","status":"SUCCESS","startTimeMillis":1706699945000,"durationMillis":-11}]'
@@ -318,6 +324,35 @@ Running on slownode in /tmp/ws@2
 [Pipeline] { (Step X)
 [Pipeline] stage
 [Pipeline] { (Step Y)
+EOF
+            ;;
+        nested_parallel_substages_stale_terminal)
+            cat <<'EOF'
+Running on agent6 guthrie in /tmp/ws
+[Pipeline] stage
+[Pipeline] { (Parallel Work)
+[Pipeline] parallel
+[Pipeline] { (Branch: Quick Task)
+[Pipeline] { (Branch: Slow Pipeline)
+[Pipeline] { (Branch: Default Pipeline)
+[Pipeline] stage
+[Pipeline] { (Quick Task)
+[Pipeline] stage
+[Pipeline] { (Slow Pipeline)
+[Pipeline] node
+Running on agent2paton in /tmp/ws@2
+[Pipeline] stage
+[Pipeline] { (Compile)
+[Pipeline] stage
+[Pipeline] { (Package)
+[Pipeline] stage
+[Pipeline] { (Default Pipeline)
+[Pipeline] stage
+[Pipeline] { (Lint)
+[Pipeline] stage
+[Pipeline] { (Analyze)
+[Pipeline] stage
+[Pipeline] { (Report)
 EOF
             ;;
         parallel_lagged)
@@ -450,6 +485,10 @@ case "${1:-}" in
         ;;
     active_nested_parallel_substages_step_b)
         MOCK_WFAPI_STATE=nested_parallel_substages_step_b
+        _get_follow_active_stages "ralph1" "42"
+        ;;
+    active_nested_parallel_substages_stale_terminal)
+        MOCK_WFAPI_STATE=nested_parallel_substages_stale_terminal
         _get_follow_active_stages "ralph1" "42"
         ;;
     threads_unknown)
@@ -2158,6 +2197,22 @@ WRAPPER_END
 
     assert_success
     [[ "$(echo "$output" | jq -r '[.[] | select((.status // "") == "IN_PROGRESS") | .name] | join(",")')" == "Simple Branch,Nested Branch->Step B,Default Nested->Step Y,Parallel Work" ]]
+}
+
+@test "status_follow_threads_promotes_stale_terminal_parallel_substages_from_live_wfapi" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" active_nested_parallel_substages_stale_terminal
+
+    assert_success
+    [[ "$(echo "$output" | jq -r '.[] | select(.name == "Slow Pipeline->Compile") | .status')" == "IN_PROGRESS" ]]
+    [[ "$(echo "$output" | jq -r '.[] | select(.name == "Default Pipeline->Lint") | .status')" == "IN_PROGRESS" ]]
+    [[ "$(echo "$output" | jq -r '.[] | select(.name == "Slow Pipeline->Compile") | .durationMillis')" == "0" ]]
+    [[ "$(echo "$output" | jq -r '.[] | select(.name == "Default Pipeline->Lint") | .durationMillis')" == "0" ]]
+    [[ "$(echo "$output" | jq -r '.[] | select(.name == "Slow Pipeline->Compile") | .agent')" == "agent2paton" ]]
 }
 
 @test "status_follow_threads_redraw_shrink_payload_is_atomic_and_tracks_previous_line_count" {

@@ -348,6 +348,67 @@ _get_follow_active_stages() {
                 continue
             fi
 
+            local stale_substage_json
+            stale_substage_json=$(echo "$result" | jq -c \
+                --arg branch "$branch_name" \
+                --argjson estimates "$_FOLLOW_STAGE_ESTIMATES_JSON" '
+                [
+                    .[]
+                    | select((.parent_branch_stage // .parallel_branch // "") == $branch)
+                    | select((.name // "") | contains("->"))
+                    | select((.status // "") == "SUCCESS")
+                    | . as $stage
+                    | ($stage.name // "") as $stage_name
+                    | ($stage_name | split("->") | last) as $substage_name
+                    | ($stage.durationMillis // 0) as $duration
+                    | ($estimates[$stage_name] // $estimates[$substage_name] // 0) as $estimate
+                    | select(
+                        ($duration | tonumber? // 0) <= 1000
+                        or (
+                            ($estimate | tonumber? // 0) > 0
+                            and ($duration | tonumber? // 0) < (($estimate | tonumber? // 0) / 10)
+                        )
+                    )
+                ] | last // empty
+            ' 2>/dev/null) || stale_substage_json=""
+            if [[ -n "$stale_substage_json" && "$stale_substage_json" != "null" ]]; then
+                local stale_substage_name stale_substage_agent stale_substage_leaf_name
+                stale_substage_name=$(echo "$stale_substage_json" | jq -r '.name // empty' 2>/dev/null) || stale_substage_name=""
+                stale_substage_leaf_name="${stale_substage_name##*->}"
+                stale_substage_agent=$(echo "$stale_substage_json" | jq -r '.agent // .execNode // .node // empty' 2>/dev/null) || stale_substage_agent=""
+                if [[ -n "$stale_substage_name" ]]; then
+                    local mapped_stale_substage_agent
+                    mapped_stale_substage_agent=$(echo "$stage_agent_map" | jq -r --arg n "$stale_substage_leaf_name" '.[$n] // empty' 2>/dev/null) || mapped_stale_substage_agent=""
+                    if [[ -n "$mapped_stale_substage_agent" ]]; then
+                        stale_substage_agent="$mapped_stale_substage_agent"
+                    fi
+                    if [[ -z "$stale_substage_agent" && -n "$pipeline_scope_agent" ]]; then
+                        stale_substage_agent="$pipeline_scope_agent"
+                    fi
+                    result=$(echo "$result" | jq -c \
+                        --arg name "$stale_substage_name" \
+                        --arg branch "$branch_name" \
+                        --arg wrapper "$wrapper_name" \
+                        --arg agent "$stale_substage_agent" '
+                        map(
+                            if (.name // "") == $name then
+                                . + {
+                                    status: "IN_PROGRESS",
+                                    durationMillis: 0,
+                                    agent: (if (.agent // "") != "" then .agent else $agent end),
+                                    parallel_branch: (if (.parallel_branch // "") != "" then .parallel_branch else $branch end),
+                                    parallel_wrapper: (if (.parallel_wrapper // "") != "" then .parallel_wrapper else $wrapper end),
+                                    parent_branch_stage: (if (.parent_branch_stage // "") != "" then .parent_branch_stage else $branch end)
+                                }
+                            else
+                                .
+                            end
+                        )
+                    ' 2>/dev/null) || true
+                    continue
+                fi
+            fi
+
             local branch_present
             branch_present=$(echo "$result" | jq -r --arg n "$branch_name" '
                 any(.[];
