@@ -80,6 +80,20 @@ _jenkins_job_api_url() {
     echo "${JENKINS_URL}/job/${top_job}/job/${encoded_branch}/api/json"
 }
 
+_trigger_integration_job_scan() {
+    local job_name="$1"
+    local top_job="${job_name%%/*}"
+    local scan_url="${JENKINS_URL}/job/${top_job}/build?delay=0sec"
+    local http_code
+
+    http_code=$(curl -s -o /dev/null -w '%{http_code}' \
+        -X POST \
+        -u "${JENKINS_USER_ID}:${JENKINS_API_TOKEN}" \
+        "$scan_url" 2>/dev/null) || return 1
+
+    [[ "$http_code" == "200" || "$http_code" == "201" || "$http_code" == "302" ]]
+}
+
 _wait_for_integration_job_indexed() {
     local job_name="$1"
     local timeout_seconds="${2:-180}"
@@ -88,6 +102,16 @@ _wait_for_integration_job_indexed() {
     local http_code
 
     job_api_url=$(_jenkins_job_api_url "$job_name")
+
+    if http_code=$(curl -s -o /dev/null -w '%{http_code}' \
+        -u "${JENKINS_USER_ID}:${JENKINS_API_TOKEN}" \
+        "$job_api_url" 2>/dev/null); then
+        if [[ "$http_code" == "200" ]]; then
+            return 0
+        fi
+    fi
+
+    _trigger_integration_job_scan "$job_name" >/dev/null 2>&1 || true
 
     while (( SECONDS < deadline )); do
         if http_code=$(curl -s -o /dev/null -w '%{http_code}' \
