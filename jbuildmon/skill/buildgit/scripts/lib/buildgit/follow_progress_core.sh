@@ -284,6 +284,49 @@ _get_follow_active_stages() {
             branch_base_duration=$(echo "$base_stages_json" | jq -r --arg n "$branch_name" '.[] | select(.name == $n) | .durationMillis // 0' 2>/dev/null | head -1) || branch_base_duration=0
             branch_estimate_ms=$(echo "$_FOLLOW_STAGE_ESTIMATES_JSON" | jq -r --arg n "$branch_name" '.[$n] // empty' 2>/dev/null) || branch_estimate_ms=""
 
+            local active_substage_json
+            active_substage_json=$(echo "$base_stages_json" | jq -c \
+                --arg branch "$branch_name" \
+                --argjson substage_to_branch "$substage_to_branch_json" '
+                [.[] | select((.status // "") == "IN_PROGRESS") | select(($substage_to_branch[.name // ""] // "") == $branch)][0] // empty
+            ' 2>/dev/null) || active_substage_json=""
+            if [[ -n "$active_substage_json" && "$active_substage_json" != "null" ]]; then
+                local active_substage_name active_substage_display active_substage_present active_substage_agent active_substage_start_ms active_substage_duration_ms
+                active_substage_name=$(echo "$active_substage_json" | jq -r '.name // empty' 2>/dev/null) || active_substage_name=""
+                active_substage_display="${branch_name}->${active_substage_name}"
+                active_substage_present=$(echo "$result" | jq -r --arg n "$active_substage_display" 'any(.[]; .name == $n and (.status // "") == "IN_PROGRESS")' 2>/dev/null) || active_substage_present="false"
+                if [[ "$active_substage_present" != "true" ]]; then
+                    active_substage_agent=$(echo "$active_substage_json" | jq -r '.agent // .execNode // .node // empty' 2>/dev/null) || active_substage_agent=""
+                    if [[ -z "$active_substage_agent" ]]; then
+                        active_substage_agent=$(echo "$stage_agent_map" | jq -r --arg n "$active_substage_name" '.[$n] // empty' 2>/dev/null) || active_substage_agent=""
+                    fi
+                    if [[ -z "$active_substage_agent" && -n "$pipeline_scope_agent" ]]; then
+                        active_substage_agent="$pipeline_scope_agent"
+                    fi
+                    active_substage_start_ms=$(echo "$active_substage_json" | jq -r '.startTimeMillis // 0' 2>/dev/null) || active_substage_start_ms=0
+                    active_substage_duration_ms=$(echo "$active_substage_json" | jq -r '.durationMillis // 0' 2>/dev/null) || active_substage_duration_ms=0
+                    result=$(echo "$result" | jq -c \
+                        --arg name "$active_substage_display" \
+                        --arg branch "$branch_name" \
+                        --arg wrapper "$wrapper_name" \
+                        --arg parent_branch_stage "$branch_name" \
+                        --arg agent "$active_substage_agent" \
+                        --argjson start_ms "${active_substage_start_ms:-0}" \
+                        --argjson duration_ms "${active_substage_duration_ms:-0}" \
+                        '. + [{
+                            name: $name,
+                            status: "IN_PROGRESS",
+                            startTimeMillis: $start_ms,
+                            durationMillis: $duration_ms,
+                            agent: $agent,
+                            parallel_branch: $branch,
+                            parallel_wrapper: $wrapper,
+                            parent_branch_stage: $parent_branch_stage
+                        }]' 2>/dev/null) || true
+                fi
+                continue
+            fi
+
             local branch_present
             branch_present=$(echo "$result" | jq -r --arg n "$branch_name" '
                 any(.[];
