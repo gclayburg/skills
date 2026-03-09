@@ -80,6 +80,31 @@ _jenkins_job_api_url() {
     echo "${JENKINS_URL}/job/${top_job}/job/${encoded_branch}/api/json"
 }
 
+_jenkins_build_api_url() {
+    local job_name="$1"
+    local build_number="$2"
+    local top_job="${job_name%%/*}"
+    local branch_job="${job_name#*/}"
+    local encoded_branch
+
+    encoded_branch=$(printf '%s' "$branch_job" | jq -sRr @uri)
+    echo "${JENKINS_URL}/job/${top_job}/job/${encoded_branch}/${build_number}/api/json"
+}
+
+_trigger_integration_job_scan() {
+    local job_name="$1"
+    local top_job="${job_name%%/*}"
+    local scan_url="${JENKINS_URL}/job/${top_job}/build?delay=0sec"
+    local http_code
+
+    http_code=$(curl -s -o /dev/null -w '%{http_code}' \
+        -X POST \
+        -u "${JENKINS_USER_ID}:${JENKINS_API_TOKEN}" \
+        "$scan_url" 2>/dev/null) || return 1
+
+    [[ "$http_code" == "200" || "$http_code" == "201" || "$http_code" == "302" ]]
+}
+
 _wait_for_integration_job_indexed() {
     local job_name="$1"
     local timeout_seconds="${2:-180}"
@@ -88,6 +113,16 @@ _wait_for_integration_job_indexed() {
     local http_code
 
     job_api_url=$(_jenkins_job_api_url "$job_name")
+
+    if http_code=$(curl -s -o /dev/null -w '%{http_code}' \
+        -u "${JENKINS_USER_ID}:${JENKINS_API_TOKEN}" \
+        "$job_api_url" 2>/dev/null); then
+        if [[ "$http_code" == "200" ]]; then
+            return 0
+        fi
+    fi
+
+    _trigger_integration_job_scan "$job_name" >/dev/null 2>&1 || true
 
     while (( SECONDS < deadline )); do
         if http_code=$(curl -s -o /dev/null -w '%{http_code}' \
@@ -151,13 +186,13 @@ _wait_for_specific_build_completion() {
     local build_number="$2"
     local timeout_seconds="${3:-180}"
     local deadline=$((SECONDS + timeout_seconds))
+    local build_api_url
+
+    build_api_url=$(_jenkins_build_api_url "$job_name" "$build_number")
 
     while (( SECONDS < deadline )); do
         local build_json
-        set +e
-        build_json=$("${BUILDGIT}" --job "$job_name" status "$build_number" --json 2>/dev/null)
-        set -e
-        [[ -n "$build_json" ]] || build_json=""
+        build_json=$(curl -sS -f -u "${JENKINS_USER_ID}:${JENKINS_API_TOKEN}" "$build_api_url" 2>/dev/null) || build_json=""
 
         if [[ -n "$build_json" ]]; then
             local building
@@ -306,18 +341,6 @@ _ensure_build_complete() {
     fi
     printf '%s\n' "$build_number" > "$(_cache_file build_number.txt)"
 
-    local monitor_output monitor_rc
-    set +e
-    monitor_output=$("${BUILDGIT}" --job "$INTEGRATION_JOB" status -f --once=180 2>&1)
-    monitor_rc=$?
-    set -e
-    printf '%s\n' "$monitor_output" > "$(_cache_file monitor_output.txt)"
-    printf '%s\n' "$monitor_rc" > "$(_cache_file monitor_exit_code.txt)"
-    if [[ $monitor_rc -ne 0 ]]; then
-        echo "$monitor_output" >&2
-        _record_failure "Monitoring failed for ${INTEGRATION_JOB} #${build_number}"
-    fi
-
     if ! _wait_for_specific_build_completion "$INTEGRATION_JOB" "$build_number" 180; then
         _record_failure "Integration pipeline build #${build_number} did not complete in time"
     fi
@@ -414,10 +437,10 @@ _ensure_build_command_monitor_complete() {
 }
 
 @test "parallel-substages: monitoring output matches expected structure" {
-    _ensure_build_complete
+    _ensure_build_command_monitor_complete
 
     local monitor_file
-    monitor_file="$(_cache_file monitor_output.txt)"
+    monitor_file="$(_cache_file build_monitor_output.txt)"
 
     [[ -s "$monitor_file" ]]
     _assert_stage_patterns "$monitor_file"
