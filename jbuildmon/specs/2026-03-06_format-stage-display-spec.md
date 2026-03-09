@@ -1,9 +1,9 @@
 ## Customizable format string for --threads stage progress lines
 
 - **Date:** `2026-03-06T11:45:00-0700`
-- **References:** `specs/todo/format-stage-display.md`
+- **References:** `specs/done-reports/format-stage-display.md`
 - **Supersedes:** none
-- **State:** `DRAFT`
+- **State:** `IMPLEMENTED`
 
 ## Background
 

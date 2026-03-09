@@ -58,6 +58,135 @@ _truncate_follow_progress_text() {
     printf '%s...' "${text:0:$((max_width - 3))}"
 }
 
+_truncate_threads_format_value() {
+    local value="$1"
+    local width="$2"
+
+    if [[ -z "$width" ]]; then
+        printf '%s' "$value"
+        return 0
+    fi
+    if [[ "$width" -le 0 ]]; then
+        return 0
+    fi
+    if [[ ${#value} -le "$width" ]]; then
+        printf '%s' "$value"
+        return 0
+    fi
+    printf '%s' "${value:0:$width}"
+}
+
+_format_threads_placeholder_value() {
+    local value="$1"
+    local align="$2"
+    local width="$3"
+
+    value=$(_truncate_threads_format_value "$value" "$width")
+
+    if [[ -z "$width" ]]; then
+        printf '%s' "$value"
+        return 0
+    fi
+
+    if [[ "$align" == "left" ]]; then
+        printf "%-${width}s" "$value"
+    else
+        printf "%${width}s" "$value"
+    fi
+}
+
+_apply_threads_format() {
+    local format_string="$1"
+    shift
+
+    local agent_name="" stage_name="" progress_bar="" percent_display="" elapsed_display="" estimate_display=""
+    while [[ $# -gt 1 ]]; do
+        case "$1" in
+            agent_name) agent_name="$2" ;;
+            stage_name) stage_name="$2" ;;
+            progress_bar) progress_bar="$2" ;;
+            percent_display) percent_display="$2" ;;
+            elapsed_display) elapsed_display="$2" ;;
+            estimate_display) estimate_display="$2" ;;
+        esac
+        shift 2
+    done
+
+    local output="" idx=0 fmt_len=${#format_string}
+    while [[ "$idx" -lt "$fmt_len" ]]; do
+        local ch="${format_string:$idx:1}"
+        if [[ "$ch" != "%" ]]; then
+            output+="$ch"
+            idx=$((idx + 1))
+            continue
+        fi
+
+        idx=$((idx + 1))
+        if [[ "$idx" -ge "$fmt_len" ]]; then
+            output+="%"
+            break
+        fi
+
+        local align="right"
+        if [[ "${format_string:$idx:1}" == "-" ]]; then
+            align="left"
+            idx=$((idx + 1))
+        fi
+
+        local width=""
+        while [[ "$idx" -lt "$fmt_len" ]]; do
+            local digit="${format_string:$idx:1}"
+            case "$digit" in
+                [0-9])
+                    width+="$digit"
+                    idx=$((idx + 1))
+                    ;;
+                *)
+                    break
+                    ;;
+            esac
+        done
+
+        if [[ "$idx" -ge "$fmt_len" ]]; then
+            output+="%"
+            if [[ "$align" == "left" ]]; then
+                output+="-"
+            fi
+            output+="$width"
+            break
+        fi
+
+        local token="${format_string:$idx:1}"
+        local value="" recognized=true
+        case "$token" in
+            a) value="$agent_name" ;;
+            S) value="$stage_name" ;;
+            g) value="$progress_bar" ;;
+            p) value="$percent_display" ;;
+            e) value="$elapsed_display" ;;
+            E) value="$estimate_display" ;;
+            %) value="%" ;;
+            *)
+                recognized=false
+                ;;
+        esac
+
+        if [[ "$recognized" == "true" ]]; then
+            output+="$(_format_threads_placeholder_value "$value" "$align" "$width")"
+        else
+            output+="%"
+            if [[ "$align" == "left" ]]; then
+                output+="-"
+            fi
+            output+="$width$token"
+        fi
+
+        idx=$((idx + 1))
+    done
+
+    printf '%s\n' "$output"
+}
+
 _get_last_successful_build_metadata() {
     local job_name="$1"
     local job_path
@@ -682,8 +811,9 @@ _render_follow_thread_progress_line() {
         estimate_ms=$(echo "$estimates_json" | jq -r --arg name "$substage_name" '.[$name] // empty' 2>/dev/null) || estimate_ms=""
     fi
 
-    local agent_display bar tail
-    agent_display=$(_format_agent_prefix "[${agent_name}] ")
+    local agent_display bar percent_display elapsed_display estimate_display
+    agent_display="$agent_name"
+    elapsed_display=$(format_duration "$elapsed_ms")
     if [[ "$estimate_ms" =~ ^[1-9][0-9]*$ ]]; then
         local pct_raw pct_clamped
         pct_raw=$((elapsed_ms * 100 / estimate_ms))
@@ -695,20 +825,40 @@ _render_follow_thread_progress_line() {
             pct_clamped=100
         fi
         bar=$(_render_follow_line_progress_bar_determinate "$pct_clamped")
-        tail=" ${bar} ${pct_raw}% $(format_duration "$elapsed_ms") / ~$(format_duration "$estimate_ms")"
+        percent_display="${pct_raw}%"
+        estimate_display="~$(format_duration "$estimate_ms")"
     else
         bar=$(_render_follow_line_progress_bar_unknown "$frame")
-        tail=" ${bar} $(format_duration "$elapsed_ms") / ~unknown"
+        percent_display="?"
+        estimate_display="~unknown"
     fi
 
-    local fixed_prefix="  ${agent_display}"
-    local available_name_width=$((terminal_cols - ${#fixed_prefix} - ${#tail}))
-    if [[ "$available_name_width" -lt 1 ]]; then
-        available_name_width=1
+    local stage_display="$stage_name"
+    if [[ "${_THREADS_FORMAT:-}" == "${_DEFAULT_THREADS_FORMAT:-}" ]]; then
+        local fixed_prefix="  [$(_format_threads_placeholder_value "$agent_display" "left" "14")] "
+        local default_tail=" ${bar} ${percent_display} ${elapsed_display} / ${estimate_display}"
+        local available_name_width=$((terminal_cols - ${#fixed_prefix} - ${#default_tail}))
+        if [[ "$available_name_width" -lt 1 ]]; then
+            available_name_width=1
+        fi
+        stage_display=$(_truncate_follow_progress_text "$stage_display" "$available_name_width")
     fi
-    stage_name=$(_truncate_follow_progress_text "$stage_name" "$available_name_width")
 
-    echo "${fixed_prefix}${stage_name}${tail}"
+    local rendered_line
+    rendered_line=$(_apply_threads_format "${_THREADS_FORMAT:-${_DEFAULT_THREADS_FORMAT:-}}" \
+        agent_name "$agent_display" \
+        stage_name "$stage_display" \
+        progress_bar "$bar" \
+        percent_display "$percent_display" \
+        elapsed_display "$elapsed_display" \
+        estimate_display "$estimate_display")
+    rendered_line="${rendered_line%$'\n'}"
+
+    if [[ "$terminal_cols" =~ ^[1-9][0-9]*$ ]] && [[ ${#rendered_line} -gt "$terminal_cols" ]]; then
+        rendered_line="${rendered_line:0:$terminal_cols}"
+    fi
+
+    printf '%s\n' "$rendered_line"
 }
 
 _render_follow_thread_progress_lines() {

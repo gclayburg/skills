@@ -20,7 +20,7 @@ A unified interface for git operations with Jenkins CI/CD integration.
 Global Options:
   -j, --job <name>               Specify Jenkins job name (or multibranch job/branch)
   -c, --console <mode>           Show console log output (auto or line count)
-  --threads                      Show live active-stage progress during TTY monitoring
+  --threads [<format>]           Show live active-stage progress during TTY monitoring
   -h, --help                     Show this help message
   -v, --verbose                  Enable verbose output for debugging
   --version                      Show version number and exit
@@ -58,6 +58,7 @@ Monitor ongoing Jenkins build jobs:
   buildgit status -n 3 -f --once   # Show 3 prior builds, then follow once with timeout
   buildgit status -f --line        # Follow builds with one-line output + progress bar (TTY only)
   buildgit --threads status -f --line # Add active-stage progress rows above the main bar
+  buildgit --threads '[%a] %S %p' status -f --line # Custom stage-row format
   buildgit status -f --once --line # Follow one build in one-line mode, then exit
   buildgit status -n 5 -f --line   # Show 5 prior one-line rows, then follow in one-line mode
   buildgit push                    # Push + monitor build
@@ -75,6 +76,12 @@ Format placeholders for --format (use with --line):
   %s=status  %j=job  %n=build#  %t=tests  %d=duration
   %D=date  %I=iso8601  %r=relative  %c=commit  %b=branch  %%=literal%
   Default: "%s #%n id=%c Tests=%t Took %d on %I (%r)"
+
+Threads format placeholders for --threads (TTY monitoring only):
+  %a=agent  %S=stage  %g=progress-bar  %p=percent  %e=elapsed  %E=estimate  %%=literal%
+  Width: %14a (max 14 chars, right-aligned), %-14a (left-aligned)
+  Default: "  [%-14a] %S %g %p %e / %E"
+  Env: BUILDGIT_THREADS_FORMAT
 
 Passthrough:
   buildgit log --oneline -5        # Passed through to git

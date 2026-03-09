@@ -427,6 +427,15 @@ EOF
 }
 
 case "${1:-}" in
+    apply_threads_format)
+        _apply_threads_format "${2}" \
+            agent_name "${3:-agent7 guthrie}" \
+            stage_name "${4:-Unit Tests A}" \
+            progress_bar "${5:-[=========>          ]}" \
+            percent_display "${6:-54%}" \
+            elapsed_display "${7:-41s}" \
+            estimate_display "${8:-~1m 16s}"
+        ;;
     determinate)
         FAKE_NOW_SECONDS=1706700035
         _display_follow_line_progress "ralph1" "42" '{"timestamp":1706700000000}' "100000" "0"
@@ -456,6 +465,23 @@ case "${1:-}" in
         _display_follow_line_progress "ralph1" "43" '{"timestamp":1706700010000,"building":true}' "100000" "0"
         ;;
     threads_single)
+        FAKE_NOW_SECONDS=1706700035
+        THREADS_MODE=true
+        MOCK_WFAPI_STATE=single
+        _prime_follow_progress_estimates "ralph1"
+        estimate_ms="${_FOLLOW_BUILD_ESTIMATE_MS:-}"
+        _display_follow_line_progress "ralph1" "42" '{"timestamp":1706700000000,"building":true}' "$estimate_ms" "0" "false" "$(_get_follow_active_stages "ralph1" "42")"
+        ;;
+    threads_custom_simple)
+        FAKE_NOW_SECONDS=1706700035
+        THREADS_MODE=true
+        _THREADS_FORMAT='[%a] %S %p'
+        MOCK_WFAPI_STATE=single
+        _prime_follow_progress_estimates "ralph1"
+        estimate_ms="${_FOLLOW_BUILD_ESTIMATE_MS:-}"
+        _display_follow_line_progress "ralph1" "42" '{"timestamp":1706700000000,"building":true}' "$estimate_ms" "0" "false" "$(_get_follow_active_stages "ralph1" "42")"
+        ;;
+    threads_env_simple)
         FAKE_NOW_SECONDS=1706700035
         THREADS_MODE=true
         MOCK_WFAPI_STATE=single
@@ -513,6 +539,16 @@ case "${1:-}" in
         THREADS_MODE=true
         MOCK_WFAPI_STATE=long_name
         export COLUMNS=70
+        _prime_follow_progress_estimates "ralph1"
+        estimate_ms="${_FOLLOW_BUILD_ESTIMATE_MS:-}"
+        _display_follow_line_progress "ralph1" "42" '{"timestamp":1706700000000,"building":true}' "$estimate_ms" "0" "false" "$(_get_follow_active_stages "ralph1" "42")"
+        ;;
+    threads_custom_truncation)
+        FAKE_NOW_SECONDS=1706700035
+        THREADS_MODE=true
+        _THREADS_FORMAT='[%a] %S %p %e / %E'
+        MOCK_WFAPI_STATE=long_name
+        export COLUMNS=40
         _prime_follow_progress_estimates "ralph1"
         estimate_ms="${_FOLLOW_BUILD_ESTIMATE_MS:-}"
         _display_follow_line_progress "ralph1" "42" '{"timestamp":1706700000000,"building":true}' "$estimate_ms" "0" "false" "$(_get_follow_active_stages "ralph1" "42")"
@@ -2023,6 +2059,105 @@ WRAPPER_END
     assert_output --partial "IN_PROGRESS Job ralph1 #42 [=>                  ] 14% 35s / ~4m 10s"
 }
 
+@test "status_follow_threads_default_format_matches_current_output" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" threads_single
+
+    assert_success
+    local first_line="${lines[0]#$'\e[K'}"
+    [[ "$first_line" == "  [agent6 guthrie] Build [====================] 875% 35s / ~4s" ]]
+}
+
+@test "status_follow_threads_custom_format_string" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" threads_custom_simple
+
+    assert_success
+    assert_output --partial "[agent6 guthrie] Build 875%"
+    refute_output --partial "[====================]"
+}
+
+@test "status_follow_threads_format_width_left_aligned" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" apply_threads_format "[%-14a]|" "fastnode"
+
+    assert_success
+    [[ "$output" == "[fastnode      ]|" ]]
+}
+
+@test "status_follow_threads_format_width_truncates_text" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" apply_threads_format "%5a" "agent7 guthrie"
+
+    assert_success
+    [[ "$output" == "agent" ]]
+}
+
+@test "status_follow_threads_format_width_right_aligns" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" apply_threads_format "%20S|" "agent7 guthrie" "Build"
+
+    assert_success
+    [[ "$output" == "               Build|" ]]
+}
+
+@test "status_follow_threads_format_literal_percent" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" apply_threads_format "100%% %S" "agent7 guthrie" "Unit Tests A"
+
+    assert_success
+    [[ "$output" == "100% Unit Tests A" ]]
+}
+
+@test "status_follow_threads_format_unknown_placeholder_passthrough" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" apply_threads_format "%S %Z" "agent7 guthrie" "Unit Tests A"
+
+    assert_success
+    [[ "$output" == "Unit Tests A %Z" ]]
+}
+
+@test "status_follow_threads_env_format_used_when_no_argument" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run env BUILDGIT_THREADS_FORMAT='[%a] %S' bash "${TEST_TEMP_DIR}/follow_line_progress.sh" threads_env_simple
+
+    assert_success
+    assert_output --partial "[agent6 guthrie] Build"
+    refute_output --partial "[====================]"
+}
+
 @test "status_follow_threads_parallel_stage_lines_follow_pipeline_order" {
     export PROJECT_DIR
     export TEST_TEMP_DIR
@@ -2138,7 +2273,7 @@ WRAPPER_END
     assert_output --partial "  [orchestrator1 ] Build Handle ["
     assert_output --partial "  [orchestrator1 ] Build SignalBoot ["
     assert_output --partial "  [agent8_sixcore] Build Handle->Compile ["
-    assert_output --partial "  [agent7 guthrie] Build SignalBoot->Sy..."
+    assert_output --partial "  [agent7 guthrie] Build SignalBoot->..."
 }
 
 @test "status_follow_threads_unknown_stage_uses_indeterminate_bar" {
@@ -2150,8 +2285,7 @@ WRAPPER_END
     run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" threads_unknown
 
     assert_success
-    assert_output --partial "  [agent6 guthrie] Brand New Stage [   <===>            ] 12s / ~unknown"
-    refute_output --partial "Brand New Stage [   <===>            ] 12%"
+    assert_output --partial "  [agent6 guthrie] Brand New Stage [   <===>            ] ? 12s / ~unknown"
 }
 
 @test "status_follow_threads_nested_parallel_substages_render_with_branch_names_and_estimates" {
@@ -2264,8 +2398,21 @@ WRAPPER_END
     run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" threads_long_name
 
     assert_success
-    assert_output --partial "A very lon..."
+    assert_output --partial "A very l..."
     refute_output --partial "should be truncated before the progress bar moves"
+}
+
+@test "status_follow_threads_custom_format_truncates_full_line_to_terminal_width" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" threads_custom_truncation
+
+    assert_success
+    local first_line="${lines[0]#$'\e[K'}"
+    [[ ${#first_line} -eq 40 ]]
 }
 
 @test "status_follow_line_once_timeout" {

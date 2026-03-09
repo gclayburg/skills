@@ -37,6 +37,14 @@ $ buildgit --threads status -f --line
 IN_PROGRESS Job ralph1 #42 [=>                  ] 14% 35s / ~4m 10s
 ```
 
+You can customize those per-stage rows with an optional format string or `BUILDGIT_THREADS_FORMAT`:
+
+```bash
+$ buildgit --threads '[%a] %S %p' status -f --line
+[agent6 guthrie] Build 875%
+IN_PROGRESS Job ralph1 #42 [=>                  ] 14% 35s / ~4m 10s
+```
+
 Nested parallel branches stay visible here as their local substages advance:
 
 ```bash
@@ -130,6 +138,10 @@ SUCCESS     #55 5m 38s
 
 Format placeholders: `%s`=status `%j`=job `%n`=build# `%t`=tests `%d`=duration `%D`=date `%I`=iso8601 `%r`=relative `%c`=commit `%b`=branch `%%`=literal%
 Default line format: `%s #%n id=%c Tests=%t Took %d on %I (%r)`
+
+Threads placeholders: `%a`=agent `%S`=stage `%g`=progress-bar `%p`=percent `%e`=elapsed `%E`=estimate `%%`=literal%
+Default threads format: `  [%-14a] %S %g %p %e / %E`
+Set `BUILDGIT_THREADS_FORMAT` or pass `--threads '<fmt>'` to customize live per-stage TTY rows.
 
 If test-report retrieval fails due to communication issues (for example network/sandbox restrictions), `%t` shows `!err!` and buildgit logs:
 

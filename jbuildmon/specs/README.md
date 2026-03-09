@@ -67,3 +67,4 @@ These files represent completed specifications in the specs/ directory.  This li
 - 2026-03-07_parallel-branch-substages-spec.md  nest branch-local sequential substages under their parallel branch, inherit branch agent/path, and aggregate branch/wrapper durations consistently across snapshot, follow, threads, and JSON output
 - 2026-03-07_integration-test-framework-spec.md  add always-on Jenkins integration tests that trigger branch-matched multibranch pipelines and verify buildgit snapshot/follow output against a real parallel-substages pipeline
 - 2026-03-09_threads-parallel-substage-visibility-spec.md  make `--threads` show active nested substages inside parallel branches, reuse substage duration estimates, and cover the behavior with redraw/unit/integration tests
+- 2026-03-06_format-stage-display-spec.md  add customizable format strings, width/alignment controls, and env/default precedence for `--threads` live per-stage TTY rows

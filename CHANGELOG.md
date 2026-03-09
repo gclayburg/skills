@@ -7,6 +7,7 @@ All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are do
 ### Features
 - **Multibranch Pipeline job support** — `buildgit` now supports Jenkins Multibranch Pipeline jobs. `--job` accepts `<job>` and `<job>/<branch>`, branch job paths are URL-encoded correctly, and multibranch jobs auto-resolve to the current/pushed git branch.
 - **`--threads` live stage progress rows** — TTY monitoring now supports `--threads` to show one active-stage progress row per running pipeline stage above the existing overall build bar, including stage-specific agent names, elapsed time, cached last-successful-build estimates, width truncation, and terminal-height capping.
+- **Custom `--threads` format strings** — `--threads` now accepts an optional format argument, supports `%` placeholders plus width/alignment controls for per-stage rows, honors `BUILDGIT_THREADS_FORMAT`, and keeps the default layout as `  [%-14a] %S %g %p %e / %E`.
 
 ### Bug Fixes
 - **Test report communication failures are now explicit** — `buildgit status`/`push`/`build` now distinguish Jenkins communication failures from missing test reports. Line mode shows `Tests=!err!` (yellow), full output shows `Test Results: ⚠ Communication error retrieving test results`, and `--json` adds `testResultsError: "communication_failure"` with `testResults: null`. A warning is emitted once per build: `⚠ Could not retrieve test results (communication error)`.

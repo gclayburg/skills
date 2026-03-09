@@ -58,6 +58,7 @@ push the staged changes and monitor the build.  fix any errors you find.
 | `scripts/buildgit status -f --line --once` | Follow builds with compact one-line output (TTY shows progress bar) |
 | `scripts/buildgit status -f --prior-jobs <N>` | Follow with N prior one-line builds + estimate preamble |
 | `scripts/buildgit status -n <N> -f --line --once` | Show N prior one-line rows then follow in one-line mode |
+| `scripts/buildgit --threads '[%a] %S %p' status -f --line` | Follow with custom live per-stage row formatting on TTY |
 | `scripts/buildgit status --json` | Machine-readable Jenkins build status |
 | `scripts/buildgit push` | git push + monitor Jenkins build until complete |
 | `scripts/buildgit push --prior-jobs <N>` | git push + preamble with N prior builds + estimate |
@@ -76,6 +77,13 @@ push the staged changes and monitor the build.  fix any errors you find.
 
 Default one-line format (`status --line`, `push --line`, `build --line`) is:
 `%s #%n id=%c Tests=%t Took %d on %I (%r)`
+
+Default threads format (`--threads` on TTY monitoring) is:
+`  [%-14a] %S %g %p %e / %E`
+
+Threads placeholders are separate from `--format` placeholders:
+`%a`=agent `%S`=stage `%g`=progress-bar `%p`=percent `%e`=elapsed `%E`=estimate `%%`=literal%
+Use width/alignment like `%14a` or `%-14a`. `BUILDGIT_THREADS_FORMAT` sets the default when `--threads` has no explicit format argument.
 
 ## Interpreting Output
 

@@ -60,6 +60,8 @@ VERBOSE_MODE=false
 THREADS_MODE=false
 COMMAND=""
 COMMAND_ARGS=()
+_DEFAULT_THREADS_FORMAT="  [%-14a] %S %g %p %e / %E"
+_THREADS_FORMAT="${BUILDGIT_THREADS_FORMAT:-${_DEFAULT_THREADS_FORMAT}}"
 
 # Extract show_usage from buildgit
 show_usage() {
@@ -70,7 +72,7 @@ A unified interface for git operations with Jenkins CI/CD integration.
 
 Global Options:
   -j, --job <name>    Specify Jenkins job name (overrides auto-detection)
-  --threads           Show live active-stage progress during TTY monitoring
+  --threads [<format>] Show live active-stage progress during TTY monitoring
   -h, --help          Show this help message
   -v, --verbose       Enable verbose output for debugging
 
@@ -110,7 +112,19 @@ parse_global_options() {
                 ;;
             --threads)
                 THREADS_MODE=true
-                shift
+                if [[ $# -gt 1 ]] && [[ "${2}" != -* ]]; then
+                    case "$2" in
+                        status|push|build)
+                            shift
+                            ;;
+                        *)
+                            _THREADS_FORMAT="$2"
+                            shift 2
+                            ;;
+                    esac
+                else
+                    shift
+                fi
                 ;;
             -v|--verbose)
                 VERBOSE_MODE=true
@@ -142,6 +156,7 @@ main() {
     echo "JOB_NAME: ${JOB_NAME}"
     echo "VERBOSE_MODE: ${VERBOSE_MODE}"
     echo "THREADS_MODE: ${THREADS_MODE}"
+    echo "THREADS_FORMAT: ${_THREADS_FORMAT}"
     echo "COMMAND: ${COMMAND}"
     echo "COMMAND_ARGS: ${COMMAND_ARGS[*]:-}"
 }
@@ -223,7 +238,40 @@ EOF
 
     assert_success
     assert_output --partial "THREADS_MODE: true"
+    assert_output --partial "THREADS_FORMAT:   [%-14a] %S %g %p %e / %E"
     assert_output --partial "COMMAND: status"
+}
+
+@test "parse_global_threads_flag_with_format_argument" {
+    export PROJECT_DIR
+    create_args_test_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_test.sh" --threads '[%a] %S %p' status
+
+    assert_success
+    assert_output --partial "THREADS_MODE: true"
+    assert_output --partial "THREADS_FORMAT: [%a] %S %p"
+    assert_output --partial "COMMAND: status"
+}
+
+@test "parse_global_threads_uses_env_format" {
+    export PROJECT_DIR
+    create_args_test_wrapper
+
+    run env BUILDGIT_THREADS_FORMAT='[%a] %S' bash "${TEST_TEMP_DIR}/buildgit_test.sh" --threads status
+
+    assert_success
+    assert_output --partial "THREADS_FORMAT: [%a] %S"
+}
+
+@test "parse_global_threads_argument_overrides_env_format" {
+    export PROJECT_DIR
+    create_args_test_wrapper
+
+    run env BUILDGIT_THREADS_FORMAT='[%a] %S' bash "${TEST_TEMP_DIR}/buildgit_test.sh" --threads '[%a] %S %g' status
+
+    assert_success
+    assert_output --partial "THREADS_FORMAT: [%a] %S %g"
 }
 
 # -----------------------------------------------------------------------------
@@ -241,7 +289,7 @@ EOF
     run "${PROJECT_DIR}/buildgit" --help
 
     assert_success
-    assert_output --partial "--threads"
+    assert_output --partial "--threads [<format>]"
 }
 
 # -----------------------------------------------------------------------------
