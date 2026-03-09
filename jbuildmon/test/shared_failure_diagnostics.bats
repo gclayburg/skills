@@ -10,6 +10,11 @@ setup() {
     PROJECT_DIR="$(cd "${TEST_DIR}/.." && pwd)"
     TEST_TEMP_DIR="$(mktemp -d)"
 
+    unset -f get_build_info get_console_output get_all_stages get_failed_stage
+    unset -f detect_all_downstream_builds find_failed_downstream_build check_build_failed
+    unset -f fetch_test_results extract_error_lines
+    unset _JENKINS_COMMON_LOADED
+
     # Source buildgit for testing
     _BUILDGIT_TESTING=1
     source "${PROJECT_DIR}/buildgit"

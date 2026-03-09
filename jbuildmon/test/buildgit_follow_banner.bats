@@ -15,6 +15,8 @@ setup() {
     PROJECT_DIR="$(cd "${TEST_DIR}/.." && pwd)"
     TEST_TEMP_DIR="$(mktemp -d)"
 
+    unset _JENKINS_COMMON_LOADED
+
     # Store original environment
     ORIG_JENKINS_URL="${JENKINS_URL:-}"
     ORIG_JENKINS_USER_ID="${JENKINS_USER_ID:-}"
@@ -55,6 +57,7 @@ trap '' PIPE
 PROJECT_DIR="${PROJECT_DIR}"
 
 # Source jenkins-common.sh for display functions
+unset _JENKINS_COMMON_LOADED
 source "\${PROJECT_DIR}/lib/jenkins-common.sh"
 
 # Global variables
