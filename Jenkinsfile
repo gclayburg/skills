@@ -220,16 +220,21 @@ pipeline {
             }
             steps {
                 sh 'git submodule update --init --recursive --depth 1'
-                sh 'echo "env vars dump: " && env'
                 dir('jbuildmon') {
-                    sh '''
-                        : "${JENKINS_URL:?JENKINS_URL is not set}"
-                        : "${JENKINS_USER_ID:?JENKINS_USER_ID is not set}"
-                        : "${JENKINS_API_TOKEN:?JENKINS_API_TOKEN is not set}"
-                        export JENKINS_URL JENKINS_USER_ID JENKINS_API_TOKEN
-                        ./test/bats/bin/bats --formatter tap --report-formatter junit --output . \
-                            test/integration/integration_tests.bats
-                    '''
+                    withCredentials([usernamePassword(
+                        credentialsId: 'jenkins-buildgit-readonly',
+                        usernameVariable: 'JENKINS_USER_ID',
+                        passwordVariable: 'JENKINS_API_TOKEN'
+                    )]) {
+                        sh '''
+                            : "${JENKINS_URL:?JENKINS_URL is not set}"
+                            : "${JENKINS_USER_ID:?JENKINS_USER_ID is not set}"
+                            : "${JENKINS_API_TOKEN:?JENKINS_API_TOKEN is not set}"
+                            export JENKINS_URL JENKINS_USER_ID JENKINS_API_TOKEN
+                            ./test/bats/bin/bats --formatter tap --report-formatter junit --output . \
+                                test/integration/integration_tests.bats
+                        '''
+                    }
                 }
             }
             post {

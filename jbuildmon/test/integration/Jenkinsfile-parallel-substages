@@ -27,13 +27,7 @@ pipeline {
                     }
                 }
                 stage('Slow Pipeline') {
-                    agent {
-                        docker {
-                            image 'registry:5000/shell-jenkins-agent:latest'
-                            alwaysPull true
-                            label 'slownode'
-                        }
-                    }
+                    agent { label 'slownode' }
                     stages {
                         stage('Compile') {
                             steps {
