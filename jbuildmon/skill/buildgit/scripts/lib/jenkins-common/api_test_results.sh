@@ -343,6 +343,7 @@ get_all_stages() {
     stages_json=$(echo "$response" | jq -r '
         .stages // [] |
         map({
+            id: (.id // ""),
             name: (.name // "unknown"),
             status: (.status // "NOT_EXECUTED"),
             startTimeMillis: (.startTimeMillis // 0),
@@ -356,6 +357,75 @@ get_all_stages() {
     fi
 
     echo "$stages_json"
+}
+
+get_blue_ocean_nodes() {
+    local job_name="$1"
+    local build_number="$2"
+
+    local response endpoint
+    if [[ "$job_name" == */* ]]; then
+        local top_job branch_job encoded_top encoded_branch
+        top_job="${job_name%%/*}"
+        branch_job="${job_name#*/}"
+        encoded_top=$(printf '%s' "$top_job" | jq -sRr @uri)
+        encoded_branch=$(printf '%s' "$branch_job" | jq -sRr @uri)
+        endpoint="/blue/rest/organizations/jenkins/pipelines/${encoded_top}/branches/${encoded_branch}/runs/${build_number}/nodes/"
+    else
+        local encoded_job
+        encoded_job=$(printf '%s' "$job_name" | jq -sRr @uri)
+        endpoint="/blue/rest/organizations/jenkins/pipelines/${encoded_job}/runs/${build_number}/nodes/"
+    fi
+
+    response=$(jenkins_api "$endpoint" 2>/dev/null) || true
+    if [[ -z "$response" ]]; then
+        echo "[]"
+        return 0
+    fi
+
+    echo "$response" | jq -c '
+        map({
+            id: (.id // ""),
+            name: (.displayName // .name // ""),
+            type: (.type // ""),
+            firstParent: (.firstParent // ""),
+            startTime: (.startTime // ""),
+            durationMillis: (.durationInMillis // 0)
+        })
+    ' 2>/dev/null || echo "[]"
+}
+
+get_blue_ocean_node_steps() {
+    local job_name="$1"
+    local build_number="$2"
+    local node_id="$3"
+
+    local response endpoint
+    if [[ "$job_name" == */* ]]; then
+        local top_job branch_job encoded_top encoded_branch
+        top_job="${job_name%%/*}"
+        branch_job="${job_name#*/}"
+        encoded_top=$(printf '%s' "$top_job" | jq -sRr @uri)
+        encoded_branch=$(printf '%s' "$branch_job" | jq -sRr @uri)
+        endpoint="/blue/rest/organizations/jenkins/pipelines/${encoded_top}/branches/${encoded_branch}/runs/${build_number}/nodes/${node_id}/steps/"
+    else
+        local encoded_job
+        encoded_job=$(printf '%s' "$job_name" | jq -sRr @uri)
+        endpoint="/blue/rest/organizations/jenkins/pipelines/${encoded_job}/runs/${build_number}/nodes/${node_id}/steps/"
+    fi
+
+    response=$(jenkins_api "$endpoint" 2>/dev/null) || true
+    if [[ -z "$response" ]]; then
+        echo "[]"
+        return 0
+    fi
+
+    echo "$response" | jq -c '
+        map({
+            displayName: (.displayName // ""),
+            displayDescription: (.displayDescription // "")
+        })
+    ' 2>/dev/null || echo "[]"
 }
 
 # Get first failed stage name from workflow API

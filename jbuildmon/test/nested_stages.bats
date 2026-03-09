@@ -927,6 +927,140 @@ three
     [[ "$(echo "$result" | jq -r '.[] | select(.name == "parallel tests").durationMillis')" == "98000" ]]
 }
 
+@test "get_nested_stages_maps_interleaved_parallel_branch_substages_to_the_correct_branch" {
+    get_all_stages() {
+        echo '[
+            {"id":"37","name":"Setup","status":"SUCCESS","startTimeMillis":0,"durationMillis":1000},
+            {"id":"47","name":"Quick Task","status":"SUCCESS","startTimeMillis":1,"durationMillis":3000},
+            {"id":"48","name":"Slow Pipeline","status":"SUCCESS","startTimeMillis":2,"durationMillis":0},
+            {"id":"49","name":"Default Pipeline","status":"SUCCESS","startTimeMillis":3,"durationMillis":0},
+            {"id":"43","name":"Parallel Work","status":"SUCCESS","startTimeMillis":4,"durationMillis":0},
+            {"id":"58","name":"Lint","status":"SUCCESS","startTimeMillis":5,"durationMillis":2000},
+            {"id":"68","name":"Compile","status":"SUCCESS","startTimeMillis":6,"durationMillis":4000},
+            {"id":"74","name":"Analyze","status":"SUCCESS","startTimeMillis":7,"durationMillis":3000},
+            {"id":"83","name":"Package","status":"SUCCESS","startTimeMillis":8,"durationMillis":3000},
+            {"id":"89","name":"Report","status":"SUCCESS","startTimeMillis":9,"durationMillis":2000},
+            {"id":"110","name":"Finalize","status":"SUCCESS","startTimeMillis":10,"durationMillis":1000}
+        ]'
+    }
+
+    get_console_output() {
+        echo '[Pipeline] Start of Pipeline
+[Pipeline] node
+Running on agent8_sixcore in /workspace
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (Setup)
+[Pipeline] }
+[Pipeline] stage
+[Pipeline] { (Parallel Work)
+[Pipeline] parallel
+[Pipeline] { (Branch: Quick Task)
+[Pipeline] { (Branch: Slow Pipeline)
+[Pipeline] { (Branch: Default Pipeline)
+[Pipeline] stage
+[Pipeline] { (Quick Task)
+[Pipeline] stage
+[Pipeline] { (Slow Pipeline)
+[Pipeline] stage
+[Pipeline] { (Default Pipeline)
+[Pipeline] node
+Running on agent1paton in /workspace
+[Pipeline] stage
+[Pipeline] { (Lint)
+[Pipeline] echo
+Linting on default agent...
+[Pipeline] sleep
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (Compile)
+[Pipeline] echo
+Compiling on slownode...
+[Pipeline] sleep
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Analyze)
+[Pipeline] echo
+Analyzing on default agent...
+[Pipeline] sleep
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] }
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Package)
+[Pipeline] echo
+Packaging on slownode...
+[Pipeline] sleep
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Report)
+[Pipeline] echo
+Reporting on default agent...
+[Pipeline] sleep
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] }
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] }
+[Pipeline] // node
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] }
+[Pipeline] // parallel
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Finalize)
+[Pipeline] }
+[Pipeline] }'
+    }
+
+    get_blue_ocean_nodes() {
+        echo '[
+            {"id":"37","name":"Setup","type":"STAGE","firstParent":"","durationMillis":1000},
+            {"id":"43","name":"Parallel Work","type":"STAGE","firstParent":"37","durationMillis":0},
+            {"id":"47","name":"Quick Task","type":"PARALLEL","firstParent":"43","durationMillis":3000},
+            {"id":"48","name":"Slow Pipeline","type":"PARALLEL","firstParent":"43","durationMillis":0},
+            {"id":"49","name":"Default Pipeline","type":"PARALLEL","firstParent":"43","durationMillis":0},
+            {"id":"58","name":"Lint","type":"STAGE","firstParent":"49","durationMillis":2000},
+            {"id":"68","name":"Compile","type":"STAGE","firstParent":"48","durationMillis":4000},
+            {"id":"74","name":"Analyze","type":"STAGE","firstParent":"58","durationMillis":3000},
+            {"id":"83","name":"Package","type":"STAGE","firstParent":"68","durationMillis":3000},
+            {"id":"89","name":"Report","type":"STAGE","firstParent":"74","durationMillis":2000},
+            {"id":"110","name":"Finalize","type":"STAGE","firstParent":"","durationMillis":1000}
+        ]'
+    }
+
+    get_blue_ocean_node_steps() {
+        local _job="$1"
+        local _build="$2"
+        local node_id="$3"
+
+        if [[ "$node_id" == "48" ]]; then
+            echo '[{"displayName":"Check out from version control","displayDescription":""},{"displayName":"Print Message","displayDescription":"Compiling on slownode..."}]'
+        else
+            echo '[]'
+        fi
+    }
+
+    local result
+    result=$(_get_nested_stages "test-job" "42")
+
+    [[ "$(echo "$result" | jq -c '[.[] | .name]')" == '["Setup","Quick Task","Slow Pipeline->Compile","Slow Pipeline->Package","Slow Pipeline","Default Pipeline->Lint","Default Pipeline->Analyze","Default Pipeline->Report","Default Pipeline","Parallel Work","Finalize"]' ]]
+    [[ "$(echo "$result" | jq -r '.[] | select(.name == "Slow Pipeline->Compile").agent')" == "agent1paton" ]]
+    [[ "$(echo "$result" | jq -r '.[] | select(.name == "Default Pipeline->Lint").agent')" == "agent8_sixcore" ]]
+    [[ "$(echo "$result" | jq -r '.[] | select(.name == "Slow Pipeline").durationMillis')" == "7000" ]]
+    [[ "$(echo "$result" | jq -r '.[] | select(.name == "Default Pipeline").durationMillis')" == "7000" ]]
+    [[ "$(echo "$result" | jq -r '.[] | select(.name == "Parallel Work").durationMillis')" == "7000" ]]
+}
+
 # =============================================================================
 # Test Cases: _display_nested_stages_json
 # =============================================================================

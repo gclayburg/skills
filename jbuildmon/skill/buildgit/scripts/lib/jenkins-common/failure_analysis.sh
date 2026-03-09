@@ -377,115 +377,91 @@ _detect_branch_substages() {
         return 0
     fi
 
-    local all_branch_names
-    all_branch_names=$(echo "$branches_json" | jq -r 'join("\u001c")')
+    local result
+    result=$(jq -nr --arg wrapper "$wrapper_stage" --argjson branches "$branches_json" --arg console "$console_output" '
+        def push($stack; $entry): $stack + [$entry];
+        def pop($stack): if ($stack | length) > 0 then $stack[0:-1] else [] end;
+        def current_branch($stack):
+            reduce ($stack | reverse[]) as $entry (""; if . != "" then . else ($entry.branch // "") end);
+        def remember($state; $branch; $stage):
+            if ($branch == "" or $stage == "" or $stage == $state.wrapper) then
+                $state
+            else
+                $state
+                | .substages[$branch] = (.substages[$branch] // [])
+                | if ((.substages[$branch] | index($stage)) == null) then
+                    .substages[$branch] += [$stage]
+                  else
+                    .
+                  end
+            end;
 
-    local result="{}"
-    local branch_name
-    while IFS= read -r branch_name; do
-        [[ -z "$branch_name" ]] && continue
-
-        local branch_logs nested_branch_names substages
-        branch_logs=$(extract_stage_logs "$console_output" "$branch_name")
-        nested_branch_names=$(printf "%s\n" "$branch_logs" | awk '
-            match($0, /\(Branch: [^)]+\)/) {
-                branch = substr($0, RSTART + 9, RLENGTH - 10)
-                if (!(branch in seen)) {
-                    seen[branch] = 1
-                    names[++count] = branch
-                }
-            }
-
-            END {
-                for (i = 1; i <= count; i++) {
-                    printf "%s%s", names[i], (i < count ? "\034" : "")
-                }
-            }
-        ')
-        substages=$(printf "%s\n" "$branch_logs" | awk -v branch="$branch_name" '
-            BEGIN {
-                depth=0
-            }
-
-            /^\[Pipeline\] \{ \(.+\)$/ {
-                stage_name = $0
-                sub(/^\[Pipeline\] \{ \(/, "", stage_name)
-                sub(/\)$/, "", stage_name)
-
-                if (depth > 0 && stage_name != branch && stage_name !~ /^Branch:[[:space:]]+/) {
-                    if (!(stage_name in seen)) {
-                        seen[stage_name] = 1
-                        print stage_name
-                    }
-                }
-
-                depth++
-                next
-            }
-
-            /^\[Pipeline\] \{$/ {
-                depth++
-                next
-            }
-
-            /^\[Pipeline\] \}/ {
-                if (depth > 0) {
-                    depth--
-                }
-                next
-            }
-        ')
-        if [[ -n "$nested_branch_names" ]]; then
-            substages=$(printf "%s\n" "$substages" | awk -v exclude="$nested_branch_names" '
-                BEGIN {
-                    split(exclude, excluded, "\034")
-                    for (i in excluded) {
-                        if (excluded[i] != "") {
-                            skip[excluded[i]] = 1
-                        }
-                    }
-                }
-
-                {
-                    if (!($0 in skip)) {
-                        print
-                    }
-                }
-            ')
-        fi
-        if [[ -n "$all_branch_names" ]]; then
-            substages=$(printf "%s\n" "$substages" | awk -v exclude="$all_branch_names" '
-                BEGIN {
-                    split(exclude, excluded, "\034")
-                    for (i in excluded) {
-                        if (excluded[i] != "") {
-                            skip[excluded[i]] = 1
-                        }
-                    }
-                }
-
-                {
-                    if (!($0 in skip)) {
-                        print
-                    }
-                }
-            ')
-        fi
-
-        result=$(echo "$result" | jq --arg b "$branch_name" '. + {($b): []}')
-        while IFS= read -r substage_name; do
-            [[ -z "$substage_name" ]] && continue
-            result=$(echo "$result" | jq \
-                --arg b "$branch_name" \
-                --arg s "$substage_name" \
-                '. + {
-                    ($b): (
-                        (.[$b] // [])
-                        + (if ((.[$b] // []) | index($s)) == null then [$s] else [] end)
-                    )
-                }')
-        done <<< "$substages"
-    done <<< "$(echo "$branches_json" | jq -r '.[]')"
+        reduce ($console | split("\n")[]) as $line (
+            {
+                wrapper: $wrapper,
+                branches: $branches,
+                branch_set: ($branches | map({(.): true}) | add // {}),
+                in_wrapper: false,
+                wrapper_depth: 0,
+                wrapper_has_parallel: false,
+                depth: 0,
+                stack: [],
+                substages: ($branches | map({(.): []}) | add // {})
+            };
+            if ($line | test("^\\[Pipeline\\] \\{ \\(.+\\)$")) then
+                ($line | capture("^\\[Pipeline\\] \\{ \\((?<name>.*)\\)$").name) as $name
+                | if (.in_wrapper | not) and $name == .wrapper then
+                    .in_wrapper = true
+                    | .wrapper_depth = (.depth + 1)
+                    | .stack = push(.stack; {type: "wrapper", name: $name})
+                    | .depth += 1
+                  elif .in_wrapper then
+                    if ($name | startswith("Branch: ")) then
+                        .stack = push(.stack; {type: "branch", name: $name, branch: ($name | sub("^Branch: "; ""))})
+                        | .depth += 1
+                      elif (.branch_set[$name] // false) then
+                        .stack = push(.stack; {type: "branch-stage", name: $name, branch: $name})
+                        | .depth += 1
+                      else
+                        (current_branch(.stack)) as $branch
+                        | if .wrapper_has_parallel and $branch != "" then
+                            remember(.; $branch; $name)
+                          else
+                            .
+                          end
+                        | .stack = push(.stack; {type: "block", name: $name})
+                        | .depth += 1
+                    end
+                  else
+                    .depth += 1
+                  end
+            elif $line == "[Pipeline] parallel" then
+                if .in_wrapper then .wrapper_has_parallel = true else . end
+            elif $line == "[Pipeline] {" then
+                if .in_wrapper then
+                    .stack = push(.stack; {type: "block", name: ""})
+                    | .depth += 1
+                else
+                    .depth += 1
+                end
+            elif $line == "[Pipeline] }" then
+                if .depth > 0 then .depth -= 1 else . end
+                | if .in_wrapper then
+                    .stack = pop(.stack)
+                    | if .depth < .wrapper_depth then
+                        .in_wrapper = false
+                      else
+                        .
+                      end
+                  else
+                    .
+                  end
+            else
+                .
+            end
+        )
+        | .substages
+    ')
 
     echo "$result"
 }

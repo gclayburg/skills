@@ -347,8 +347,8 @@ _ensure_build_complete() {
     [[ -n "$build_number" ]]
     [[ -s "$json_file" ]]
     [[ "$(cat "$(_cache_file status_json_exit_code.txt)")" -eq 0 ]]
-    [[ "$(jq -r '.number // empty' "$json_file")" == "$build_number" ]]
-    [[ "$(jq -r '.result // empty' "$json_file")" == 'SUCCESS' ]]
+    [[ "$(jq -r '.build.number // empty' "$json_file")" == "$build_number" ]]
+    [[ "$(jq -r '.build.status // empty' "$json_file")" == 'SUCCESS' ]]
 }
 
 @test "parallel-substages: snapshot output matches expected structure" {
