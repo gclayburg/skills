@@ -162,9 +162,19 @@ _get_follow_active_stages() {
         return 0
     fi
 
-    local base_stages_json console_output stage_agent_map pipeline_scope_agent
+    local base_stages_json console_output stage_agent_map pipeline_scope_agent wfapi_stage_details_json
     base_stages_json=$(get_all_stages "$job_name" "$build_number" 2>/dev/null) || base_stages_json="[]"
     [[ -z "$base_stages_json" || "$base_stages_json" == "null" ]] && base_stages_json="[]"
+    wfapi_stage_details_json="[]"
+    local job_path
+    job_path=$(jenkins_job_path "$job_name")
+    if [[ -n "$job_path" ]]; then
+        local wfapi_response
+        wfapi_response=$(jenkins_api "${job_path}/${build_number}/wfapi/describe" 2>/dev/null) || true
+        if [[ -n "$wfapi_response" ]]; then
+            wfapi_stage_details_json=$(echo "$wfapi_response" | jq -c '.stages // []' 2>/dev/null) || wfapi_stage_details_json="[]"
+        fi
+    fi
     console_output=$(get_console_output "$job_name" "$build_number" 2>/dev/null) || console_output=""
     stage_agent_map="{}"
     pipeline_scope_agent=""
@@ -190,9 +200,9 @@ _get_follow_active_stages() {
 
             mapping_branch_substages=$(_detect_branch_substages "$console_output" "$mapping_wrapper_name")
             [[ -z "$mapping_branch_substages" || "$mapping_branch_substages" == "null" ]] && mapping_branch_substages="{}"
-            if [[ "$blue_nodes_json" != "[]" ]]; then
+            if [[ "$blue_nodes_json" != "[]" && "$wfapi_stage_details_json" != "[]" ]]; then
                 local mapping_blue_branch_substages
-                mapping_blue_branch_substages=$(_detect_branch_substages_from_blue_ocean "$base_stages_json" "$blue_nodes_json" "$mapping_wrapper_name" "$mapping_branch_names")
+                mapping_blue_branch_substages=$(_detect_branch_substages_from_blue_ocean "$wfapi_stage_details_json" "$blue_nodes_json" "$mapping_wrapper_name" "$mapping_branch_names")
                 if [[ -n "$mapping_blue_branch_substages" && "$mapping_blue_branch_substages" != "{}" && "$mapping_blue_branch_substages" != "null" ]]; then
                     mapping_branch_substages="$mapping_blue_branch_substages"
                 fi
