@@ -18,6 +18,32 @@ pipeline {
             }
         }
 
+        stage('Prime Integration Scan') {
+            agent {
+                docker {
+                    image 'registry:5000/shell-jenkins-agent:latest'
+                    alwaysPull true
+                    label 'fastnode'
+                }
+            }
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'jenkins-buildgit-readonly',
+                    usernameVariable: 'JENKINS_USER_ID',
+                    passwordVariable: 'JENKINS_API_TOKEN'
+                )]) {
+                    sh '''
+                        : "${JENKINS_URL:?JENKINS_URL is not set}"
+                        : "${JENKINS_USER_ID:?JENKINS_USER_ID is not set}"
+                        : "${JENKINS_API_TOKEN:?JENKINS_API_TOKEN is not set}"
+                        curl -fsS -X POST \
+                            -u "${JENKINS_USER_ID}:${JENKINS_API_TOKEN}" \
+                            "${JENKINS_URL%/}/job/buildgit-integration-test/build?delay=0sec" >/dev/null
+                    '''
+                }
+            }
+        }
+
         stage('Unit Tests') {
             parallel {
                 stage('Unit Tests A') {
