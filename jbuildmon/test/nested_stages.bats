@@ -840,6 +840,227 @@ Starting building: signalboot-job #2
     [[ "$idx_verify" -gt "$idx_wrapper" ]]
 }
 
+@test "get_nested_stages_nests_parallel_branch_substages_with_branch_agents_and_aggregate_durations" {
+    get_all_stages() {
+        echo '[
+            {"name":"Declarative: Checkout SCM","status":"SUCCESS","startTimeMillis":0,"durationMillis":500},
+            {"name":"policyStart bounce","status":"SUCCESS","startTimeMillis":1,"durationMillis":57000},
+            {"name":"palmer tests","status":"SUCCESS","startTimeMillis":2,"durationMillis":0},
+            {"name":"guthrie tests","status":"SUCCESS","startTimeMillis":3,"durationMillis":0},
+            {"name":"parallel tests","status":"SUCCESS","startTimeMillis":4,"durationMillis":0},
+            {"name":"synconsolemongo42","status":"SUCCESS","startTimeMillis":5,"durationMillis":40000},
+            {"name":"batchrun","status":"SUCCESS","startTimeMillis":6,"durationMillis":95000},
+            {"name":"bundletest","status":"SUCCESS","startTimeMillis":7,"durationMillis":30000},
+            {"name":"TLSauth","status":"SUCCESS","startTimeMillis":8,"durationMillis":28000},
+            {"name":"Declarative: Post Actions","status":"SUCCESS","startTimeMillis":9,"durationMillis":400}
+        ]'
+    }
+
+    get_console_output() {
+        echo '[Pipeline] Start of Pipeline
+[Pipeline] node
+Running on agent6 guthrie in /workspace
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (Declarative: Checkout SCM)
+[Pipeline] }
+[Pipeline] stage
+[Pipeline] { (parallel tests)
+[Pipeline] parallel
+[Pipeline] { (Branch: policyStart bounce)
+[Pipeline] echo
+policy
+[Pipeline] }
+[Pipeline] { (Branch: palmer tests)
+[Pipeline] node
+Running on agent1paton in /workspace
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (batchrun)
+[Pipeline] sh
+batchrun
+[Pipeline] }
+[Pipeline] }
+[Pipeline] }
+[Pipeline] { (Branch: guthrie tests)
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (synconsolemongo42)
+[Pipeline] sh
+one
+[Pipeline] }
+[Pipeline] stage
+[Pipeline] { (bundletest)
+[Pipeline] sh
+two
+[Pipeline] }
+[Pipeline] stage
+[Pipeline] { (TLSauth)
+[Pipeline] sh
+three
+[Pipeline] }
+[Pipeline] }
+[Pipeline] }
+[Pipeline] }
+[Pipeline] stage
+[Pipeline] { (Declarative: Post Actions)
+[Pipeline] }'
+    }
+
+    local result
+    result=$(_get_nested_stages "test-job" "42")
+
+    [[ "$(echo "$result" | jq -c '[.[] | .name]')" == '["Declarative: Checkout SCM","policyStart bounce","palmer tests->batchrun","palmer tests","guthrie tests->synconsolemongo42","guthrie tests->bundletest","guthrie tests->TLSauth","guthrie tests","parallel tests","Declarative: Post Actions"]' ]]
+    [[ "$(echo "$result" | jq '[.[] | select(.name == "batchrun" or .name == "synconsolemongo42" or .name == "bundletest" or .name == "TLSauth")] | length')" == "0" ]]
+
+    [[ "$(echo "$result" | jq -r '.[] | select(.name == "palmer tests->batchrun").agent')" == "agent1paton" ]]
+    [[ "$(echo "$result" | jq -r '.[] | select(.name == "palmer tests").agent')" == "agent1paton" ]]
+    [[ "$(echo "$result" | jq -r '.[] | select(.name == "guthrie tests->synconsolemongo42").agent')" == "agent6 guthrie" ]]
+    [[ "$(echo "$result" | jq -r '.[] | select(.name == "guthrie tests").agent')" == "agent6 guthrie" ]]
+
+    [[ "$(echo "$result" | jq -r '.[] | select(.name == "palmer tests->batchrun").parallel_path')" == "2" ]]
+    [[ "$(echo "$result" | jq -r '.[] | select(.name == "guthrie tests->bundletest").parallel_path')" == "3" ]]
+    [[ "$(echo "$result" | jq -r '.[] | select(.name == "guthrie tests->bundletest").parent_branch_stage')" == "guthrie tests" ]]
+
+    [[ "$(echo "$result" | jq -r '.[] | select(.name == "palmer tests").durationMillis')" == "95000" ]]
+    [[ "$(echo "$result" | jq -r '.[] | select(.name == "guthrie tests").durationMillis')" == "98000" ]]
+    [[ "$(echo "$result" | jq -r '.[] | select(.name == "parallel tests").durationMillis')" == "98000" ]]
+}
+
+@test "get_nested_stages_maps_interleaved_parallel_branch_substages_to_the_correct_branch" {
+    get_all_stages() {
+        echo '[
+            {"id":"37","name":"Setup","status":"SUCCESS","startTimeMillis":0,"durationMillis":1000},
+            {"id":"47","name":"Quick Task","status":"SUCCESS","startTimeMillis":1,"durationMillis":3000},
+            {"id":"48","name":"Slow Pipeline","status":"SUCCESS","startTimeMillis":2,"durationMillis":0},
+            {"id":"49","name":"Default Pipeline","status":"SUCCESS","startTimeMillis":3,"durationMillis":0},
+            {"id":"43","name":"Parallel Work","status":"SUCCESS","startTimeMillis":4,"durationMillis":0},
+            {"id":"58","name":"Lint","status":"SUCCESS","startTimeMillis":5,"durationMillis":2000},
+            {"id":"68","name":"Compile","status":"SUCCESS","startTimeMillis":6,"durationMillis":4000},
+            {"id":"74","name":"Analyze","status":"SUCCESS","startTimeMillis":7,"durationMillis":3000},
+            {"id":"83","name":"Package","status":"SUCCESS","startTimeMillis":8,"durationMillis":3000},
+            {"id":"89","name":"Report","status":"SUCCESS","startTimeMillis":9,"durationMillis":2000},
+            {"id":"110","name":"Finalize","status":"SUCCESS","startTimeMillis":10,"durationMillis":1000}
+        ]'
+    }
+
+    get_console_output() {
+        echo '[Pipeline] Start of Pipeline
+[Pipeline] node
+Running on agent8_sixcore in /workspace
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (Setup)
+[Pipeline] }
+[Pipeline] stage
+[Pipeline] { (Parallel Work)
+[Pipeline] parallel
+[Pipeline] { (Branch: Quick Task)
+[Pipeline] { (Branch: Slow Pipeline)
+[Pipeline] { (Branch: Default Pipeline)
+[Pipeline] stage
+[Pipeline] { (Quick Task)
+[Pipeline] stage
+[Pipeline] { (Slow Pipeline)
+[Pipeline] stage
+[Pipeline] { (Default Pipeline)
+[Pipeline] node
+Running on agent1paton in /workspace
+[Pipeline] stage
+[Pipeline] { (Lint)
+[Pipeline] echo
+Linting on default agent...
+[Pipeline] sleep
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (Compile)
+[Pipeline] echo
+Compiling on slownode...
+[Pipeline] sleep
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Analyze)
+[Pipeline] echo
+Analyzing on default agent...
+[Pipeline] sleep
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] }
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Package)
+[Pipeline] echo
+Packaging on slownode...
+[Pipeline] sleep
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Report)
+[Pipeline] echo
+Reporting on default agent...
+[Pipeline] sleep
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] }
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] }
+[Pipeline] // node
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] }
+[Pipeline] // parallel
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Finalize)
+[Pipeline] }
+[Pipeline] }'
+    }
+
+    get_blue_ocean_nodes() {
+        echo '[
+            {"id":"37","name":"Setup","type":"STAGE","firstParent":"","durationMillis":1000},
+            {"id":"43","name":"Parallel Work","type":"STAGE","firstParent":"37","durationMillis":0},
+            {"id":"47","name":"Quick Task","type":"PARALLEL","firstParent":"43","durationMillis":3000},
+            {"id":"48","name":"Slow Pipeline","type":"PARALLEL","firstParent":"43","durationMillis":0},
+            {"id":"49","name":"Default Pipeline","type":"PARALLEL","firstParent":"43","durationMillis":0},
+            {"id":"58","name":"Lint","type":"STAGE","firstParent":"49","durationMillis":2000},
+            {"id":"68","name":"Compile","type":"STAGE","firstParent":"48","durationMillis":4000},
+            {"id":"74","name":"Analyze","type":"STAGE","firstParent":"58","durationMillis":3000},
+            {"id":"83","name":"Package","type":"STAGE","firstParent":"68","durationMillis":3000},
+            {"id":"89","name":"Report","type":"STAGE","firstParent":"74","durationMillis":2000},
+            {"id":"110","name":"Finalize","type":"STAGE","firstParent":"","durationMillis":1000}
+        ]'
+    }
+
+    get_blue_ocean_node_steps() {
+        local _job="$1"
+        local _build="$2"
+        local node_id="$3"
+
+        if [[ "$node_id" == "48" ]]; then
+            echo '[{"displayName":"Check out from version control","displayDescription":""},{"displayName":"Print Message","displayDescription":"Compiling on slownode..."}]'
+        else
+            echo '[]'
+        fi
+    }
+
+    local result
+    result=$(_get_nested_stages "test-job" "42")
+
+    [[ "$(echo "$result" | jq -c '[.[] | .name]')" == '["Setup","Quick Task","Slow Pipeline->Compile","Slow Pipeline->Package","Slow Pipeline","Default Pipeline->Lint","Default Pipeline->Analyze","Default Pipeline->Report","Default Pipeline","Parallel Work","Finalize"]' ]]
+    [[ "$(echo "$result" | jq -r '.[] | select(.name == "Slow Pipeline->Compile").agent')" == "agent1paton" ]]
+    [[ "$(echo "$result" | jq -r '.[] | select(.name == "Default Pipeline->Lint").agent')" == "agent8_sixcore" ]]
+    [[ "$(echo "$result" | jq -r '.[] | select(.name == "Slow Pipeline").durationMillis')" == "7000" ]]
+    [[ "$(echo "$result" | jq -r '.[] | select(.name == "Default Pipeline").durationMillis')" == "7000" ]]
+    [[ "$(echo "$result" | jq -r '.[] | select(.name == "Parallel Work").durationMillis')" == "7000" ]]
+}
+
 # =============================================================================
 # Test Cases: _display_nested_stages_json
 # =============================================================================
@@ -894,6 +1115,40 @@ Starting building: signalboot-job #2
     [[ "$output" == *"Build Handle->Compile"* ]]
     [[ "$output" == *"Build Handle->Deploy (not executed)"* ]]
     [[ "$output" == *"Build Handle (38s)"* ]]
+}
+
+@test "force_flush_completion_stages_skips_flat_parent_entries_for_branch_local_substages" {
+    get_all_stages() {
+        echo '[
+            {"name":"Parallel Work","status":"SUCCESS","durationMillis":8000},
+            {"name":"Slow Pipeline","status":"SUCCESS","durationMillis":0},
+            {"name":"Compile","status":"SUCCESS","durationMillis":4000},
+            {"name":"Package","status":"SUCCESS","durationMillis":3000},
+            {"name":"Finalize","status":"SUCCESS","durationMillis":1000}
+        ]'
+    }
+
+    get_console_output() { echo ""; }
+
+    _get_nested_stages() {
+        echo '[
+            {"name":"Slow Pipeline->Compile","status":"SUCCESS","durationMillis":4000,"agent":"agent1paton","nesting_depth":0,"parent_branch_stage":"Slow Pipeline","parallel_branch":"Slow Pipeline","parallel_wrapper":"Parallel Work"},
+            {"name":"Slow Pipeline->Package","status":"SUCCESS","durationMillis":3000,"agent":"agent1paton","nesting_depth":0,"parent_branch_stage":"Slow Pipeline","parallel_branch":"Slow Pipeline","parallel_wrapper":"Parallel Work"},
+            {"name":"Slow Pipeline","status":"SUCCESS","durationMillis":7000,"agent":"agent1paton","nesting_depth":0,"parallel_branch":"Slow Pipeline","parallel_wrapper":"Parallel Work"},
+            {"name":"Parallel Work","status":"SUCCESS","durationMillis":8000,"agent":"agent8_sixcore","nesting_depth":0,"is_parallel_wrapper":true,"parallel_branches":["Slow Pipeline"]},
+            {"name":"Finalize","status":"SUCCESS","durationMillis":1000,"agent":"agent8_sixcore","nesting_depth":0}
+        ]'
+    }
+
+    local previous_state output_json flush_output state_file
+    previous_state='{"printed":{"Slow Pipeline->Compile":{"terminal":true},"Slow Pipeline->Package":{"terminal":true},"Slow Pipeline":{"terminal":true},"Parallel Work":{"terminal":true},"Finalize":{"terminal":true}},"parallel_state":{}}'
+    state_file="${TEST_TEMP_DIR}/force_flush_state.json"
+    flush_output=$(_force_flush_completion_stages "test-job" "42" "$previous_state" 2>&1 >"$state_file")
+    output_json=$(cat "$state_file")
+
+    [[ "$flush_output" != *"Stage: Compile"* ]]
+    [[ "$flush_output" != *"Stage: Package"* ]]
+    [[ "$(echo "$output_json" | jq -r '.tracking_complete')" == "true" ]]
 }
 
 # =============================================================================
@@ -1090,4 +1345,82 @@ Starting building: downstream-job #10
     local parent_stage
     parent_stage=$(echo "$result" | jq '.stages[] | select(.name == "Build Handle")')
     [[ $(echo "$parent_stage" | jq '.has_downstream') == "true" ]]
+}
+
+@test "json_output_includes_parallel_branch_substage_fields" {
+    _BUILDGIT_TESTING=1
+    source "${PROJECT_DIR}/buildgit"
+
+    get_all_stages() {
+        echo '[
+            {"name":"parallel tests","status":"SUCCESS","startTimeMillis":0,"durationMillis":0},
+            {"name":"policyStart bounce","status":"SUCCESS","startTimeMillis":1,"durationMillis":57000},
+            {"name":"palmer tests","status":"SUCCESS","startTimeMillis":2,"durationMillis":0},
+            {"name":"guthrie tests","status":"SUCCESS","startTimeMillis":3,"durationMillis":0},
+            {"name":"synconsolemongo42","status":"SUCCESS","startTimeMillis":4,"durationMillis":40000},
+            {"name":"batchrun","status":"SUCCESS","startTimeMillis":5,"durationMillis":95000},
+            {"name":"bundletest","status":"SUCCESS","startTimeMillis":6,"durationMillis":30000},
+            {"name":"TLSauth","status":"SUCCESS","startTimeMillis":7,"durationMillis":28000}
+        ]'
+    }
+
+    get_console_output() {
+        echo '[Pipeline] Start of Pipeline
+[Pipeline] node
+Running on agent6 guthrie in /workspace
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (parallel tests)
+[Pipeline] parallel
+[Pipeline] { (Branch: policyStart bounce)
+[Pipeline] echo
+policy
+[Pipeline] }
+[Pipeline] { (Branch: palmer tests)
+[Pipeline] node
+Running on agent1paton in /workspace
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (batchrun)
+[Pipeline] sh
+batchrun
+[Pipeline] }
+[Pipeline] }
+[Pipeline] }
+[Pipeline] { (Branch: guthrie tests)
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (synconsolemongo42)
+[Pipeline] sh
+one
+[Pipeline] }
+[Pipeline] stage
+[Pipeline] { (bundletest)
+[Pipeline] sh
+two
+[Pipeline] }
+[Pipeline] stage
+[Pipeline] { (TLSauth)
+[Pipeline] sh
+three
+[Pipeline] }
+[Pipeline] }
+[Pipeline] }
+[Pipeline] }'
+    }
+
+    fetch_test_results() { echo ""; }
+    _build_failure_json() { echo '{"failed_jobs":[],"root_cause_job":null,"failed_stage":null,"error_summary":null,"console_output":null,"console_log":null}'; }
+    _build_info_json() { echo '{"started_by":null,"agent":"agent6 guthrie","pipeline":null}'; }
+
+    local build_json='{"result":"SUCCESS","building":false,"duration":98000,"timestamp":1700000000000,"url":"http://jenkins/job/test-job/42/"}'
+    local result
+    result=$(output_json "test-job" "42" "$build_json" "automated" "" "abc1234" "test commit" "unknown" "")
+
+    local substage
+    substage=$(echo "$result" | jq '.stages[] | select(.name == "guthrie tests->synconsolemongo42")')
+    [[ "$(echo "$substage" | jq -r '.parallel_branch')" == "guthrie tests" ]]
+    [[ "$(echo "$substage" | jq -r '.parallel_wrapper')" == "parallel tests" ]]
+    [[ "$(echo "$substage" | jq -r '.parallel_path')" == "3" ]]
+    [[ "$(echo "$substage" | jq -r '.parent_branch_stage')" == "guthrie tests" ]]
 }

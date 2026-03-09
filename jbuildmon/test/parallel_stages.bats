@@ -171,6 +171,130 @@ not a parallel wrapper here
     echo "$parsed" | grep -q "dsltestharness"
 }
 
+@test "detect_parallel_branches_ignores_nested_parallel_block_with_same_wrapper_name" {
+    local console_output='[Pipeline] { (Unit Tests)
+[Pipeline] parallel
+[Pipeline] { (Branch: Unit Tests A)
+[Pipeline] { (Unit Tests)
+[Pipeline] parallel
+[Pipeline] { (Branch: Unit Tests C)
+...
+[Pipeline] }
+[Pipeline] { (Branch: Unit Tests D)
+...
+[Pipeline] }
+[Pipeline] }
+[Pipeline] }
+[Pipeline] { (Branch: Unit Tests B)
+...
+[Pipeline] }
+[Pipeline] }'
+
+    run _detect_parallel_branches "$console_output" "Unit Tests"
+    assert_success
+    [[ "$(echo "$output" | jq -c '.')" == '["Unit Tests A","Unit Tests B"]' ]]
+}
+
+@test "detect_branch_substages_returns_ordered_substages_per_parallel_branch" {
+    local console_output='[Pipeline] Start of Pipeline
+[Pipeline] node
+Running on agent6 guthrie in /workspace
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (parallel tests)
+[Pipeline] parallel
+[Pipeline] { (Branch: policyStart bounce)
+[Pipeline] echo
+policyStart bounce
+[Pipeline] }
+[Pipeline] { (Branch: palmer tests)
+[Pipeline] node
+Running on agent1paton in /workspace
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (batchrun)
+[Pipeline] sh
+batchrun
+[Pipeline] }
+[Pipeline] }
+[Pipeline] }
+[Pipeline] { (Branch: guthrie tests)
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (synconsolemongo42)
+[Pipeline] sh
+one
+[Pipeline] }
+[Pipeline] stage
+[Pipeline] { (bundletest)
+[Pipeline] sh
+two
+[Pipeline] }
+[Pipeline] stage
+[Pipeline] { (TLSauth)
+[Pipeline] sh
+three
+[Pipeline] }
+[Pipeline] }
+[Pipeline] }
+[Pipeline] }'
+
+    run _detect_branch_substages "$console_output" "parallel tests"
+    assert_success
+    [[ "$(echo "$output" | jq -c '.')" == '{"policyStart bounce":[],"palmer tests":["batchrun"],"guthrie tests":["synconsolemongo42","bundletest","TLSauth"]}' ]]
+}
+
+@test "detect_branch_substages_ignores_nested_parallel_branch_names" {
+    local console_output='[Pipeline] { (Unit Tests)
+[Pipeline] parallel
+[Pipeline] { (Branch: Unit Tests A)
+[Pipeline] { (Unit Tests)
+[Pipeline] parallel
+[Pipeline] { (Branch: Unit Tests C)
+...
+[Pipeline] }
+[Pipeline] { (Branch: Unit Tests D)
+...
+[Pipeline] }
+[Pipeline] }
+[Pipeline] }
+[Pipeline] { (Branch: Unit Tests B)
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (package)
+...
+[Pipeline] }
+[Pipeline] }
+[Pipeline] }
+[Pipeline] }'
+
+    run _detect_branch_substages "$console_output" "Unit Tests"
+    assert_success
+    [[ "$(echo "$output" | jq -c '.')" == '{"Unit Tests A":[],"Unit Tests B":["package"]}' ]]
+}
+
+@test "detect_branch_substages_ignores_sibling_branch_stage_log_bleed" {
+    local console_output='[Pipeline] { (Unit Tests)
+[Pipeline] parallel
+[Pipeline] { (Branch: Unit Tests A)
+[Pipeline] { (Branch: Unit Tests B)
+[Pipeline] { (Branch: Unit Tests C)
+[Pipeline] { (Branch: Unit Tests D)
+[Pipeline] stage
+[Pipeline] { (Unit Tests A)
+[Pipeline] stage
+[Pipeline] { (Unit Tests B)
+[Pipeline] stage
+[Pipeline] { (Unit Tests C)
+[Pipeline] stage
+[Pipeline] { (Unit Tests D)
+[Pipeline] }'
+
+    run _detect_branch_substages "$console_output" "Unit Tests"
+    assert_success
+    [[ "$(echo "$output" | jq -c '.')" == '{"Unit Tests A":[],"Unit Tests B":[],"Unit Tests C":[],"Unit Tests D":[]}' ]]
+}
+
 # =============================================================================
 # extract_stage_logs with Branch: prefix tests
 # =============================================================================

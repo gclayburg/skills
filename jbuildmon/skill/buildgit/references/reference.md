@@ -196,6 +196,8 @@ Console:    http://palmer.garyclayburg.com:18080/job/phandlemono-IT/39/console
 
 # Stage agent labels are resolved per stage from Jenkins "Running on ..." lines.
 # Parallel branches may show different agents.
+# Branch-local sequential substages stay nested as Branch->Substage, keep the
+# parent branch marker/agent, and are included in the branch duration.
 [09:00:08] ℹ   Stage: [agent8_sixcore] Declarative: Checkout SCM (<1s)
 [09:00:08] ℹ   Stage: [agent8_sixcore] Checkout (<1s)
 [09:00:08] ℹ   Stage: [agent8_sixcore] Analyze Component Changes (<1s)

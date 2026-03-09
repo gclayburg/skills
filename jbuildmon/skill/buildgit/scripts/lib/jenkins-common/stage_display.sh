@@ -501,21 +501,27 @@ _build_parallel_tracking_state() {
         fi
         local branch_index=0
         while [[ $branch_index -lt $observed_count ]]; do
-            local branch_name branch_status branch_duration branch_fingerprint prev_branch_fingerprint branch_stable_polls branch_ready
+            local branch_name branch_status branch_duration branch_fingerprint prev_branch_fingerprint prev_branch_status branch_stable_polls branch_ready
             branch_name=$(echo "$branch_entries" | jq -r ".[$branch_index].name")
             branch_status=$(echo "$branch_entries" | jq -r ".[$branch_index].status")
             branch_duration=$(echo "$branch_entries" | jq -r ".[$branch_index].durationMillis")
             branch_fingerprint=$(echo "$branch_entries" | jq -c ".[$branch_index] | {status, durationMillis}" 2>/dev/null)
             prev_branch_fingerprint=$(echo "$previous_parallel_state" | jq -c --arg w "$wrapper_name" --arg b "$branch_name" '.[$w].branch_state[$b].fingerprint // {}' 2>/dev/null)
+            prev_branch_status=$(echo "$previous_parallel_state" | jq -r --arg w "$wrapper_name" --arg b "$branch_name" '.[$w].branch_state[$b].fingerprint.status // empty' 2>/dev/null)
             if [[ -n "$branch_fingerprint" && "$branch_fingerprint" == "$prev_branch_fingerprint" ]]; then
                 branch_stable_polls=$(echo "$previous_parallel_state" | jq -r --arg w "$wrapper_name" --arg b "$branch_name" '(.[$w].branch_state[$b].stable_polls // 0) + 1' 2>/dev/null)
             else
                 branch_stable_polls=1
             fi
             branch_ready="false"
+            local terminal_transition=false
+            if [[ -n "$prev_branch_status" ]] && ! _stage_status_is_terminal "$prev_branch_status" && _stage_status_is_terminal "$branch_status"; then
+                terminal_transition=true
+            fi
             if _stage_status_is_terminal "$branch_status" \
-                && [[ -n "$branch_duration" && "$branch_duration" != "null" && "$branch_duration" =~ ^[0-9]+$ && "$branch_stable_polls" -ge 2 ]] \
-                && [[ "$branch_duration" -ge 1000 || "$current_building" == "false" ]]; then
+                && [[ -n "$branch_duration" && "$branch_duration" != "null" && "$branch_duration" =~ ^[0-9]+$ ]] \
+                && [[ "$branch_duration" -ge 1000 || "$current_building" == "false" ]] \
+                && ([[ "$terminal_transition" == "true" && "$wrapper_terminal" != "true" ]] || [[ "$branch_stable_polls" -ge 2 ]]); then
                 branch_ready="true"
             fi
             if ! _stage_status_is_terminal "$branch_status"; then
@@ -714,6 +720,11 @@ _nested_tracking_complete() {
     local printed_state="$3"
 
     echo "$current_nested" "$current_parent_stages" "$printed_state" | jq -e -n '
+        def is_branch_local_substage_leaf($nested; $stage_name):
+            any($nested[]?;
+                (.parent_branch_stage? != null)
+                and ((.name // "") | split("->") | last) == $stage_name
+            );
         (input) as $nested
         | (input) as $parent
         | (input) as $printed
@@ -727,7 +738,9 @@ _nested_tracking_complete() {
           )
         and (
             all($parent[]?;
-                if (.status == "SUCCESS" or .status == "FAILED" or .status == "UNSTABLE" or .status == "ABORTED")
+                if is_branch_local_substage_leaf($nested; .name) then
+                    true
+                elif (.status == "SUCCESS" or .status == "FAILED" or .status == "UNSTABLE" or .status == "ABORTED")
                 then ($printed[.name].terminal // false)
                 else true
                 end
@@ -777,12 +790,16 @@ _force_flush_completion_stages() {
     parent_count=$(echo "$current_parent_stages" | jq 'length' 2>/dev/null) || parent_count=0
     i=0
     while [[ $i -lt $parent_count ]]; do
-        local stage_name stage_status duration_ms printed_terminal nested_match
+        local stage_name stage_status duration_ms printed_terminal nested_match branch_local_substage_match
         stage_name=$(echo "$current_parent_stages" | jq -r ".[$i].name")
         stage_status=$(echo "$current_parent_stages" | jq -r ".[$i].status")
         duration_ms=$(echo "$current_parent_stages" | jq -r ".[$i].durationMillis")
         printed_terminal=$(echo "$printed_state" | jq -r --arg s "$stage_name" '.[$s].terminal // false' 2>/dev/null)
+        branch_local_substage_match=$(echo "$current_nested" | jq -c --arg n "$stage_name" '
+            [.[] | select((.parent_branch_stage? != null) and ((.name // "") | split("->") | last) == $n)][0]
+        ' 2>/dev/null | head -1)
         if _stage_status_is_terminal "$stage_status" \
+            && [[ -z "$branch_local_substage_match" || "$branch_local_substage_match" == "null" ]] \
             && [[ "$printed_terminal" != "true" ]] \
             && [[ -n "$duration_ms" && "$duration_ms" != "null" && "$duration_ms" =~ ^[0-9]+$ ]]; then
             nested_match=$(echo "$current_nested" | jq -c --arg n "$stage_name" '.[] | select(.name == $n)' 2>/dev/null | head -1)

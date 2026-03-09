@@ -273,22 +273,26 @@ _detect_parallel_branches() {
             depth=0
             has_parallel=0
             branch_count=0
+            found_parallel_block=0
+            nested_same_name_depth=0
         }
 
         function flush_block(   i) {
-            if (has_parallel) {
+            if (has_parallel && !found_parallel_block) {
                 for (i = 1; i <= branch_count; i++) {
                     print branch_order[i]
                 }
+                found_parallel_block=1
             }
             delete branch_seen
             delete branch_order
             branch_count=0
             has_parallel=0
+            nested_same_name_depth=0
         }
 
         # Start a new matching stage block when not already inside one
-        /\[Pipeline\] \{ \(/ && index($0, "(" stage ")") && in_stage == 0 {
+        /\[Pipeline\] \{ \(/ && index($0, "(" stage ")") && in_stage == 0 && found_parallel_block == 0 {
             in_stage=1
             depth=1
             has_parallel=0
@@ -303,7 +307,13 @@ _detect_parallel_branches() {
                 has_parallel=1
             }
 
-            if (match($0, /\(Branch: [^)]+\)/)) {
+            if (index($0, "(" stage ")") && $0 ~ /\[Pipeline\] \{ \(/ && depth > 0) {
+                nested_same_name_depth = depth + 1
+                depth++
+                next
+            }
+
+            if (nested_same_name_depth == 0 && match($0, /\(Branch: [^)]+\)/)) {
                 branch = substr($0, RSTART + 9, RLENGTH - 10)
                 if (!(branch in branch_seen)) {
                     branch_seen[branch]=1
@@ -318,6 +328,9 @@ _detect_parallel_branches() {
 
             if ($0 ~ /\[Pipeline\] \}/) {
                 depth--
+                if (nested_same_name_depth > 0 && depth < nested_same_name_depth) {
+                    nested_same_name_depth=0
+                }
                 if (depth == 0) {
                     flush_block()
                     in_stage=0
@@ -330,7 +343,7 @@ _detect_parallel_branches() {
             # Monitoring mode often reads console output before the wrapper
             # closes. Flush any in-progress matching block so branch numbering
             # is available during live display, not only after completion.
-            if (in_stage == 1) {
+            if (in_stage == 1 && found_parallel_block == 0) {
                 flush_block()
             }
         }
@@ -348,6 +361,109 @@ _detect_parallel_branches() {
     done <<< "$branches"
 
     echo "$json_array"
+}
+
+# Detect ordered named substages contained within each parallel branch block.
+# Usage: _detect_branch_substages "$console_output" "wrapper-stage-name"
+# Returns: JSON object like {"Branch A":["Setup","Test"],"Branch B":[]}
+_detect_branch_substages() {
+    local console_output="$1"
+    local wrapper_stage="$2"
+
+    local branches_json
+    branches_json=$(_detect_parallel_branches "$console_output" "$wrapper_stage")
+    if [[ -z "$branches_json" || "$branches_json" == "[]" ]]; then
+        echo "{}"
+        return 0
+    fi
+
+    local result
+    result=$(jq -nr --arg wrapper "$wrapper_stage" --argjson branches "$branches_json" --arg console "$console_output" '
+        def push($stack; $entry): $stack + [$entry];
+        def pop($stack): if ($stack | length) > 0 then $stack[0:-1] else [] end;
+        def current_branch($stack):
+            reduce ($stack | reverse[]) as $entry (""; if . != "" then . else ($entry.branch // "") end);
+        def remember($state; $branch; $stage):
+            if ($branch == "" or $stage == "" or $stage == $state.wrapper) then
+                $state
+            else
+                $state
+                | .substages[$branch] = (.substages[$branch] // [])
+                | if ((.substages[$branch] | index($stage)) == null) then
+                    .substages[$branch] += [$stage]
+                  else
+                    .
+                  end
+            end;
+
+        reduce ($console | split("\n")[]) as $line (
+            {
+                wrapper: $wrapper,
+                branches: $branches,
+                branch_set: ($branches | map({(.): true}) | add // {}),
+                in_wrapper: false,
+                wrapper_depth: 0,
+                wrapper_has_parallel: false,
+                depth: 0,
+                stack: [],
+                substages: ($branches | map({(.): []}) | add // {})
+            };
+            if ($line | test("^\\[Pipeline\\] \\{ \\(.+\\)$")) then
+                ($line | capture("^\\[Pipeline\\] \\{ \\((?<name>.*)\\)$").name) as $name
+                | if (.in_wrapper | not) and $name == .wrapper then
+                    .in_wrapper = true
+                    | .wrapper_depth = (.depth + 1)
+                    | .stack = push(.stack; {type: "wrapper", name: $name})
+                    | .depth += 1
+                  elif .in_wrapper then
+                    if ($name | startswith("Branch: ")) then
+                        .stack = push(.stack; {type: "branch", name: $name, branch: ($name | sub("^Branch: "; ""))})
+                        | .depth += 1
+                      elif (.branch_set[$name] // false) then
+                        .stack = push(.stack; {type: "branch-stage", name: $name, branch: $name})
+                        | .depth += 1
+                      else
+                        (current_branch(.stack)) as $branch
+                        | if .wrapper_has_parallel and $branch != "" then
+                            remember(.; $branch; $name)
+                          else
+                            .
+                          end
+                        | .stack = push(.stack; {type: "block", name: $name})
+                        | .depth += 1
+                    end
+                  else
+                    .depth += 1
+                  end
+            elif $line == "[Pipeline] parallel" then
+                if .in_wrapper then .wrapper_has_parallel = true else . end
+            elif $line == "[Pipeline] {" then
+                if .in_wrapper then
+                    .stack = push(.stack; {type: "block", name: ""})
+                    | .depth += 1
+                else
+                    .depth += 1
+                end
+            elif $line == "[Pipeline] }" then
+                if .depth > 0 then .depth -= 1 else . end
+                | if .in_wrapper then
+                    .stack = pop(.stack)
+                    | if .depth < .wrapper_depth then
+                        .in_wrapper = false
+                      else
+                        .
+                      end
+                  else
+                    .
+                  end
+            else
+                .
+            end
+        )
+        | .substages
+    ')
+
+    echo "$result"
 }
 
 # Parse build metadata from console output
