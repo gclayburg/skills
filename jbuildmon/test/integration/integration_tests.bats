@@ -80,6 +80,17 @@ _jenkins_job_api_url() {
     echo "${JENKINS_URL}/job/${top_job}/job/${encoded_branch}/api/json"
 }
 
+_jenkins_build_api_url() {
+    local job_name="$1"
+    local build_number="$2"
+    local top_job="${job_name%%/*}"
+    local branch_job="${job_name#*/}"
+    local encoded_branch
+
+    encoded_branch=$(printf '%s' "$branch_job" | jq -sRr @uri)
+    echo "${JENKINS_URL}/job/${top_job}/job/${encoded_branch}/${build_number}/api/json"
+}
+
 _trigger_integration_job_scan() {
     local job_name="$1"
     local top_job="${job_name%%/*}"
@@ -175,13 +186,13 @@ _wait_for_specific_build_completion() {
     local build_number="$2"
     local timeout_seconds="${3:-180}"
     local deadline=$((SECONDS + timeout_seconds))
+    local build_api_url
+
+    build_api_url=$(_jenkins_build_api_url "$job_name" "$build_number")
 
     while (( SECONDS < deadline )); do
         local build_json
-        set +e
-        build_json=$("${BUILDGIT}" --job "$job_name" status "$build_number" --json 2>/dev/null)
-        set -e
-        [[ -n "$build_json" ]] || build_json=""
+        build_json=$(curl -sS -f -u "${JENKINS_USER_ID}:${JENKINS_API_TOKEN}" "$build_api_url" 2>/dev/null) || build_json=""
 
         if [[ -n "$build_json" ]]; then
             local building
@@ -306,14 +317,8 @@ _ensure_build_complete() {
         _record_failure "Integration job branch was not indexed within 180s: ${INTEGRATION_JOB}"
     fi
 
-    local trigger_output trigger_rc queue_url build_number follow_pid
+    local trigger_output trigger_rc queue_url build_number
     set +e
-    (
-        rc=0
-        "${BUILDGIT}" --job "$INTEGRATION_JOB" status -f --once=60 >"$(_cache_file monitor_output.txt)" 2>&1 || rc=$?
-        printf '%s\n' "$rc" > "$(_cache_file monitor_exit_code.txt)"
-    ) &
-    follow_pid=$!
     trigger_output=$("${BUILDGIT}" --verbose --job "$INTEGRATION_JOB" build --no-follow 2>&1)
     trigger_rc=$?
     set -e
@@ -336,13 +341,8 @@ _ensure_build_complete() {
     fi
     printf '%s\n' "$build_number" > "$(_cache_file build_number.txt)"
 
-    wait "$follow_pid" || true
-    local monitor_output monitor_rc
-    monitor_output=$(cat "$(_cache_file monitor_output.txt)" 2>/dev/null || true)
-    monitor_rc=$(cat "$(_cache_file monitor_exit_code.txt)" 2>/dev/null || echo 1)
-    if [[ $monitor_rc -ne 0 ]]; then
-        echo "$monitor_output" >&2
-        _record_failure "Monitoring failed for ${INTEGRATION_JOB} #${build_number}"
+    if ! _wait_for_specific_build_completion "$INTEGRATION_JOB" "$build_number" 180; then
+        _record_failure "Integration pipeline build #${build_number} did not complete in time"
     fi
 
     local json_output json_rc snapshot_output snapshot_rc
@@ -437,10 +437,10 @@ _ensure_build_command_monitor_complete() {
 }
 
 @test "parallel-substages: monitoring output matches expected structure" {
-    _ensure_build_complete
+    _ensure_build_command_monitor_complete
 
     local monitor_file
-    monitor_file="$(_cache_file monitor_output.txt)"
+    monitor_file="$(_cache_file build_monitor_output.txt)"
 
     [[ -s "$monitor_file" ]]
     _assert_stage_patterns "$monitor_file"
