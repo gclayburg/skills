@@ -179,6 +179,17 @@ _extract_stage_lines() {
     grep 'Stage:' "$source_file" || true
 }
 
+_normalized_stage_names() {
+    local source_file="$1"
+
+    _extract_stage_lines "$source_file" | sed -E '
+        s/^\[[^]]+\][[:space:]]+[^[:space:]]+[[:space:]]+Stage:[[:space:]]*//
+        s/^║[0-9]+[[:space:]]+//
+        s/^\[[^]]+\][[:space:]]+//
+        s/[[:space:]]+\([^()]*\)$//
+    '
+}
+
 _assert_stage_patterns() {
     local source_file="$1"
     local stage_lines
@@ -337,6 +348,47 @@ _ensure_build_complete() {
     touch "$(_cache_file ready)"
 }
 
+_ensure_build_command_monitor_complete() {
+    local cache_dir
+    local failure_file
+    cache_dir="$(_cache_dir)"
+    failure_file="$(_cache_file build_monitor_failure.txt)"
+    mkdir -p "$cache_dir"
+
+    if [[ -f "$(_cache_file build_monitor_ready)" ]]; then
+        return 0
+    fi
+    if [[ -f "$failure_file" ]]; then
+        cat "$failure_file" >&2
+        return 1
+    fi
+
+    _record_build_monitor_failure() {
+        printf '%s\n' "$1" > "$failure_file"
+        echo "$1" >&2
+        return 1
+    }
+
+    if ! _wait_for_integration_job_indexed "$INTEGRATION_JOB" 180; then
+        _record_build_monitor_failure "Integration job branch was not indexed within 180s: ${INTEGRATION_JOB}"
+    fi
+
+    local build_output build_rc
+    set +e
+    build_output=$("${BUILDGIT}" --job "$INTEGRATION_JOB" build 2>&1)
+    build_rc=$?
+    set -e
+    printf '%s\n' "$build_output" > "$(_cache_file build_monitor_output.txt)"
+    printf '%s\n' "$build_rc" > "$(_cache_file build_monitor_exit_code.txt)"
+
+    if [[ $build_rc -ne 0 ]]; then
+        echo "$build_output" >&2
+        _record_build_monitor_failure "buildgit build monitoring failed for ${INTEGRATION_JOB}"
+    fi
+
+    touch "$(_cache_file build_monitor_ready)"
+}
+
 @test "parallel-substages: build completes successfully" {
     _ensure_build_complete
 
@@ -442,4 +494,37 @@ _ensure_build_complete() {
     (( default_duration >= 7 ))
     (( wrapper_duration >= slow_duration ))
     (( wrapper_duration >= default_duration ))
+}
+
+@test "parallel-substages: build monitoring output matches snapshot stage set" {
+    _ensure_build_complete
+    _ensure_build_command_monitor_complete
+
+    local snapshot_file build_monitor_file snapshot_names_file build_names_file
+    snapshot_file="$(_cache_file status_all.txt)"
+    build_monitor_file="$(_cache_file build_monitor_output.txt)"
+    snapshot_names_file="$(_cache_file snapshot_stage_names.txt)"
+    build_names_file="$(_cache_file build_stage_names.txt)"
+
+    [[ "$(cat "$(_cache_file build_monitor_exit_code.txt)")" -eq 0 ]]
+
+    _normalized_stage_names "$snapshot_file" | sort -u > "$snapshot_names_file"
+    _normalized_stage_names "$build_monitor_file" | sort -u > "$build_names_file"
+
+    diff -u "$snapshot_names_file" "$build_names_file"
+}
+
+@test "parallel-substages: build monitoring does not emit flat leaf stages after finalize" {
+    _ensure_build_command_monitor_complete
+
+    local build_monitor_file finalize_line duplicate_leaf_lines
+    build_monitor_file="$(_cache_file build_monitor_output.txt)"
+    finalize_line=$(_line_number_for_pattern "$build_monitor_file" 'Stage: \[[^]]+\] Finalize \(')
+
+    [[ -n "$finalize_line" ]]
+
+    duplicate_leaf_lines=$(tail -n +"$((finalize_line + 1))" "$build_monitor_file" | \
+        grep -E 'Stage: (Lint|Compile|Analyze|Package|Report) \([^)]+\)' || true)
+
+    [[ -z "$duplicate_leaf_lines" ]]
 }
