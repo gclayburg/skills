@@ -219,8 +219,7 @@ _extract_build_context() {
     if [[ -n "$console_output" ]]; then
         local trigger_info
         trigger_info=$(detect_trigger_type "$console_output")
-        _BC_TRIGGER_TYPE=$(echo "$trigger_info" | head -1)
-        _BC_TRIGGER_USER=$(echo "$trigger_info" | tail -1)
+        IFS=$'\n' read -r _BC_TRIGGER_TYPE _BC_TRIGGER_USER <<< "$trigger_info"
     else
         _BC_TRIGGER_TYPE="unknown"
         _BC_TRIGGER_USER="unknown"
@@ -229,8 +228,7 @@ _extract_build_context() {
     # Extract triggering commit
     local commit_info
     commit_info=$(extract_triggering_commit "$job_name" "$build_number" "$console_output")
-    _BC_COMMIT_SHA=$(echo "$commit_info" | head -1)
-    _BC_COMMIT_MSG=$(echo "$commit_info" | tail -1)
+    IFS=$'\n' read -r _BC_COMMIT_SHA _BC_COMMIT_MSG <<< "$commit_info"
 
     # Correlate commit with local history
     _BC_CORRELATION_STATUS=$(correlate_commit "$_BC_COMMIT_SHA")
@@ -341,4 +339,3 @@ _jenkins_status_check() {
 
     return "$exit_code"
 }
-
