@@ -10,6 +10,7 @@ pipeline {
         timestamps()
         ansiColor('xterm')
         timeout(time: 5, unit: 'MINUTES')
+        skipDefaultCheckout(true)
     }
     stages {
         stage('Setup') {
