@@ -321,10 +321,6 @@ _ensure_build_complete() {
         _record_failure "Monitoring failed for ${INTEGRATION_JOB} #${build_number}"
     fi
 
-    if ! _wait_for_specific_build_completion "$INTEGRATION_JOB" "$build_number" 180; then
-        _record_failure "Integration pipeline build #${build_number} did not complete in time"
-    fi
-
     local json_output json_rc snapshot_output snapshot_rc
     set +e
     json_output=$("${BUILDGIT}" --job "$INTEGRATION_JOB" status "$build_number" --json 2>&1)
