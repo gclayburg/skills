@@ -626,6 +626,79 @@ WRAPPER_END
     [[ "$output" == *"43"* ]] || [[ "$output" == *"#43"* ]] || [[ "$output" == *"Build"* ]]
 }
 
+@test "build_captures_baseline_before_triggering_new_build" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << 'WRAPPER'
+#!/usr/bin/env bash
+set -euo pipefail
+
+_BUILDGIT_TESTING=1
+source "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+POLL_INTERVAL=1
+MAX_BUILD_TIME=15
+BUILD_START_TIMEOUT=5
+
+echo "42" > "${TEST_TEMP_DIR}/last_build_number"
+
+verify_jenkins_connection() { return 0; }
+verify_job_exists() {
+    JOB_URL="${JENKINS_URL}/job/$1"
+    return 0
+}
+trigger_build() {
+    echo "43" > "${TEST_TEMP_DIR}/last_build_number"
+    echo "http://jenkins.example.com/queue/item/123/"
+}
+jenkins_api() {
+    if [[ "${1:-}" == *"/lastSuccessfulBuild/api/json" ]]; then
+        echo '{"duration":120000}'
+        return 0
+    fi
+    if [[ "${1:-}" == "/queue/item/123/api/json" ]]; then
+        echo '{"id":123,"why":"In the quiet period. Expires in 4.9 sec","executable":{"number":43}}'
+        return 0
+    fi
+    echo ""
+    return 1
+}
+get_last_build_number() {
+    cat "${TEST_TEMP_DIR}/last_build_number"
+}
+get_build_info() {
+    echo '{"number":43,"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/test-repo/43/"}'
+}
+get_console_output() {
+    echo "Started by user buildtriggerdude"
+    echo "Running on agent8_sixcore in /var/jenkins/workspace/test-repo"
+    echo "Checking out Revision abc1234567890"
+}
+get_current_stage() { echo "Build"; }
+get_all_stages() { echo "[]"; }
+get_failed_stage() { echo ""; }
+fetch_test_results() { echo ""; }
+
+JOB_NAME="test-repo"
+cmd_build --prior-jobs 0
+WRAPPER
+
+    chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 2>&1
+
+    assert_success
+    assert_output --partial "Build:      #43"
+    refute_output --partial "Build did not start within timeout"
+}
+
 # =============================================================================
 # Test Cases: Usage Help on Build Subcommand
 # Spec reference: usage-help-spec.md

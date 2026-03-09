@@ -902,6 +902,9 @@ cmd_build() {
     fi
     local job_name="$_VALIDATED_JOB_NAME"
 
+    local baseline_build
+    baseline_build=$(get_last_build_number "$job_name")
+
     # -------------------------------------------------------------------------
     # Part 2: Trigger the build
     # -------------------------------------------------------------------------
@@ -930,9 +933,6 @@ cmd_build() {
     # -------------------------------------------------------------------------
     # Part 5: Wait for build to start and monitor
     # -------------------------------------------------------------------------
-    local baseline_build
-    baseline_build=$(get_last_build_number "$job_name")
-
     if ! _wait_for_build_start "$job_name" "$baseline_build" "$queue_url"; then
         bg_log_error "Build did not start within timeout"
         bg_log_essential "Suggestion: Check Jenkins queue at ${JENKINS_URL}/queue/"

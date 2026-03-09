@@ -282,8 +282,14 @@ _ensure_build_complete() {
         _record_failure "Integration job branch was not indexed within 180s: ${INTEGRATION_JOB}"
     fi
 
-    local trigger_output trigger_rc queue_url build_number
+    local trigger_output trigger_rc queue_url build_number follow_pid
     set +e
+    (
+        rc=0
+        "${BUILDGIT}" --job "$INTEGRATION_JOB" status -f --once=60 >"$(_cache_file monitor_output.txt)" 2>&1 || rc=$?
+        printf '%s\n' "$rc" > "$(_cache_file monitor_exit_code.txt)"
+    ) &
+    follow_pid=$!
     trigger_output=$("${BUILDGIT}" --verbose --job "$INTEGRATION_JOB" build --no-follow 2>&1)
     trigger_rc=$?
     set -e
@@ -306,13 +312,10 @@ _ensure_build_complete() {
     fi
     printf '%s\n' "$build_number" > "$(_cache_file build_number.txt)"
 
+    wait "$follow_pid" || true
     local monitor_output monitor_rc
-    set +e
-    monitor_output=$("${BUILDGIT}" --job "$INTEGRATION_JOB" status -f --once=180 2>&1)
-    monitor_rc=$?
-    set -e
-    printf '%s\n' "$monitor_output" > "$(_cache_file monitor_output.txt)"
-    printf '%s\n' "$monitor_rc" > "$(_cache_file monitor_exit_code.txt)"
+    monitor_output=$(cat "$(_cache_file monitor_output.txt)" 2>/dev/null || true)
+    monitor_rc=$(cat "$(_cache_file monitor_exit_code.txt)" 2>/dev/null || echo 1)
     if [[ $monitor_rc -ne 0 ]]; then
         echo "$monitor_output" >&2
         _record_failure "Monitoring failed for ${INTEGRATION_JOB} #${build_number}"
