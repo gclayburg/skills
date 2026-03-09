@@ -58,7 +58,7 @@ _get_threads_integration_job() {
         branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null) || branch="main"
     fi
 
-    echo "buildgit-integration-test-threads/${branch}"
+    echo "buildgit-integration-test/${branch}"
 }
 
 _cache_dir() {
@@ -309,9 +309,9 @@ _extract_agent_for_fragment() {
     monitor_file="$(_cache_file monitor_output.txt)"
 
     [[ -s "$monitor_file" ]]
-    grep -Eq 'Simple Branch \[' "$monitor_file"
-    grep -Eq 'Nested Branch->Step (A|B) \[' "$monitor_file"
-    grep -Eq 'Default Nested->Step (X|Y) \[' "$monitor_file"
+    grep -Eq 'Quick Task \[' "$monitor_file"
+    grep -Eq 'Slow Pipeline->(Compile|Package) \[' "$monitor_file"
+    grep -Eq 'Default Pipeline->(Lint|Analyze|Report) \[' "$monitor_file"
 }
 
 @test "threads-nested-parallel: nested branch uses different agent than simple branch" {
@@ -320,8 +320,8 @@ _extract_agent_for_fragment() {
     local monitor_file simple_agent nested_agent
     monitor_file="$(_cache_file monitor_output.txt)"
 
-    simple_agent=$(_extract_agent_for_fragment "$monitor_file" 'Simple Branch \[')
-    nested_agent=$(_extract_agent_for_fragment "$monitor_file" 'Nested Branch->Step (A|B) \[')
+    simple_agent=$(_extract_agent_for_fragment "$monitor_file" 'Quick Task \[')
+    nested_agent=$(_extract_agent_for_fragment "$monitor_file" 'Slow Pipeline->(Compile|Package) \[')
 
     [[ -n "$simple_agent" ]]
     [[ -n "$nested_agent" ]]
@@ -340,12 +340,13 @@ _extract_agent_for_fragment() {
     [[ "$(cat "$(_cache_file json_exit_code.txt)")" -eq 0 ]]
     [[ "$(jq -r '.build.number // empty' "$json_file")" == "$build_number" ]]
     [[ "$(jq -r '.build.status // empty' "$json_file")" == "SUCCESS" ]]
-    grep -Eq 'Stage:   ║1 \[[^]]+\] Simple Branch \([^)]+\)' "$snapshot_file"
-    grep -Eq 'Stage:   ║2 \[[^]]+\] Nested Branch->Step A \([^)]+\)' "$snapshot_file"
-    grep -Eq 'Stage:   ║2 \[[^]]+\] Nested Branch->Step B \([^)]+\)' "$snapshot_file"
-    grep -Eq 'Stage:   ║2 \[[^]]+\] Nested Branch \([^)]+\)' "$snapshot_file"
-    grep -Eq 'Stage:   ║3 \[[^]]+\] Default Nested->Step X \([^)]+\)' "$snapshot_file"
-    grep -Eq 'Stage:   ║3 \[[^]]+\] Default Nested->Step Y \([^)]+\)' "$snapshot_file"
-    grep -Eq 'Stage:   ║3 \[[^]]+\] Default Nested \([^)]+\)' "$snapshot_file"
+    grep -Eq 'Stage:   ║1 \[[^]]+\] Quick Task \([^)]+\)' "$snapshot_file"
+    grep -Eq 'Stage:   ║2 \[[^]]+\] Slow Pipeline->Compile \([^)]+\)' "$snapshot_file"
+    grep -Eq 'Stage:   ║2 \[[^]]+\] Slow Pipeline->Package \([^)]+\)' "$snapshot_file"
+    grep -Eq 'Stage:   ║2 \[[^]]+\] Slow Pipeline \([^)]+\)' "$snapshot_file"
+    grep -Eq 'Stage:   ║3 \[[^]]+\] Default Pipeline->Lint \([^)]+\)' "$snapshot_file"
+    grep -Eq 'Stage:   ║3 \[[^]]+\] Default Pipeline->Analyze \([^)]+\)' "$snapshot_file"
+    grep -Eq 'Stage:   ║3 \[[^]]+\] Default Pipeline->Report \([^)]+\)' "$snapshot_file"
+    grep -Eq 'Stage:   ║3 \[[^]]+\] Default Pipeline \([^)]+\)' "$snapshot_file"
     grep -Eq 'Stage: \[[^]]+\] Parallel Work \([^)]+\)' "$snapshot_file"
 }

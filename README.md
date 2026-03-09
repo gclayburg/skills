@@ -194,7 +194,7 @@ for full examples: push with failure, parallel pipeline stages, progress bars, a
 
 - `jbuildmon/test/` contains the bats test suite for `buildgit`.
 - `jbuildmon/test/integration/integration_tests.bats` triggers the multibranch Jenkins job `buildgit-integration-test/<branch>` and verifies `buildgit` snapshot/follow output against a real pipeline defined in `jbuildmon/test/integration/Jenkinsfile-parallel-substages`.
-- `jbuildmon/test/integration/threads_integration_tests.bats` triggers `buildgit-integration-test-threads/<branch>` and verifies live `--threads` output plus completed snapshot structure against `jbuildmon/test/integration/Jenkinsfile-parallel-nested-threads`.
+- `jbuildmon/test/integration/threads_integration_tests.bats` reuses `buildgit-integration-test/<branch>` and verifies live `--threads` output plus completed snapshot structure against the nested-parallel pipeline in `jbuildmon/test/integration/Jenkinsfile-parallel-substages`.
 - The integration tests are always part of the main Jenkins pipeline and are fail-fast: missing `JENKINS_URL`, `JENKINS_USER_ID`, `JENKINS_API_TOKEN`, or a broken Jenkins integration job is treated as a test failure, not a skip.
 
 # Usage
