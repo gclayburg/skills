@@ -295,6 +295,21 @@ three
     [[ "$(echo "$output" | jq -c '.')" == '{"Unit Tests A":[],"Unit Tests B":[],"Unit Tests C":[],"Unit Tests D":[]}' ]]
 }
 
+@test "detect_branch_substages_handles_large_console_output_without_jq_arg_overflow" {
+    local filler=""
+    local i
+    for ((i = 0; i < 20000; i++)); do
+        filler+="log-line-${i}-abcdefghijklmnopqrstuvwxyz0123456789\n"
+    done
+
+    local console_output
+    console_output=$(printf '[Pipeline] { (parallel tests)\n[Pipeline] parallel\n[Pipeline] { (Branch: Alpha)\n%s[Pipeline] stage\n[Pipeline] { (compile)\n[Pipeline] sh\nalpha\n[Pipeline] }\n[Pipeline] }\n[Pipeline] { (Branch: Beta)\n%s[Pipeline] stage\n[Pipeline] { (test)\n[Pipeline] sh\nbeta\n[Pipeline] }\n[Pipeline] }\n[Pipeline] }\n' "$filler" "$filler")
+
+    run _detect_branch_substages "$console_output" "parallel tests"
+    assert_success
+    [[ "$(echo "$output" | jq -c '.')" == '{"Alpha":["compile"],"Beta":["test"]}' ]]
+}
+
 # =============================================================================
 # extract_stage_logs with Branch: prefix tests
 # =============================================================================

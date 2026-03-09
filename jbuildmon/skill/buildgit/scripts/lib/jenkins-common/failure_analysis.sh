@@ -378,7 +378,7 @@ _detect_branch_substages() {
     fi
 
     local result
-    result=$(jq -nr --arg wrapper "$wrapper_stage" --argjson branches "$branches_json" --arg console "$console_output" '
+    result=$(printf "%s" "$console_output" | jq -Rrs --arg wrapper "$wrapper_stage" --argjson branches "$branches_json" '
         def push($stack; $entry): $stack + [$entry];
         def pop($stack): if ($stack | length) > 0 then $stack[0:-1] else [] end;
         def current_branch($stack):
@@ -396,7 +396,7 @@ _detect_branch_substages() {
                   end
             end;
 
-        reduce ($console | split("\n")[]) as $line (
+        reduce (split("\n")[]) as $line (
             {
                 wrapper: $wrapper,
                 branches: $branches,
