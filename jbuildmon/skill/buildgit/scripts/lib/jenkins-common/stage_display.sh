@@ -720,6 +720,11 @@ _nested_tracking_complete() {
     local printed_state="$3"
 
     echo "$current_nested" "$current_parent_stages" "$printed_state" | jq -e -n '
+        def is_branch_local_substage_leaf($nested; $stage_name):
+            any($nested[]?;
+                (.parent_branch_stage? != null)
+                and ((.name // "") | split("->") | last) == $stage_name
+            );
         (input) as $nested
         | (input) as $parent
         | (input) as $printed
@@ -733,7 +738,9 @@ _nested_tracking_complete() {
           )
         and (
             all($parent[]?;
-                if (.status == "SUCCESS" or .status == "FAILED" or .status == "UNSTABLE" or .status == "ABORTED")
+                if is_branch_local_substage_leaf($nested; .name) then
+                    true
+                elif (.status == "SUCCESS" or .status == "FAILED" or .status == "UNSTABLE" or .status == "ABORTED")
                 then ($printed[.name].terminal // false)
                 else true
                 end
@@ -783,12 +790,16 @@ _force_flush_completion_stages() {
     parent_count=$(echo "$current_parent_stages" | jq 'length' 2>/dev/null) || parent_count=0
     i=0
     while [[ $i -lt $parent_count ]]; do
-        local stage_name stage_status duration_ms printed_terminal nested_match
+        local stage_name stage_status duration_ms printed_terminal nested_match branch_local_substage_match
         stage_name=$(echo "$current_parent_stages" | jq -r ".[$i].name")
         stage_status=$(echo "$current_parent_stages" | jq -r ".[$i].status")
         duration_ms=$(echo "$current_parent_stages" | jq -r ".[$i].durationMillis")
         printed_terminal=$(echo "$printed_state" | jq -r --arg s "$stage_name" '.[$s].terminal // false' 2>/dev/null)
+        branch_local_substage_match=$(echo "$current_nested" | jq -c --arg n "$stage_name" '
+            [.[] | select((.parent_branch_stage? != null) and ((.name // "") | split("->") | last) == $n)][0]
+        ' 2>/dev/null | head -1)
         if _stage_status_is_terminal "$stage_status" \
+            && [[ -z "$branch_local_substage_match" || "$branch_local_substage_match" == "null" ]] \
             && [[ "$printed_terminal" != "true" ]] \
             && [[ -n "$duration_ms" && "$duration_ms" != "null" && "$duration_ms" =~ ^[0-9]+$ ]]; then
             nested_match=$(echo "$current_nested" | jq -c --arg n "$stage_name" '.[] | select(.name == $n)' 2>/dev/null | head -1)

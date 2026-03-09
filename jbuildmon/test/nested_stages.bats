@@ -1117,6 +1117,40 @@ Reporting on default agent...
     [[ "$output" == *"Build Handle (38s)"* ]]
 }
 
+@test "force_flush_completion_stages_skips_flat_parent_entries_for_branch_local_substages" {
+    get_all_stages() {
+        echo '[
+            {"name":"Parallel Work","status":"SUCCESS","durationMillis":8000},
+            {"name":"Slow Pipeline","status":"SUCCESS","durationMillis":0},
+            {"name":"Compile","status":"SUCCESS","durationMillis":4000},
+            {"name":"Package","status":"SUCCESS","durationMillis":3000},
+            {"name":"Finalize","status":"SUCCESS","durationMillis":1000}
+        ]'
+    }
+
+    get_console_output() { echo ""; }
+
+    _get_nested_stages() {
+        echo '[
+            {"name":"Slow Pipeline->Compile","status":"SUCCESS","durationMillis":4000,"agent":"agent1paton","nesting_depth":0,"parent_branch_stage":"Slow Pipeline","parallel_branch":"Slow Pipeline","parallel_wrapper":"Parallel Work"},
+            {"name":"Slow Pipeline->Package","status":"SUCCESS","durationMillis":3000,"agent":"agent1paton","nesting_depth":0,"parent_branch_stage":"Slow Pipeline","parallel_branch":"Slow Pipeline","parallel_wrapper":"Parallel Work"},
+            {"name":"Slow Pipeline","status":"SUCCESS","durationMillis":7000,"agent":"agent1paton","nesting_depth":0,"parallel_branch":"Slow Pipeline","parallel_wrapper":"Parallel Work"},
+            {"name":"Parallel Work","status":"SUCCESS","durationMillis":8000,"agent":"agent8_sixcore","nesting_depth":0,"is_parallel_wrapper":true,"parallel_branches":["Slow Pipeline"]},
+            {"name":"Finalize","status":"SUCCESS","durationMillis":1000,"agent":"agent8_sixcore","nesting_depth":0}
+        ]'
+    }
+
+    local previous_state output_json flush_output state_file
+    previous_state='{"printed":{"Slow Pipeline->Compile":{"terminal":true},"Slow Pipeline->Package":{"terminal":true},"Slow Pipeline":{"terminal":true},"Parallel Work":{"terminal":true},"Finalize":{"terminal":true}},"parallel_state":{}}'
+    state_file="${TEST_TEMP_DIR}/force_flush_state.json"
+    flush_output=$(_force_flush_completion_stages "test-job" "42" "$previous_state" 2>&1 >"$state_file")
+    output_json=$(cat "$state_file")
+
+    [[ "$flush_output" != *"Stage: Compile"* ]]
+    [[ "$flush_output" != *"Stage: Package"* ]]
+    [[ "$(echo "$output_json" | jq -r '.tracking_complete')" == "true" ]]
+}
+
 # =============================================================================
 # Test Cases: _track_nested_stage_changes
 # =============================================================================
