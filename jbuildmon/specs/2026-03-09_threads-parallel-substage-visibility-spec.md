@@ -1,9 +1,9 @@
 ## Fix `--threads` to show active sub-stages within parallel branches
 
 - **Date:** `2026-03-09T10:33:00-06:00`
-- **References:** `specs/todo/threads-display-accuracy.md`
+- **References:** `specs/done-reports/threads-display-accuracy.md`
 - **Supersedes:** none
-- **State:** `DRAFT`
+- **State:** `IMPLEMENTED`
 
 ## Background
 

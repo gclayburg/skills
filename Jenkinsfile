@@ -228,7 +228,8 @@ pipeline {
                             : "${JENKINS_API_TOKEN:?JENKINS_API_TOKEN is not set}"
                             export JENKINS_URL JENKINS_USER_ID JENKINS_API_TOKEN
                             ./test/bats/bin/bats --formatter tap --report-formatter junit --output . \
-                                test/integration/integration_tests.bats
+                                test/integration/integration_tests.bats \
+                                test/integration/threads_integration_tests.bats
                         '''
                     }
                 }

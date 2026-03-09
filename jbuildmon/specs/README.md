@@ -66,3 +66,4 @@ These files represent completed specifications in the specs/ directory.  This li
 - 2026-03-06_bug-agent-name-missed-spec.md  fix `--threads` synthetic parallel wrapper rows to use the orchestrator pipeline agent instead of blank or downstream agent names
 - 2026-03-07_parallel-branch-substages-spec.md  nest branch-local sequential substages under their parallel branch, inherit branch agent/path, and aggregate branch/wrapper durations consistently across snapshot, follow, threads, and JSON output
 - 2026-03-07_integration-test-framework-spec.md  add always-on Jenkins integration tests that trigger branch-matched multibranch pipelines and verify buildgit snapshot/follow output against a real parallel-substages pipeline
+- 2026-03-09_threads-parallel-substage-visibility-spec.md  make `--threads` show active nested substages inside parallel branches, reuse substage duration estimates, and cover the behavior with redraw/unit/integration tests

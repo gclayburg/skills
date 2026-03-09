@@ -37,6 +37,16 @@ $ buildgit --threads status -f --line
 IN_PROGRESS Job ralph1 #42 [=>                  ] 14% 35s / ~4m 10s
 ```
 
+Nested parallel branches stay visible here as their local substages advance:
+
+```bash
+$ buildgit --threads status -f --line
+  [fastnode      ] Simple Branch [====================] 100% 12s / ~12s
+  [slownode      ] Nested Branch->Step A [===>                ] 20% 8s / ~39s
+  [fastnode      ] Default Nested->Step X [=>                  ] 10% 3s / ~30s
+IN_PROGRESS Job buildgit-integration-test-threads #18 [====>               ] 29% 30s / ~1m 44s
+```
+
 ```bash
 $ buildgit push
 To ssh://scranton2:2233/home/git/phandlemono.git

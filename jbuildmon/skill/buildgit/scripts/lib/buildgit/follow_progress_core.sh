@@ -168,12 +168,65 @@ _get_follow_active_stages() {
     console_output=$(get_console_output "$job_name" "$build_number" 2>/dev/null) || console_output=""
     stage_agent_map="{}"
     pipeline_scope_agent=""
+    local branch_to_wrapper_json substage_to_branch_json
+    branch_to_wrapper_json="{}"
+    substage_to_branch_json="{}"
     if [[ -n "$console_output" ]]; then
         stage_agent_map=$(_build_stage_agent_map "$console_output" 2>/dev/null) || stage_agent_map="{}"
         pipeline_scope_agent=$(_extract_pre_stage_agent_from_console "$console_output" 2>/dev/null) || pipeline_scope_agent=""
+
+        local mapping_wrapper_names mapping_wrapper_name
+        mapping_wrapper_names=$(echo "$base_stages_json" | jq -r '.[].name // empty' 2>/dev/null) || mapping_wrapper_names=""
+        while IFS= read -r mapping_wrapper_name; do
+            [[ -z "$mapping_wrapper_name" ]] && continue
+
+            local mapping_branch_names mapping_branch_substages mapping_branch_name
+            mapping_branch_names=$(_detect_parallel_branches "$console_output" "$mapping_wrapper_name")
+            [[ -z "$mapping_branch_names" || "$mapping_branch_names" == "[]" ]] && continue
+
+            mapping_branch_substages=$(_detect_branch_substages "$console_output" "$mapping_wrapper_name")
+            [[ -z "$mapping_branch_substages" || "$mapping_branch_substages" == "null" ]] && mapping_branch_substages="{}"
+
+            while IFS= read -r mapping_branch_name; do
+                [[ -z "$mapping_branch_name" ]] && continue
+                branch_to_wrapper_json=$(echo "$branch_to_wrapper_json" | jq -c \
+                    --arg branch "$mapping_branch_name" \
+                    --arg wrapper "$mapping_wrapper_name" \
+                    '. + {($branch): $wrapper}' 2>/dev/null) || branch_to_wrapper_json="$branch_to_wrapper_json"
+
+                local mapping_substage_name
+                while IFS= read -r mapping_substage_name; do
+                    [[ -z "$mapping_substage_name" ]] && continue
+                    substage_to_branch_json=$(echo "$substage_to_branch_json" | jq -c \
+                        --arg substage "$mapping_substage_name" \
+                        --arg branch "$mapping_branch_name" \
+                        '. + {($substage): $branch}' 2>/dev/null) || substage_to_branch_json="$substage_to_branch_json"
+                done <<< "$(echo "$mapping_branch_substages" | jq -r --arg branch "$mapping_branch_name" '.[$branch] // [] | .[]' 2>/dev/null)"
+            done <<< "$(echo "$mapping_branch_names" | jq -r '.[]' 2>/dev/null)"
+        done <<< "$mapping_wrapper_names"
     fi
 
     local result="$nested_stages_json"
+    if [[ "$substage_to_branch_json" != "{}" ]]; then
+        result=$(echo "$result" | jq -c \
+            --argjson substage_to_branch "$substage_to_branch_json" \
+            --argjson branch_to_wrapper "$branch_to_wrapper_json" '
+            map(
+                (.name // "") as $original_name
+                | ($substage_to_branch[$original_name] // "") as $branch_name
+                | if $branch_name != "" and ($original_name | contains("->") | not) then
+                    . + {
+                        name: ($branch_name + "->" + $original_name),
+                        parallel_branch: (if (.parallel_branch // "") != "" then .parallel_branch else $branch_name end),
+                        parent_branch_stage: (if (.parent_branch_stage // "") != "" then .parent_branch_stage else $branch_name end),
+                        parallel_wrapper: (if (.parallel_wrapper // "") != "" then .parallel_wrapper else ($branch_to_wrapper[$branch_name] // "") end)
+                    }
+                  else
+                    .
+                  end
+            )
+        ' 2>/dev/null) || result="$nested_stages_json"
+    fi
     local base_stage_names_json
     base_stage_names_json=$(echo "$base_stages_json" | jq -c '[.[].name]' 2>/dev/null) || base_stage_names_json="[]"
     local wrapper_lines
@@ -190,7 +243,15 @@ _get_follow_active_stages() {
 
         local active_branch_count
         active_branch_count=$(echo "$result" | jq -r --argjson branches "$branch_names" '
-            [.[] | select((.status // "") == "IN_PROGRESS") | .name as $stage_name | select(any($branches[]; . == $stage_name))] | length
+            [
+                .[]
+                | select((.status // "") == "IN_PROGRESS")
+                | select(
+                    (.name as $stage_name | any($branches[]; . == $stage_name))
+                    or
+                    ((.parent_branch_stage // "") as $branch_name | $branch_name != "" and any($branches[]; . == $branch_name))
+                )
+            ] | length
         ' 2>/dev/null) || active_branch_count=0
         local later_non_branch_started
         later_non_branch_started=$(echo "$base_stages_json" | jq -r \
@@ -224,7 +285,15 @@ _get_follow_active_stages() {
             branch_estimate_ms=$(echo "$_FOLLOW_STAGE_ESTIMATES_JSON" | jq -r --arg n "$branch_name" '.[$n] // empty' 2>/dev/null) || branch_estimate_ms=""
 
             local branch_present
-            branch_present=$(echo "$result" | jq -r --arg n "$branch_name" 'any(.[]; .name == $n and (.status // "") == "IN_PROGRESS")' 2>/dev/null) || branch_present="false"
+            branch_present=$(echo "$result" | jq -r --arg n "$branch_name" '
+                any(.[];
+                    (.status // "") == "IN_PROGRESS"
+                    and (
+                        (.name == $n)
+                        or ((.parent_branch_stage // "") == $n)
+                    )
+                )
+            ' 2>/dev/null) || branch_present="false"
             if [[ "$branch_present" == "true" ]]; then
                 continue
             fi
@@ -482,6 +551,11 @@ _render_follow_thread_progress_line() {
 
     local estimate_ms
     estimate_ms=$(echo "$estimates_json" | jq -r --arg name "$stage_name" '.[$name] // empty' 2>/dev/null) || estimate_ms=""
+    if [[ -z "$estimate_ms" && "$stage_name" == *"->"* ]]; then
+        local substage_name
+        substage_name="${stage_name##*->}"
+        estimate_ms=$(echo "$estimates_json" | jq -r --arg name "$substage_name" '.[$name] // empty' 2>/dev/null) || estimate_ms=""
+    fi
 
     local agent_display bar tail
     agent_display=$(_format_agent_prefix "[${agent_name}] ")

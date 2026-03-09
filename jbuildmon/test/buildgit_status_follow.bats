@@ -232,7 +232,14 @@ _get_nested_stages() {
     local build_number="$2"
 
     if [[ "$build_number" == "41" ]]; then
-        echo '[{"name":"Build","status":"SUCCESS","durationMillis":4000,"agent":"agent6 guthrie"},{"name":"Unit Tests A","status":"SUCCESS","durationMillis":138000,"agent":"agent6 guthrie"},{"name":"Unit Tests B","status":"SUCCESS","durationMillis":89000,"agent":"agent7 guthrie"},{"name":"Unit Tests C","status":"SUCCESS","durationMillis":126000,"agent":"agent8 guthrie"}]'
+        case "${MOCK_WFAPI_STATE:-single}" in
+            nested_parallel_substages|nested_parallel_substages_step_b)
+                echo '[{"name":"Simple Branch","status":"SUCCESS","durationMillis":12000,"agent":"fastnode"},{"name":"Step A","status":"SUCCESS","durationMillis":39000,"agent":"slownode"},{"name":"Step B","status":"SUCCESS","durationMillis":41000,"agent":"slownode"},{"name":"Step X","status":"SUCCESS","durationMillis":30000,"agent":"fastnode"},{"name":"Step Y","status":"SUCCESS","durationMillis":31000,"agent":"fastnode"}]'
+                ;;
+            *)
+                echo '[{"name":"Build","status":"SUCCESS","durationMillis":4000,"agent":"agent6 guthrie"},{"name":"Unit Tests A","status":"SUCCESS","durationMillis":138000,"agent":"agent6 guthrie"},{"name":"Unit Tests B","status":"SUCCESS","durationMillis":89000,"agent":"agent7 guthrie"},{"name":"Unit Tests C","status":"SUCCESS","durationMillis":126000,"agent":"agent8 guthrie"}]'
+                ;;
+        esac
         return 0
     fi
 
@@ -242,6 +249,12 @@ _get_nested_stages() {
             ;;
         parallel)
             echo '[{"name":"Setup","status":"SUCCESS","startTimeMillis":1706699900000,"durationMillis":5000,"agent":"orch1"},{"name":"Unit Tests A","status":"IN_PROGRESS","startTimeMillis":1706699945000,"durationMillis":0,"agent":"agent6 guthrie","parallel_branch":"Unit Tests A"},{"name":"Unit Tests B","status":"IN_PROGRESS","startTimeMillis":1706699997000,"durationMillis":0,"agent":"agent7 guthrie","parallel_branch":"Unit Tests B"},{"name":"Unit Tests C","status":"IN_PROGRESS","startTimeMillis":1706700013000,"durationMillis":0,"agent":"agent8 guthrie","parallel_branch":"Unit Tests C"}]'
+            ;;
+        nested_parallel_substages)
+            echo '[{"name":"Simple Branch","status":"IN_PROGRESS","startTimeMillis":1706700023000,"durationMillis":0,"agent":"fastnode","parallel_branch":"Simple Branch","parallel_wrapper":"Parallel Work"},{"name":"Step A","status":"IN_PROGRESS","startTimeMillis":1706700027000,"durationMillis":0,"agent":"slownode"},{"name":"Step X","status":"IN_PROGRESS","startTimeMillis":1706700032000,"durationMillis":0,"agent":"fastnode"},{"name":"Parallel Work","status":"IN_PROGRESS","startTimeMillis":1706700023000,"durationMillis":0,"agent":"fastnode","is_parallel_wrapper":true,"parallel_branches":["Simple Branch","Nested Branch","Default Nested"]}]'
+            ;;
+        nested_parallel_substages_step_b)
+            echo '[{"name":"Simple Branch","status":"IN_PROGRESS","startTimeMillis":1706700023000,"durationMillis":0,"agent":"fastnode","parallel_branch":"Simple Branch","parallel_wrapper":"Parallel Work"},{"name":"Step A","status":"SUCCESS","startTimeMillis":1706700027000,"durationMillis":39000,"agent":"slownode"},{"name":"Step B","status":"IN_PROGRESS","startTimeMillis":1706700066000,"durationMillis":0,"agent":"slownode"},{"name":"Step X","status":"SUCCESS","startTimeMillis":1706700032000,"durationMillis":30000,"agent":"fastnode"},{"name":"Step Y","status":"IN_PROGRESS","startTimeMillis":1706700062000,"durationMillis":0,"agent":"fastnode"},{"name":"Parallel Work","status":"IN_PROGRESS","startTimeMillis":1706700023000,"durationMillis":0,"agent":"fastnode","is_parallel_wrapper":true,"parallel_branches":["Simple Branch","Nested Branch","Default Nested"]}]'
             ;;
         parallel_lagged)
             echo '[{"name":"Unit Tests A","status":"SUCCESS","durationMillis":35,"agent":"","parallel_branch":"Unit Tests A","parallel_wrapper":"Unit Tests"},{"name":"Unit Tests B","status":"IN_PROGRESS","startTimeMillis":1706699945000,"durationMillis":29205,"agent":"agent7 guthrie","parallel_branch":"Unit Tests B","parallel_wrapper":"Unit Tests"},{"name":"Unit Tests C","status":"SUCCESS","durationMillis":-12,"agent":"","parallel_branch":"Unit Tests C","parallel_wrapper":"Unit Tests"},{"name":"Unit Tests D","status":"SUCCESS","durationMillis":-11,"agent":"agent8_sixcore","parallel_branch":"Unit Tests D","parallel_wrapper":"Unit Tests"},{"name":"Unit Tests","status":"SUCCESS","durationMillis":29340,"agent":"","is_parallel_wrapper":true,"parallel_branches":["Unit Tests A","Unit Tests B","Unit Tests C","Unit Tests D"]}]'
@@ -263,6 +276,9 @@ _get_nested_stages() {
 
 get_all_stages() {
     case "${MOCK_WFAPI_STATE:-single}" in
+        nested_parallel_substages|nested_parallel_substages_step_b)
+            echo '[{"name":"Parallel Work","status":"IN_PROGRESS","startTimeMillis":1706700023000,"durationMillis":0},{"name":"Simple Branch","status":"IN_PROGRESS","startTimeMillis":1706700023000,"durationMillis":0},{"name":"Nested Branch","status":"IN_PROGRESS","startTimeMillis":1706700027000,"durationMillis":0},{"name":"Default Nested","status":"IN_PROGRESS","startTimeMillis":1706700032000,"durationMillis":0}]'
+            ;;
         parallel_lagged)
             echo '[{"name":"Unit Tests","status":"SUCCESS","startTimeMillis":1706699945000,"durationMillis":135},{"name":"Unit Tests A","status":"SUCCESS","startTimeMillis":1706699945000,"durationMillis":35},{"name":"Unit Tests B","status":"IN_PROGRESS","startTimeMillis":1706699945000,"durationMillis":29176},{"name":"Unit Tests C","status":"SUCCESS","startTimeMillis":1706699945000,"durationMillis":-12},{"name":"Unit Tests D","status":"SUCCESS","startTimeMillis":1706699945000,"durationMillis":-11}]'
             ;;
@@ -277,6 +293,33 @@ get_all_stages() {
 
 get_console_output() {
     case "${MOCK_WFAPI_STATE:-single}" in
+        nested_parallel_substages|nested_parallel_substages_step_b)
+            cat <<'EOF'
+Running on fastnode in /tmp/ws
+[Pipeline] stage
+[Pipeline] { (Parallel Work)
+[Pipeline] parallel
+[Pipeline] { (Branch: Simple Branch)
+[Pipeline] { (Branch: Nested Branch)
+[Pipeline] { (Branch: Default Nested)
+[Pipeline] stage
+[Pipeline] { (Simple Branch)
+[Pipeline] stage
+[Pipeline] { (Nested Branch)
+[Pipeline] node
+Running on slownode in /tmp/ws@2
+[Pipeline] stage
+[Pipeline] { (Step A)
+[Pipeline] stage
+[Pipeline] { (Step B)
+[Pipeline] stage
+[Pipeline] { (Default Nested)
+[Pipeline] stage
+[Pipeline] { (Step X)
+[Pipeline] stage
+[Pipeline] { (Step Y)
+EOF
+            ;;
         parallel_lagged)
             cat <<'EOF'
 [Pipeline] { (Unit Tests)
@@ -393,6 +436,22 @@ case "${1:-}" in
         estimate_ms="${_FOLLOW_BUILD_ESTIMATE_MS:-}"
         _display_follow_line_progress "ralph1" "42" '{"timestamp":1706700000000,"building":true}' "$estimate_ms" "0" "false" "$(_get_follow_active_stages "ralph1" "42")"
         ;;
+    threads_nested_parallel_substages)
+        FAKE_NOW_SECONDS=1706700035
+        THREADS_MODE=true
+        MOCK_WFAPI_STATE=nested_parallel_substages
+        _prime_follow_progress_estimates "ralph1"
+        estimate_ms="${_FOLLOW_BUILD_ESTIMATE_MS:-}"
+        _display_follow_line_progress "ralph1" "42" '{"timestamp":1706700000000,"building":true}' "$estimate_ms" "0" "false" "$(_get_follow_active_stages "ralph1" "42")"
+        ;;
+    active_nested_parallel_substages)
+        MOCK_WFAPI_STATE=nested_parallel_substages
+        _get_follow_active_stages "ralph1" "42"
+        ;;
+    active_nested_parallel_substages_step_b)
+        MOCK_WFAPI_STATE=nested_parallel_substages_step_b
+        _get_follow_active_stages "ralph1" "42"
+        ;;
     threads_unknown)
         FAKE_NOW_SECONDS=1706700035
         THREADS_MODE=true
@@ -449,6 +508,20 @@ case "${1:-}" in
         ;;
     estimate)
         _get_last_successful_build_duration "ralph1"
+        ;;
+    redraw_shrink)
+        redraw_file="${TEST_TEMP_DIR}/redraw_shrink.bin"
+        _PROGRESS_BAR_LINE_COUNT=3
+        _redraw_follow_line_progress_lines "alpha" "beta" > "$redraw_file"
+        od -An -tx1 -v "$redraw_file" | tr -d ' \n'
+        printf '\nCOUNT=%s\n' "${_PROGRESS_BAR_LINE_COUNT:-}"
+        ;;
+    redraw_grow)
+        redraw_file="${TEST_TEMP_DIR}/redraw_grow.bin"
+        _PROGRESS_BAR_LINE_COUNT=2
+        _redraw_follow_line_progress_lines "alpha" "beta" "gamma" "delta" > "$redraw_file"
+        od -An -tx1 -v "$redraw_file" | tr -d ' \n'
+        printf '\nCOUNT=%s\n' "${_PROGRESS_BAR_LINE_COUNT:-}"
         ;;
     *)
         echo "unknown action" >&2
@@ -2040,6 +2113,78 @@ WRAPPER_END
     assert_success
     assert_output --partial "  [agent6 guthrie] Brand New Stage [   <===>            ] 12s / ~unknown"
     refute_output --partial "Brand New Stage [   <===>            ] 12%"
+}
+
+@test "status_follow_threads_nested_parallel_substages_render_with_branch_names_and_estimates" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" threads_nested_parallel_substages
+
+    assert_success
+    assert_output --partial "  [fastnode      ] Simple Branch [====================] 100% 12s / ~12s"
+    assert_output --partial "  [slownode      ] Nested Branch->Step A [===>                ] 20% 8s / ~39s"
+    assert_output --partial "  [fastnode      ] Default Nested->Step X [=>                  ] 10% 3s / ~30s"
+}
+
+@test "status_follow_threads_nested_parallel_substages_keep_pipeline_order_and_agents" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" active_nested_parallel_substages
+
+    assert_success
+    [[ "$(echo "$output" | jq -r '.[] | select(.name == "Nested Branch->Step A") | .agent')" == "slownode" ]]
+    [[ "$(echo "$output" | jq -r '.[] | select(.name == "Default Nested->Step X") | .agent')" == "fastnode" ]]
+    local before_simple before_nested before_default
+    before_simple="${output%%Simple Branch*}"
+    before_nested="${output%%Nested Branch->Step A*}"
+    before_default="${output%%Default Nested->Step X*}"
+    [[ ${#before_simple} -lt ${#before_nested} ]]
+    [[ ${#before_nested} -lt ${#before_default} ]]
+}
+
+@test "status_follow_threads_nested_parallel_substage_transition_updates_active_lines" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" active_nested_parallel_substages_step_b
+
+    assert_success
+    [[ "$(echo "$output" | jq -r '[.[] | select((.status // "") == "IN_PROGRESS") | .name] | join(",")')" == "Simple Branch,Nested Branch->Step B,Default Nested->Step Y,Parallel Work" ]]
+}
+
+@test "status_follow_threads_redraw_shrink_payload_is_atomic_and_tracks_previous_line_count" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" redraw_shrink
+
+    assert_success
+    [[ "${lines[0]}" == "0d1b5b32411b5b4b616c7068610a1b5b4b626574610a1b5b4b1b5b3141" ]]
+    [[ "${lines[1]}" == "COUNT=2" ]]
+}
+
+@test "status_follow_threads_redraw_grow_uses_previous_line_count_for_cursor_reset" {
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_line_progress_wrapper
+    export TEST_TEMP_DIR
+
+    run bash "${TEST_TEMP_DIR}/follow_line_progress.sh" redraw_grow
+
+    assert_success
+    [[ "${lines[0]}" == 0d1b5b3141* ]]
+    [[ "${lines[0]}" != 0d1b5b3341* ]]
+    [[ "${lines[1]}" == "COUNT=4" ]]
 }
 
 @test "status_follow_threads_overflow_limits_stage_lines" {

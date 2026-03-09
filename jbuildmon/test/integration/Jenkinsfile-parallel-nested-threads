@@ -1,0 +1,73 @@
+pipeline {
+    agent {
+        docker {
+            image 'registry:5000/shell-jenkins-agent:latest'
+            alwaysPull true
+            label 'fastnode'
+        }
+    }
+    options {
+        timestamps()
+        ansiColor('xterm')
+        timeout(time: 5, unit: 'MINUTES')
+    }
+    stages {
+        stage('Init') {
+            steps {
+                echo 'Starting parallel nested threads test'
+                sleep 7
+            }
+        }
+        stage('Parallel Work') {
+            parallel {
+                stage('Simple Branch') {
+                    steps {
+                        echo 'Simple branch with direct steps'
+                        sleep 12
+                    }
+                }
+                stage('Nested Branch') {
+                    agent {
+                        label 'slownode'
+                    }
+                    stages {
+                        stage('Step A') {
+                            steps {
+                                echo 'Nested sub-stage A on slownode'
+                                sleep 8
+                            }
+                        }
+                        stage('Step B') {
+                            steps {
+                                echo 'Nested sub-stage B on slownode'
+                                sleep 8
+                            }
+                        }
+                    }
+                }
+                stage('Default Nested') {
+                    stages {
+                        stage('Step X') {
+                            steps {
+                                echo 'Nested sub-stage X on default agent'
+                                sleep 6
+                            }
+                        }
+                        stage('Step Y') {
+                            steps {
+                                echo 'Nested sub-stage Y on default agent'
+                                sleep 6
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        stage('Done') {
+            steps {
+                echo 'All parallel nested work complete'
+                sleep 1
+            }
+        }
+    }
+}
