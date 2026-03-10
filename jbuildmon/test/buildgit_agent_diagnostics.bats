@@ -364,6 +364,71 @@ JSON
     [[ "$output" == *$'===== main build -> first nested node =====\nnested one\n\n===== main build -> second nested node =====\nnested two\n\n===== main build -> Publish build info =====\npublish failure'* ]] || fail "Expected merged output to preserve pipeline order: $output"
 }
 
+@test "get_stage_console_output_recurses_into_descendant_stage_flow_nodes_when_stage_logs_are_empty" {
+    jenkins_job_path() {
+        echo "job/test-job"
+    }
+
+    get_all_stages() {
+        cat <<'JSON'
+[
+  {"id":"30","name":"main build","status":"FAILED","startTimeMillis":1,"durationMillis":1000},
+  {"id":"35","name":"Ancillary publish","status":"FAILED","startTimeMillis":2,"durationMillis":1000}
+]
+JSON
+    }
+
+    get_blue_ocean_nodes() {
+        cat <<'JSON'
+[
+  {"id":"30","name":"main build","type":"STAGE","firstParent":"23"},
+  {"id":"35","name":"Ancillary publish","type":"STAGE","firstParent":"30"}
+]
+JSON
+    }
+
+    jenkins_api() {
+        case "$1" in
+            job/test-job/60/execution/node/30/wfapi/describe)
+                cat <<'JSON'
+{"id":"30","name":"main build","stageFlowNodes":[]}
+JSON
+                ;;
+            job/test-job/60/execution/node/35/wfapi/describe)
+                cat <<'JSON'
+{"id":"35","name":"Ancillary publish","stageFlowNodes":[{"id":"36","name":"publish build scan","stageFlowNodes":[]}]}
+JSON
+                ;;
+            *)
+                return 1
+                ;;
+        esac
+    }
+
+    jenkins_api_with_status() {
+        case "$1" in
+            job/test-job/60/execution/node/30/wfapi/log)
+                printf '{"text":""}\n200\n'
+                ;;
+            job/test-job/60/execution/node/35/wfapi/log)
+                printf '{"text":""}\n200\n'
+                ;;
+            job/test-job/60/execution/node/36/wfapi/log)
+                printf '{"text":"publish build scan failed"}\n200\n'
+                ;;
+            *)
+                return 1
+                ;;
+        esac
+    }
+
+    run get_stage_console_output "test-job" "60" "main build"
+
+    assert_success
+    [[ "$output" == *"===== main build -> publish build scan ====="* ]] || fail "Missing descendant flow-node section header: $output"
+    [[ "$output" == *"publish build scan failed"* ]] || fail "Missing descendant flow-node log: $output"
+}
+
 @test "get_stage_console_output_reports_ambiguous_partial_stage_names" {
     local stages_json match_output
     stages_json='[

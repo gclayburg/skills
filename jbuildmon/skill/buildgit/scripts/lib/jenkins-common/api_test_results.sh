@@ -458,6 +458,51 @@ _get_stage_console_flow_nodes() {
     ' 2>/dev/null || echo "[]"
 }
 
+_get_stage_console_candidate_nodes() {
+    local job_path="$1"
+    local build_number="$2"
+    local stages_json="$3"
+    local blue_nodes_json="$4"
+    local root_stage_id="$5"
+
+    local result_json descendant_stages_json descendant_count descendant_index
+    result_json=$(_get_stage_console_flow_nodes "$job_path" "$build_number" "$root_stage_id")
+    descendant_stages_json=$(_get_stage_console_descendants "$stages_json" "$blue_nodes_json" "$root_stage_id")
+    descendant_count=$(echo "$descendant_stages_json" | jq 'length' 2>/dev/null || echo 0)
+    descendant_index=0
+
+    while [[ "$descendant_index" -lt "$descendant_count" ]]; do
+        local descendant_json descendant_id descendant_flow_nodes_json
+        descendant_json=$(echo "$descendant_stages_json" | jq -c ".[$descendant_index]" 2>/dev/null)
+        descendant_id=$(echo "$descendant_json" | jq -r '.id // empty' 2>/dev/null)
+        descendant_index=$((descendant_index + 1))
+
+        if [[ -z "$descendant_id" || "$descendant_id" == "$root_stage_id" ]]; then
+            continue
+        fi
+
+        descendant_flow_nodes_json=$(_get_stage_console_flow_nodes "$job_path" "$build_number" "$descendant_id")
+        result_json=$(jq -cs '
+            add
+            | reduce .[] as $node (
+                [];
+                if (($node.id // "") == "") then
+                    .
+                elif any(.[]; (.id // "") == ($node.id // "")) then
+                    .
+                else
+                    . + [$node]
+                end
+            )
+        ' \
+            <(printf '%s\n' "$result_json") \
+            <(printf '%s\n' "[$descendant_json]") \
+            <(printf '%s\n' "$descendant_flow_nodes_json") 2>/dev/null)
+    done
+
+    printf '%s\n' "${result_json:-[]}"
+}
+
 get_console_output_raw() {
     local job_name="$1"
     local build_number="$2"
@@ -518,22 +563,8 @@ get_stage_console_output() {
 
     blue_nodes_json=$(get_blue_ocean_nodes "$job_name" "$build_number" 2>/dev/null) || blue_nodes_json="[]"
 
-    local flow_nodes_json descendant_stages_json candidate_nodes_json
-    flow_nodes_json=$(_get_stage_console_flow_nodes "$job_path" "$build_number" "$matched_stage_id")
-    descendant_stages_json=$(_get_stage_console_descendants "$stages_json" "$blue_nodes_json" "$matched_stage_id")
-    candidate_nodes_json=$(jq -cs '
-        add
-        | reduce .[] as $node (
-            [];
-            if (($node.id // "") == "") then
-                .
-            elif any(.[]; (.id // "") == ($node.id // "")) then
-                .
-            else
-                . + [$node]
-            end
-        )
-    ' <(printf '%s\n' "$flow_nodes_json") <(printf '%s\n' "$descendant_stages_json") 2>/dev/null)
+    local candidate_nodes_json
+    candidate_nodes_json=$(_get_stage_console_candidate_nodes "$job_path" "$build_number" "$stages_json" "$blue_nodes_json" "$matched_stage_id")
 
     local candidate_count candidate_index combined_output
     candidate_count=$(echo "$candidate_nodes_json" | jq 'length' 2>/dev/null || echo 0)
