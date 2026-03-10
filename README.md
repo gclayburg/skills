@@ -270,8 +270,8 @@ Format placeholders for --format (use with --line):
   Note: `%t` is `!err!` when Jenkins test-report retrieval fails (communication/sandbox/network error).
 
 Special diagnostics:
-  `buildgit status --all -v` preserves full failed-test stack traces and captured stdout.
-  `buildgit status --json -v` adds untruncated failed-test `stdout` fields.
+  `buildgit -v status --all` preserves full failed-test stack traces and captured stdout.
+  `buildgit -v status --json` adds untruncated failed-test `stdout` fields.
   `buildgit status --list-stages [--json]` lists pipeline stages for one build.
   `buildgit status --console-text [stage]` prints raw build or stage console text.
   Stage lookup accepts exact, case-insensitive, and unique partial matches.

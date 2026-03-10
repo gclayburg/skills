@@ -183,7 +183,7 @@ not ok 1 - unit test failure
 Get structured failed-test stdout without truncation:
 
 ```bash
-$ buildgit status 60 --json -v | jq '.test_results.failed_tests[0]'
+$ buildgit -v status 60 --json | jq '.test_results.failed_tests[0]'
 {
   "class_name": "buildgit_status_follow.bats",
   "test_name": "follow_completed_build_shows_console_url",

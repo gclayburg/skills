@@ -87,8 +87,8 @@ Threads format placeholders for --threads (TTY monitoring only):
   Env: BUILDGIT_THREADS_FORMAT
 
 Special diagnostics:
-  `buildgit status --all -v` preserves full failed-test stack traces and captured stdout.
-  `buildgit status --json -v` adds untruncated failed-test `stdout` fields.
+  `buildgit -v status --all` preserves full failed-test stack traces and captured stdout.
+  `buildgit -v status --json` adds untruncated failed-test `stdout` fields.
   `buildgit status --list-stages [--json]` lists pipeline stages for one build.
   `buildgit status --console-text [stage]` prints raw build or stage console text.
 
@@ -105,6 +105,9 @@ Environment Variables:
 - see jbuildmon/specs/README.md for an overview of all existing specs
 - see jbuildmon/specs/CLAUDE.md for comprehensinve spec creating, implement, state migrating rules and conventions
 - all specs use this naming pattern: `jbuildmon/specs/*-spec.md`
+
+## Changelog
+- When modifying or reviewing CHANGELOG.md, always use the `changelog-maintenance` skill.
 
 ## buildgit
 - see jbuildmon/CLAUDE.md for buildgit testing, changes, AI Agent skill

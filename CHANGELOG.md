@@ -4,27 +4,29 @@ All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are do
 
 ## [Unreleased] - 1.2.0-dev
 
-### Features
-- **Multibranch Pipeline job support** — `buildgit` now supports Jenkins Multibranch Pipeline jobs. `--job` accepts `<job>` and `<job>/<branch>`, branch job paths are URL-encoded correctly, and multibranch jobs auto-resolve to the current/pushed git branch.
-- **`--threads` live stage progress rows** — TTY monitoring now supports `--threads` to show one active-stage progress row per running pipeline stage above the existing overall build bar, including stage-specific agent names, elapsed time, cached last-successful-build estimates, width truncation, and terminal-height capping.
-- **Custom `--threads` format strings** — `--threads` now accepts an optional format argument, supports `%` placeholders plus width/alignment controls for per-stage rows, honors `BUILDGIT_THREADS_FORMAT`, and keeps the default layout as `  [%-14a] %S %g %p %e / %E`.
-- **Agent-friendly failure diagnostics** — `buildgit status` now supports `--console-text [stage]` for raw build/stage logs, `--list-stages` for stage discovery (`--json` returns the stage array), and `-v` now preserves full failed-test stack traces plus captured `stdout` in snapshot/JSON output.
+### Added
+- **Multibranch Pipeline job support** — `--job` now accepts `<job>/<branch>` for Multibranch Pipeline jobs. When omitted, the branch auto-resolves from the current or pushed git branch.
+- **`--threads` live stage progress** — New global option shows per-stage progress rows above the build progress bar during TTY monitoring, with agent names, elapsed time, and estimated completion.
+- **Custom `--threads` format strings** — `--threads` accepts an optional format argument with `%`-placeholders (`%a` agent, `%S` stage, `%g` bar, `%p` percent, `%e` elapsed, `%E` estimate) and width/alignment controls. Configurable via `BUILDGIT_THREADS_FORMAT`.
+- **`--console-text [stage]`** — Print raw console text for an entire build or a specific pipeline stage. Stage names support case-insensitive partial matching.
+- **`--list-stages`** — List available pipeline stages for a build. Combine with `--json` for machine-readable output.
+- **Verbose failure diagnostics** — `-v` now preserves full failed-test stack traces and captured `stdout` in snapshot and JSON output.
 
-### Bug Fixes
-- **`--console-text <stage>` now drills into empty parent stages** — stage lookup now accepts case-insensitive and unique partial matches, reports ambiguous partial names explicitly, and when a matched parent stage has no direct `wfapi/log` text it walks descendant substages and concatenates their logs in pipeline order with `Parent -> Child` section headers.
-- **Test report communication failures are now explicit** — `buildgit status`/`push`/`build` now distinguish Jenkins communication failures from missing test reports. Line mode shows `Tests=!err!` (yellow), full output shows `Test Results: ⚠ Communication error retrieving test results`, and `--json` adds `testResultsError: "communication_failure"` with `testResults: null`. A warning is emitted once per build: `⚠ Could not retrieve test results (communication error)`.
-- **Per-stage agent names now display correctly** — Stage output now maps each stage to its own Jenkins `Running on` node instead of reusing one agent for all stages, and agent names with spaces (for example, `agent6 guthrie`) are preserved for Build Info and stage lines.
-- **Monitoring parallel stage timing now matches snapshot mode** — `buildgit push`, `buildgit build`, and `buildgit status -f` now defer completed parallel blocks until sibling branch discovery stabilizes, print branch rows in `║` order with finalized durations, and keep polling after root-build completion until late stages such as `Deploy` are printed.
-- **Parallel branch substages now stay nested under their branch** — When a Jenkins parallel branch contains a local `stages {}` block, `status`, `push`, `build`, `status -f`, `--threads`, and `--json` now render those child stages as `Branch->Substage`, keep the parent branch marker/agent, aggregate the branch duration from its sequential substages, and stop duplicating the substages as unrelated top-level stages.
-- **`--threads` now shows active nested substages inside parallel branches** — TTY follow mode now resolves branch-local active substages as `Branch->Substage`, preserves the right branch/default agent, reuses substage duration estimates from the last successful build, and keeps redraw cursor math stable when thread rows appear or disappear.
+### Fixed
+- **`--console-text` stage lookup** — Partial stage names are now matched case-insensitively; ambiguous matches produce a clear error. Parent stages with no direct log text now return concatenated descendant logs with section headers.
+- **Test report errors distinguished from missing reports** — Jenkins communication failures now show `Tests=!err!` in line mode, a warning in full output, and `testResultsError` in JSON, instead of silently showing no test results.
+- **Per-stage agent names** — Each stage now shows its own Jenkins agent instead of reusing a single agent for all stages.
+- **Parallel stage timing in monitoring** — `push`, `build`, and `status -f` now wait for all parallel branches before printing, showing correct durations and `║`-ordered rows.
+- **Nested stages inside parallel branches** — Substages within a parallel branch now render as `Branch->Substage` with correct nesting, agent names, and aggregated durations across all output modes.
+- **`--threads` with nested parallel substages** — Active substages inside parallel branches now display correctly with proper agent and duration estimates.
 
 ### Changed
-- **`buildgit status` snapshot default is now one-line everywhere** — `buildgit status` now defaults to compact one-line output on both TTY and non-TTY stdout (TTY keeps color). Use `--all` for full snapshot output.
-- **Snapshot `--prior-jobs` default changed to 0** — plain snapshot status no longer shows prior-jobs unless explicitly requested (`--prior-jobs <N>`). Monitoring commands (`push`, `build`, `status -f`) keep their existing default prior-jobs behavior.
+- **`buildgit status` defaults to one-line output** — Snapshot mode now uses compact one-line output on both TTY and piped stdout (TTY keeps color). Use `--all` for full output.
+- **`--prior-jobs` default changed to 0 for snapshots** — `buildgit status` no longer shows prior builds unless `--prior-jobs <N>` is specified. Monitoring commands (`push`, `build`, `status -f`) are unchanged.
 
 ## [1.1.0] - 2026-03-02
 
-### Features
+### Added
 - **`--format <fmt>` custom output format** — Customize `--line` output with `%`-style placeholders: `%s` (status), `%j` (job), `%n` (build number), `%t` (tests), `%d` (duration), `%D` (date), `%I` (ISO 8601 datetime), `%r` (relative time), `%c` (git commit SHA), `%b` (git branch), `%%` (literal `%`). Specifying `--format` implies `--line`. Conflicts with `--json` and `--all` are reported as errors.
 - **`--prior-jobs <N>` prior build context** — Show N recently completed builds (default 3, oldest-first) before the main output in `status`, `push`, `build`, and `status -f`. Use `--prior-jobs 0` to suppress. Works with `status <build#>` to show builds prior to the specified build.
 - **Estimated build time in monitoring** — `push`, `build`, and `status -f` now print `Estimated build time = ...` from Jenkins `lastSuccessfulBuild` duration before monitoring begins.
@@ -36,7 +38,7 @@ All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are do
 
 ## [1.0.0] - 2026-02-21
 
-### Features
+### Added
 - **`buildgit` unified CLI** — Combined git and Jenkins build tool with `status`, `push`, `build` subcommands and transparent git pass-through for any other git command.
 - **`--job` flag and auto-detection** — Job name auto-detected from git remote; `--job <name>` overrides for all commands.
 - **`--version` global option** — Display current buildgit version and exit. Version `1.0.0` is the initial release.
@@ -60,7 +62,7 @@ All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are do
 - **Test failure display** — JUnit test failure details shown in terminal output after a failed build.
 - **bats-core test framework** — Unit testing framework installed and configured for the project.
 
-### Bug Fixes
+### Fixed
 - **Jenkins log truncation** — Fixed stage log truncation when displaying failure analysis.
 - **Empty test failure section** — Fixed jq query not matching Jenkins API structure.
 - **JSON stdout pollution** — Removed `git status` output from `buildgit status` so `--json` output is clean.
