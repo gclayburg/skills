@@ -1,0 +1,128 @@
+/*
+timing
+./gradlew clean build --info  # on laptop, all 3 modules executed gradle daemon was used= 2:02
+./gradlew -p batchrun clean build --info  = 0:39
+./gradlew -p synconsolemongo42/ clean build --info  = 0:37
+./gradlew -p bundletest/ clean build --info  = 0:40
+so splitting these up into 3 separate runs doesn't really change
+the total time taken
+
+./gradlew clean build --info --parallel  # on laptop now using gradle 6.8.3 took 1:36
+
+jenkins build job using parallel stage for each of the 3 modules: 4:06
+jenkins build job running 3 separate stages: 5:42
+jenkins build job running all 1 stage, ./gradlew clean build --info --parallel: 2:58
+so gradle parallel on one node is probably fast enough
+
+ */
+pipeline {
+    agent {
+        label 'guthrie'
+    }
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+        ansiColor('xterm')
+    }
+    environment {
+        TZ='America/Denver'
+        BATCHRUNHOMEDIR='/jenkinshome/workspace/panorama_integration_tests/batchrun/'
+        POLICYMOUNT='/jenkinshome'
+        SYNCONSOLEMONGO42HOMEDIR='/jenkinshome/workspace/panorama_integration_tests/synconsolemongo42/'
+        // we expect this Jenkinsfile is executed on a Jenkins agent in
+        // a docker container where AGENT_VOLUME is already set to the
+        // same volume mount used for this Jenkins agent's workspace,
+        // e.g.:
+        // AGENT_VOLUME=jenkins2_agent4nodehome
+        // we are using this extra information about how this container was
+        // started so that we can use this same volume when we also launch
+        // containers with docker-compose that need to view groovy policy data
+        // in src/main/groovy
+        /*
+    ENV values used by synconsolemongo42/compose-synconsolemongo42.yml:
+            AGENT_VOLUME
+            POLICYMOUNT
+            SYNCONSOLEMONGO42HOMEDIR
+
+    we cannot use $(pwd) here because the next step launches more docker containers using the
+    docker volume.  So these containers launch on the host and we need to supply
+    the directory names as the host sees them, and NOT as the container running this gradle
+    step sees them.  so basically there is no way for this build to discover where the build
+    is running on the host so we need hardcode the values here and hope that these
+    match how the build job is really setup in jenkins
+    */
+    }
+    stages {
+        /*
+        stage('gradle parallel') {
+            steps {
+                sh 'env'
+                sh "./gradlew clean build --info --parallel"
+            }
+        }
+         */
+        stage( 'parallel tests') {
+            parallel {
+                stage('policyStart bounce') {
+                    steps {
+                        //192.168.1.51 is guthrie
+                        //we must use IP so that when we initiate ssh connection from the docker container on
+                        // guthrie, it will go to guthrie host and not the 127.0.0.1 localhost (the container)
+                        // 'down -v' is used to clean up the 300MB+ anonymous volume docker creates each time it starts
+                        // we want to start mongo fresh each time.  The data is meaningless after we stop mongo.
+                        sh 'sleep 30 && ssh -A -v -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null gclaybur@192.168.1.51 "cd dev/policyStart && docker-compose down -v && DOCKERREPO=registry:5000 docker-compose pull && DOCKERREPO=registry:5000 docker-compose up -d"'
+                        sh './wait-for -t 300 http://guthrie.garyclayburg.com:8083 -- echo POLICYSTARTISUP'
+                        sh 'ssh -A -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null gclaybur@192.168.1.51 "cd dev/policyStart/sampledata && ./load.sh"'
+
+                    }
+                }
+                stage('palmer tests') {
+                    agent {
+                        label 'palmeragent1'
+                    }
+                    stages {
+                        stage('batchrun') {
+                            steps {
+                                sh 'env'
+                                sh "./java8sdk.sh 8.0.402-tem ./gradlew clean"
+                                sh "./java8sdk.sh 8.0.402-tem ./gradlew -p batchrun clean build --info"
+                            }
+                        }
+                    }
+                    post {
+                        always {
+                            junit '**/build/**/TEST-*.xml'
+                        }
+                    }
+
+                }
+                stage('guthrie tests'){
+                    stages {
+                        stage('synconsolemongo42') {
+                            steps {
+                                sh "./java8sdk.sh 8.0.402-tem ./gradlew clean"
+                                sh "./java8sdk.sh 8.0.402-tem ./gradlew -p synconsolemongo42 build --info"
+                            }
+                        }
+                        stage('bundletest') {
+                            steps {
+                                sh "./java8sdk.sh 8.0.402-tem ./gradlew -p bundletest clean build --info"
+                            }
+                        }
+                        stage('TLSauth') {
+                            steps {
+                                sh "./java8sdk.sh 8.0.402-tem ./gradlew -p TLSauth clean build --info"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    post {
+        always {
+            junit '**/build/**/TEST-*.xml'
+        }
+    }
+
+}
