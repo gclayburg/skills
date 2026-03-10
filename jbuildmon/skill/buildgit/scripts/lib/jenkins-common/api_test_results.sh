@@ -523,7 +523,16 @@ get_stage_console_output() {
     descendant_stages_json=$(_get_stage_console_descendants "$stages_json" "$blue_nodes_json" "$matched_stage_id")
     candidate_nodes_json=$(jq -cs '
         add
-        | unique_by(.id)
+        | reduce .[] as $node (
+            [];
+            if (($node.id // "") == "") then
+                .
+            elif any(.[]; (.id // "") == ($node.id // "")) then
+                .
+            else
+                . + [$node]
+            end
+        )
     ' <(printf '%s\n' "$flow_nodes_json") <(printf '%s\n' "$descendant_stages_json") 2>/dev/null)
 
     local candidate_count candidate_index combined_output
