@@ -2,6 +2,8 @@
 
 All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are documented in this file.
 
+## [Unreleased] - 1.3.0-dev
+
 ## [1.2.0] - 2026-03-10
 
 ### Added
