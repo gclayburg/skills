@@ -249,6 +249,59 @@ JSON
     [[ "$output" == *"not ok 1 - unit test failure"* ]] || fail "Missing unit test log: $output"
 }
 
+@test "get_stage_console_output_falls_back_to_stage_flow_nodes_when_stage_log_is_empty" {
+    jenkins_job_path() {
+        echo "job/test-job"
+    }
+
+    get_all_stages() {
+        cat <<'JSON'
+[
+  {"id":"30","name":"main build","status":"FAILED","startTimeMillis":1,"durationMillis":1000}
+]
+JSON
+    }
+
+    get_blue_ocean_nodes() {
+        echo "[]"
+    }
+
+    jenkins_api() {
+        case "$1" in
+            job/test-job/60/execution/node/30/wfapi/describe)
+                cat <<'JSON'
+{"id":"30","name":"main build","stageFlowNodes":[{"id":"31","name":"run Artifactory maven","stageFlowNodes":[]}]}
+JSON
+                ;;
+            *)
+                return 1
+                ;;
+        esac
+    }
+
+    jenkins_api_with_status() {
+        case "$1" in
+            job/test-job/60/execution/node/30/wfapi/log)
+                printf '{"text":""}\n200\n'
+                ;;
+            job/test-job/60/execution/node/31/wfapi/log)
+                printf '%s\n200\n' '{"text":"<span class=\"timestamp\"><b>2026-03-01 12:35:55</b> </span>Jenkins Artifactory Plugin version: 4.0.8\nERROR: Couldn'\''t execute Maven task."}'
+                ;;
+            *)
+                return 1
+                ;;
+        esac
+    }
+
+    run get_stage_console_output "test-job" "60" "main build"
+
+    assert_success
+    [[ "$output" == *"===== main build -> run Artifactory maven ====="* ]] || fail "Missing flow-node section header: $output"
+    [[ "$output" == *"Jenkins Artifactory Plugin version: 4.0.8"* ]] || fail "Missing cleaned flow-node log text: $output"
+    [[ "$output" == *"ERROR: Couldn't execute Maven task."* ]] || fail "Missing flow-node failure log: $output"
+    [[ "$output" != *"<span"* ]] || fail "Expected HTML tags to be stripped: $output"
+}
+
 @test "get_stage_console_output_reports_ambiguous_partial_stage_names" {
     local stages_json match_output
     stages_json='[

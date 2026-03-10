@@ -424,10 +424,38 @@ _get_stage_console_log_text() {
     body_type=$(echo "$body" | jq -r 'type // empty' 2>/dev/null) || true
     log_text=$(echo "$body" | jq -r 'if type == "object" then (.text // "") else empty end' 2>/dev/null) || true
     if [[ "$body_type" == "object" ]]; then
-        printf '%s' "$log_text"
+        printf '%s' "$log_text" | perl -0pe 's/<[^>]+>//g; s/&nbsp;/ /g; s/&amp;/\&/g; s/&lt;/</g; s/&gt;/>/g; s/\r//g'
     else
         printf '%s' "$body"
     fi
+}
+
+_get_stage_console_flow_nodes() {
+    local job_path="$1"
+    local build_number="$2"
+    local stage_id="$3"
+
+    if [[ -z "$job_path" || -z "$build_number" || -z "$stage_id" ]]; then
+        echo "[]"
+        return 0
+    fi
+
+    local response
+    response=$(jenkins_api "${job_path}/${build_number}/execution/node/${stage_id}/wfapi/describe" 2>/dev/null) || true
+    if [[ -z "$response" ]]; then
+        echo "[]"
+        return 0
+    fi
+
+    echo "$response" | jq -c '
+        def flatten_nodes($nodes):
+            [
+                $nodes[]?
+                | {id: (.id // ""), name: (.name // "")},
+                  ((.stageFlowNodes // []) | flatten_nodes(.))[]
+            ];
+        flatten_nodes(.stageFlowNodes // [])
+    ' 2>/dev/null || echo "[]"
 }
 
 get_console_output_raw() {
@@ -490,32 +518,37 @@ get_stage_console_output() {
 
     blue_nodes_json=$(get_blue_ocean_nodes "$job_name" "$build_number" 2>/dev/null) || blue_nodes_json="[]"
 
-    local descendant_stages_json descendant_count descendant_index combined_output
+    local flow_nodes_json descendant_stages_json candidate_nodes_json
+    flow_nodes_json=$(_get_stage_console_flow_nodes "$job_path" "$build_number" "$matched_stage_id")
     descendant_stages_json=$(_get_stage_console_descendants "$stages_json" "$blue_nodes_json" "$matched_stage_id")
-    descendant_count=$(echo "$descendant_stages_json" | jq 'length' 2>/dev/null || echo 0)
-    if [[ "$descendant_count" -le 1 ]]; then
+    candidate_nodes_json=$(jq -cs '
+        add
+        | unique_by(.id)
+    ' <(printf '%s\n' "$flow_nodes_json") <(printf '%s\n' "$descendant_stages_json") 2>/dev/null)
+
+    local candidate_count candidate_index combined_output
+    candidate_count=$(echo "$candidate_nodes_json" | jq 'length' 2>/dev/null || echo 0)
+    if [[ "$candidate_count" -eq 0 ]]; then
         printf '%s\n' "$direct_log_text"
         return 0
     fi
 
     combined_output=""
-    descendant_index=0
-    while [[ "$descendant_index" -lt "$descendant_count" ]]; do
-        local descendant_id descendant_name descendant_log
-        descendant_id=$(echo "$descendant_stages_json" | jq -r ".[$descendant_index].id // empty" 2>/dev/null)
-        descendant_name=$(echo "$descendant_stages_json" | jq -r ".[$descendant_index].name // empty" 2>/dev/null)
-        descendant_index=$((descendant_index + 1))
-        [[ -z "$descendant_id" ]] && continue
-        if ! descendant_log=$(_get_stage_console_log_text "$job_path" "$build_number" "$descendant_id"); then
+    candidate_index=0
+    while [[ "$candidate_index" -lt "$candidate_count" ]]; do
+        local candidate_id candidate_name candidate_log
+        candidate_id=$(echo "$candidate_nodes_json" | jq -r ".[$candidate_index].id // empty" 2>/dev/null)
+        candidate_name=$(echo "$candidate_nodes_json" | jq -r ".[$candidate_index].name // empty" 2>/dev/null)
+        candidate_index=$((candidate_index + 1))
+        [[ -z "$candidate_id" || "$candidate_id" == "$matched_stage_id" ]] && continue
+        if ! candidate_log=$(_get_stage_console_log_text "$job_path" "$build_number" "$candidate_id"); then
             return 1
         fi
-        if [[ -z "${descendant_log//[$' \t\r\n']}" ]]; then
+        if [[ -z "${candidate_log//[$' \t\r\n']}" ]]; then
             continue
         fi
-        if [[ "$descendant_id" != "$matched_stage_id" ]]; then
-            combined_output+=$'\n'"===== ${matched_stage_name} -> ${descendant_name} ====="$'\n'
-        fi
-        combined_output+="$descendant_log"
+        combined_output+=$'\n'"===== ${matched_stage_name} -> ${candidate_name} ====="$'\n'
+        combined_output+="$candidate_log"
         combined_output+=$'\n'
     done
 
