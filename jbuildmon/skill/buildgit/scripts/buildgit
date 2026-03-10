@@ -54,7 +54,7 @@ Global Options:
   --version                      Show version number and exit
 
 Commands:
-  status [build#] [-f|--follow] [--once[=N]] [-n <count>] [--json] [--line] [--all] [--no-tests] [--format <fmt>] [--prior-jobs <N>]
+  status [build#] [-f|--follow] [--once[=N]] [-n <count>] [--json] [--line] [--all] [--no-tests] [--format <fmt>] [--prior-jobs <N>] [--console-text [stage]] [--list-stages]
                       Display Jenkins build status (latest or specific build)
                       build# can be absolute (31) or relative (0=latest, -1=previous, -2=two ago)
                       Default: one-line output (TTY adds color)
@@ -75,6 +75,9 @@ Snapshot status of completed Jenkins build jobs:
   buildgit status --prior-jobs 5   # Latest build + 5 prior one-line builds
   buildgit status --prior-jobs 5 201  # Build #201 + 5 prior one-line builds
   buildgit status --prior-jobs 0   # Latest build, suppress prior-jobs display
+  buildgit status --list-stages    # List available pipeline stages
+  buildgit status --console-text   # Raw full console text
+  buildgit status 60 --console-text "Unit Tests D"  # Raw console for one stage
   buildgit status --all | less     # Full status piped to pager
   buildgit push --no-follow        # Push only, no monitoring
 
@@ -642,6 +645,59 @@ _validate_jenkins_setup() {
     return 0
 }
 
+_status_special_output() {
+    local job_name="$1"
+    local build_number="$2"
+
+    local build_json
+    build_json=$(get_build_info "$job_name" "$build_number")
+    if [[ -z "$build_json" ]]; then
+        bg_log_error "Build #${build_number} not found for job '$job_name'"
+        return 1
+    fi
+
+    if [[ "$STATUS_LIST_STAGES_MODE" == "true" ]]; then
+        local stages_json
+        stages_json=$(get_all_stages "$job_name" "$build_number")
+        if [[ "$STATUS_JSON_MODE" == "true" ]]; then
+            printf '%s\n' "${stages_json:-[]}"
+        else
+            echo "$stages_json" | jq -r '.[].name' 2>/dev/null || true
+        fi
+        return 0
+    fi
+
+    if [[ -n "${STATUS_CONSOLE_TEXT_STAGE:-}" ]]; then
+        local stage_tmp
+        stage_tmp=$(mktemp)
+        if get_stage_console_output "$job_name" "$build_number" "$STATUS_CONSOLE_TEXT_STAGE" >"$stage_tmp"; then
+            cat "$stage_tmp"
+            rm -f "$stage_tmp"
+            return 0
+        else
+            local stage_rc=$?
+            rm -f "$stage_tmp"
+            if [[ "$stage_rc" -eq 3 ]]; then
+                bg_log_error "Stage '${STATUS_CONSOLE_TEXT_STAGE}' not found for build #${build_number}"
+                if [[ -n "${_STAGE_CONSOLE_AVAILABLE_STAGES:-}" ]]; then
+                    printf 'Available stages:\n%s\n' "$_STAGE_CONSOLE_AVAILABLE_STAGES" >&2
+                fi
+            else
+                bg_log_error "Could not retrieve console text for stage '${STATUS_CONSOLE_TEXT_STAGE}' in build #${build_number}"
+            fi
+            return 1
+        fi
+    fi
+
+    local console_output
+    if ! console_output=$(get_console_output_raw "$job_name" "$build_number"); then
+        bg_log_error "Could not retrieve console text for build #${build_number}"
+        return 1
+    fi
+    printf '%s\n' "$console_output"
+    return 0
+}
+
 cmd_status() {
     # Parse status-specific options
     _parse_status_options "$@"
@@ -671,6 +727,26 @@ cmd_status() {
     # Validate incompatible options: follow + build number
     if [[ "$STATUS_FOLLOW_MODE" == "true" && -n "$STATUS_BUILD_NUMBER" ]]; then
         _usage_error "Cannot use --follow with a specific build number"
+    fi
+    if [[ "$STATUS_CONSOLE_TEXT_MODE" == "true" || "$STATUS_LIST_STAGES_MODE" == "true" ]]; then
+        if [[ "$STATUS_CONSOLE_TEXT_MODE" == "true" && "$STATUS_LIST_STAGES_MODE" == "true" ]]; then
+            _usage_error "Cannot combine --console-text with --list-stages"
+        fi
+        if [[ "$STATUS_FOLLOW_MODE" == "true" || "$STATUS_ONCE_MODE" == "true" ]]; then
+            _usage_error "Cannot combine --console-text/--list-stages with --follow"
+        fi
+        if [[ "$STATUS_LINE_MODE" == "true" || "$STATUS_ALL_MODE" == "true" ]]; then
+            _usage_error "Cannot combine --console-text/--list-stages with --line or --all"
+        fi
+        if [[ "${STATUS_N_SET:-false}" == "true" || "$STATUS_PRIOR_JOBS" -gt 0 ]]; then
+            _usage_error "Cannot combine --console-text/--list-stages with -n or --prior-jobs"
+        fi
+        if [[ "$STATUS_CONSOLE_TEXT_MODE" == "true" && "$STATUS_JSON_MODE" == "true" ]]; then
+            _usage_error "Cannot combine --console-text with --json"
+        fi
+        if [[ "$VERBOSE_MODE" == "true" ]]; then
+            _usage_error "Cannot combine --console-text/--list-stages with --verbose"
+        fi
     fi
 
     # For follow mode, jump straight to Jenkins monitoring
@@ -705,6 +781,18 @@ cmd_status() {
     local resolved_status_build_number=""
     if ! resolved_status_build_number=$(_resolve_status_build_number "$_VALIDATED_JOB_NAME" "$STATUS_BUILD_NUMBER"); then
         return 1
+    fi
+
+    if [[ "$STATUS_CONSOLE_TEXT_MODE" == "true" || "$STATUS_LIST_STAGES_MODE" == "true" ]]; then
+        if [[ -z "$resolved_status_build_number" ]]; then
+            resolved_status_build_number=$(get_last_build_number "$_VALIDATED_JOB_NAME")
+            if [[ "$resolved_status_build_number" == "0" || -z "$resolved_status_build_number" ]]; then
+                bg_log_error "No builds found for job '$_VALIDATED_JOB_NAME'"
+                return 1
+            fi
+        fi
+        _status_special_output "$_VALIDATED_JOB_NAME" "$resolved_status_build_number"
+        return $?
     fi
 
     # JSON mode always uses structured output path

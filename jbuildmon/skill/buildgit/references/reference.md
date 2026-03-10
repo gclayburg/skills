@@ -149,6 +149,37 @@ If test-report retrieval fails due to communication issues (for example network/
 [HH:MM:SS] ⚠ Could not retrieve test results (communication error)
 ```
 
+## Agent failure diagnostics
+
+List the available stages for a build:
+
+```bash
+$ buildgit status 60 --list-stages
+Build
+Unit Tests A
+Unit Tests B
+Deploy
+```
+
+Get one stage's raw console text:
+
+```bash
+$ buildgit status 60 --console-text "Unit Tests B"
+not ok 1 - follow_completed_build_shows_console_url
+# stage detail follows here without banners or truncation
+```
+
+Get structured failed-test stdout without truncation:
+
+```bash
+$ buildgit status 60 --json -v | jq '.test_results.failed_tests[0]'
+{
+  "class_name": "buildgit_status_follow.bats",
+  "test_name": "follow_completed_build_shows_console_url",
+  "stdout": "[22:54:28] waiting\n[22:54:29] still waiting\n..."
+}
+```
+
 ## Show status for last N builds (--line)
 
 ```bash

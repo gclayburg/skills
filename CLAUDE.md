@@ -26,7 +26,7 @@ Global Options:
   --version                      Show version number and exit
 
 Commands:
-  status [build#] [-f|--follow] [--once[=N]] [-n <count>] [--json] [--line] [--all] [--no-tests] [--format <fmt>] [--prior-jobs <N>]
+  status [build#] [-f|--follow] [--once[=N]] [-n <count>] [--json] [--line] [--all] [--no-tests] [--format <fmt>] [--prior-jobs <N>] [--console-text [stage]] [--list-stages]
                       Display Jenkins build status (latest or specific build)
                       build# can be absolute (31) or relative (0=latest, -1=previous, -2=two ago)
                       Default: one-line output (TTY adds color)
@@ -47,6 +47,9 @@ Snapshot status of completed Jenkins build jobs:
   buildgit status --prior-jobs 5   # Latest build + 5 prior one-line builds
   buildgit status --prior-jobs 5 201  # Build #201 + 5 prior one-line builds
   buildgit status --prior-jobs 0   # Latest build, suppress prior-jobs display
+  buildgit status --list-stages    # List available pipeline stages
+  buildgit status --console-text   # Raw full console text
+  buildgit status 60 --console-text "Unit Tests D"  # Raw console for one stage
   buildgit status --all | less     # Full status piped to pager
   buildgit push --no-follow        # Push only, no monitoring
 
@@ -82,6 +85,12 @@ Threads format placeholders for --threads (TTY monitoring only):
   Width: %14a (max 14 chars, right-aligned), %-14a (left-aligned)
   Default: "  [%-14a] %S %g %p %e / %E"
   Env: BUILDGIT_THREADS_FORMAT
+
+Special diagnostics:
+  `buildgit status --all -v` preserves full failed-test stack traces and captured stdout.
+  `buildgit status --json -v` adds untruncated failed-test `stdout` fields.
+  `buildgit status --list-stages [--json]` lists pipeline stages for one build.
+  `buildgit status --console-text [stage]` prints raw build or stage console text.
 
 Passthrough:
   buildgit log --oneline -5        # Passed through to git

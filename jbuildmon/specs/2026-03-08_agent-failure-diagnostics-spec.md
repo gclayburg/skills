@@ -1,9 +1,9 @@
 ## Agent-Friendly Build Failure Diagnostics
 
 - **Date:** `2026-03-08T17:44:00-06:00`
-- **References:** `specs/todo/extra-features-to-examine-build-fails.md`
+- **References:** `specs/done-reports/extra-features-to-examine-build-fails.md`
 - **Supersedes:** none
-- **State:** `DRAFT`
+- **State:** `IMPLEMENTED`
 
 ## Overview
 

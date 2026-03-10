@@ -292,6 +292,86 @@ get_console_output() {
     jenkins_api "${job_path}/${build_number}/consoleText" 2>/dev/null || echo ""
 }
 
+_STAGE_CONSOLE_AVAILABLE_STAGES=""
+
+_normalize_stage_name_for_lookup() {
+    local stage_name="$1"
+    printf '%s\n' "${stage_name#Branch: }"
+}
+
+get_console_output_raw() {
+    local job_name="$1"
+    local build_number="$2"
+    local job_path
+    job_path=$(jenkins_job_path "$job_name")
+    if [[ -z "$job_path" ]]; then
+        return 1
+    fi
+
+    local response http_code body
+    response=$(jenkins_api_with_status "${job_path}/${build_number}/consoleText" || true)
+    http_code=$(echo "$response" | tail -1)
+    body=$(echo "$response" | sed '$d')
+
+    if [[ "$http_code" == "200" ]]; then
+        printf '%s\n' "$body"
+        return 0
+    fi
+    return 1
+}
+
+get_stage_console_output() {
+    local job_name="$1"
+    local build_number="$2"
+    local requested_stage_name="$3"
+    local job_path
+    job_path=$(jenkins_job_path "$job_name")
+    if [[ -z "$job_path" ]]; then
+        return 1
+    fi
+
+    local stages_json normalized_requested
+    stages_json=$(get_all_stages "$job_name" "$build_number")
+    _STAGE_CONSOLE_AVAILABLE_STAGES=$(echo "$stages_json" | jq -r '.[].name' 2>/dev/null || true)
+    normalized_requested=$(_normalize_stage_name_for_lookup "$requested_stage_name")
+
+    local stage_id=""
+    if [[ -n "$stages_json" && "$stages_json" != "[]" ]]; then
+        stage_id=$(echo "$stages_json" | jq -r --arg requested "$requested_stage_name" --arg normalized "$normalized_requested" '
+            [
+                .[] |
+                select(
+                    (.name // "") == $requested or
+                    ((.name // "") | sub("^Branch: "; "")) == $normalized
+                ) |
+                .id
+            ][0] // empty
+        ' 2>/dev/null)
+    fi
+
+    if [[ -z "$stage_id" ]]; then
+        return 3
+    fi
+
+    local response http_code body
+    response=$(jenkins_api_with_status "${job_path}/${build_number}/execution/node/${stage_id}/wfapi/log" || true)
+    http_code=$(echo "$response" | tail -1)
+    body=$(echo "$response" | sed '$d')
+
+    if [[ "$http_code" != "200" ]]; then
+        return 1
+    fi
+
+    local log_text
+    log_text=$(echo "$body" | jq -r 'if type == "object" then (.text // "") else empty end' 2>/dev/null) || true
+    if [[ -n "$log_text" ]]; then
+        printf '%s\n' "$log_text"
+    else
+        printf '%s\n' "$body"
+    fi
+    return 0
+}
+
 # Get currently executing stage name from workflow API
 # Usage: get_current_stage "job-name" "build-number"
 # Returns: Stage name if a stage is IN_PROGRESS, empty string otherwise
@@ -615,8 +695,40 @@ parse_failed_tests() {
     # - Truncates errorDetails to MAX_ERROR_LENGTH
     local max_display="${MAX_FAILED_TESTS_DISPLAY:-10}"
     local max_error_len="${MAX_ERROR_LENGTH:-500}"
+    local max_error_lines="${MAX_ERROR_LINES:-5}"
+    local verbose_mode=false
+    if [[ "${VERBOSE_MODE:-false}" == "true" ]]; then
+        verbose_mode=true
+    fi
 
-    echo "$test_json" | jq -r --argjson max_display "$max_display" --argjson max_error_len "$max_error_len" '
+    echo "$test_json" | jq -r \
+        --argjson max_display "$max_display" \
+        --argjson max_error_len "$max_error_len" \
+        --argjson max_error_lines "$max_error_lines" \
+        --argjson verbose "$verbose_mode" '
+        def maybe_truncate_text($value):
+            if $value == null then
+                null
+            elif $verbose then
+                ($value | tostring)
+            else
+                (($value | tostring)[:$max_error_len])
+            end;
+
+        def maybe_truncate_lines($value):
+            if $value == null or ($value | tostring) == "" then
+                null
+            elif $verbose then
+                ($value | tostring)
+            else
+                (($value | tostring | split("\n")) as $lines |
+                    if ($lines | length) <= $max_error_lines then
+                        ($value | tostring)
+                    else
+                        (($lines[:$max_error_lines] | join("\n")) + "\n...")
+                    end)
+            end;
+
         # Collect failed tests from BOTH direct suites path AND childReports path
         # This handles both freestyle jobs (.suites[].cases[]) and pipeline jobs (.childReports[].result.suites[].cases[])
         # Include both FAILED (recurring) and REGRESSION (newly broken) statuses
@@ -640,14 +752,15 @@ parse_failed_tests() {
                 if (.errorDetails // "") == "" and (.errorStackTrace // "") == "" then
                     "No error details available"
                 elif (.errorDetails // "") != "" then
-                    (.errorDetails | tostring | .[:$max_error_len])
+                    maybe_truncate_text(.errorDetails)
                 else
                     null
                 end
             ),
-            errorStackTrace: (.errorStackTrace // null),
+            errorStackTrace: maybe_truncate_lines(.errorStackTrace // null),
             duration: (.duration // 0),
-            age: (.age // 0)
+            age: (.age // 0),
+            stdout: (if $verbose then (.stdout // null) else null end)
         })
     '
 }
@@ -700,6 +813,10 @@ display_test_results() {
     # Configuration
     local max_display="${MAX_FAILED_TESTS_DISPLAY:-10}"
     local max_error_lines="${MAX_ERROR_LINES:-5}"
+    local verbose_mode=false
+    if [[ "${VERBOSE_MODE:-false}" == "true" ]]; then
+        verbose_mode=true
+    fi
 
     # Choose color based on failure count
     # Spec: show-test-results-always-spec.md, Section 2
@@ -733,12 +850,13 @@ display_test_results() {
 
     local i=0
     while [[ $i -lt $test_count ]]; do
-        local class_name test_name error_details error_stack age
+        local class_name test_name error_details error_stack stdout_text age
 
         class_name=$(echo "$failed_tests" | jq -r ".[$i].className")
         test_name=$(echo "$failed_tests" | jq -r ".[$i].name")
         error_details=$(echo "$failed_tests" | jq -r ".[$i].errorDetails // empty")
         error_stack=$(echo "$failed_tests" | jq -r ".[$i].errorStackTrace // empty")
+        stdout_text=$(echo "$failed_tests" | jq -r ".[$i].stdout // empty")
         age=$(echo "$failed_tests" | jq -r ".[$i].age // 0")
 
         # Build test identifier line
@@ -759,7 +877,7 @@ display_test_results() {
             local line_count
             line_count=$(echo "$error_stack" | wc -l | tr -d ' ')
 
-            if [[ "$line_count" -le "$max_error_lines" ]]; then
+            if [[ "$verbose_mode" == "true" || "$line_count" -le "$max_error_lines" ]]; then
                 # Display all lines with indent
                 echo "$error_stack" | while IFS= read -r line; do
                     echo "    ${line}"
@@ -771,6 +889,13 @@ display_test_results() {
                 done
                 echo "    ..."
             fi
+        fi
+
+        if [[ "$verbose_mode" == "true" && -n "$stdout_text" && "$stdout_text" != "null" ]]; then
+            echo "    Stdout:"
+            echo "$stdout_text" | while IFS= read -r line; do
+                echo "      ${line}"
+            done
         fi
 
         i=$((i + 1))
@@ -821,15 +946,22 @@ format_test_results_json() {
     # Transform the failed tests array to match expected JSON schema
     # Converting: className -> class_name, name -> test_name, duration -> duration_seconds
     local transformed_failed_tests
-    transformed_failed_tests=$(echo "$failed_tests_array" | jq '
-        map({
-            class_name: .className,
-            test_name: .name,
-            duration_seconds: .duration,
-            age: .age,
-            error_details: .errorDetails,
-            error_stack_trace: .errorStackTrace
-        })
+    local verbose_mode=false
+    if [[ "${VERBOSE_MODE:-false}" == "true" ]]; then
+        verbose_mode=true
+    fi
+
+    transformed_failed_tests=$(echo "$failed_tests_array" | jq --argjson verbose "$verbose_mode" '
+        map(
+            {
+                class_name: .className,
+                test_name: .name,
+                duration_seconds: .duration,
+                age: .age,
+                error_details: .errorDetails,
+                error_stack_trace: .errorStackTrace
+            } + (if $verbose then {stdout: .stdout} else {} end)
+        )
     ')
 
     # Build the final JSON object

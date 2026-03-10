@@ -14,6 +14,9 @@ _parse_status_options() {
     STATUS_FORMAT_EXPLICIT=false
     STATUS_PRIOR_JOBS=0
     STATUS_PRIOR_JOBS_EXPLICIT=false
+    STATUS_CONSOLE_TEXT_MODE=false
+    STATUS_CONSOLE_TEXT_STAGE=""
+    STATUS_LIST_STAGES_MODE=false
     _LINE_FORMAT_STRING="$_DEFAULT_LINE_FORMAT"
 
     while [[ $# -gt 0 ]]; do
@@ -72,6 +75,21 @@ _parse_status_options() {
                 ;;
             -a|--all)
                 STATUS_ALL_MODE=true
+                shift
+                ;;
+            --console-text)
+                STATUS_CONSOLE_TEXT_MODE=true
+                if [[ $# -gt 1 ]] && [[ "${2:-}" != -* ]]; then
+                    if [[ -n "$STATUS_BUILD_NUMBER" ]] || ! [[ "${2:-}" =~ ^(0|[1-9][0-9]*|-[0-9]+)$ ]]; then
+                        STATUS_CONSOLE_TEXT_STAGE="$2"
+                        shift 2
+                        continue
+                    fi
+                fi
+                shift
+                ;;
+            --list-stages)
+                STATUS_LIST_STAGES_MODE=true
                 shift
                 ;;
             --no-tests)
@@ -495,4 +513,3 @@ _status_line_for_build_json() {
     fi
     return 1
 }
-
