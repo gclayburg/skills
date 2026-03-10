@@ -53,7 +53,7 @@ push the staged changes and monitor the build.  fix any errors you find.
 | `scripts/buildgit status --format '<fmt>'` | One-line status with custom format string (implies --line) |
 | `scripts/buildgit status --all` | Force full snapshot output |
 | `scripts/buildgit status --all -v` | Full snapshot with untruncated failed-test details and stdout |
-| `scripts/buildgit status --console-text [stage]` | Raw build console or one stage's console text |
+| `scripts/buildgit status --console-text [stage]` | Raw build console or one stage's console text; empty parent stages recurse into descendant substages |
 | `scripts/buildgit status --list-stages [--json]` | List stage names or emit the raw stage array |
 | `scripts/buildgit status -f --once` | Follow current/next build to completion, then exit (10s timeout) |
 | `scripts/buildgit status -f --once=N` | Same, but wait up to N seconds for a build to start |
@@ -111,6 +111,7 @@ Use width/alignment like `%14a` or `%-14a`. `BUILDGIT_THREADS_FORMAT` sets the d
 
 For failures, summarize the failed stage name, error logs, and test failure details for the user.
 When a failure needs more detail, prefer `scripts/buildgit status --json -v` for structured failed-test stdout and `scripts/buildgit status --console-text <stage>` after `scripts/buildgit status --list-stages`.
+`--console-text <stage>` accepts exact, case-insensitive, and unique partial stage matches. If the requested parent stage has no direct log text, it walks descendant substages and emits their logs in pipeline order.
 
 For snapshot mode defaults, `scripts/buildgit status` prints one-line output by default on both TTY and non-TTY stdout (TTY adds color).
 - Monitoring commands (`push`, `build`, `status -f`) print prior-jobs + estimated build time before monitoring starts

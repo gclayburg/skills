@@ -169,6 +169,17 @@ not ok 1 - follow_completed_build_shows_console_url
 # stage detail follows here without banners or truncation
 ```
 
+If the stage name is a parent wrapper with empty direct console text, buildgit now searches descendant substages automatically. Stage matching also accepts exact, case-insensitive, and unique partial names:
+
+```bash
+$ buildgit status 60 --console-text "main build"
+===== Main Build -> Compile =====
+compile failed fast
+
+===== Main Build -> Unit Tests =====
+not ok 1 - unit test failure
+```
+
 Get structured failed-test stdout without truncation:
 
 ```bash

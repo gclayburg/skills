@@ -682,6 +682,11 @@ _status_special_output() {
                 if [[ -n "${_STAGE_CONSOLE_AVAILABLE_STAGES:-}" ]]; then
                     printf 'Available stages:\n%s\n' "$_STAGE_CONSOLE_AVAILABLE_STAGES" >&2
                 fi
+            elif [[ "$stage_rc" -eq 4 ]]; then
+                bg_log_error "Stage '${STATUS_CONSOLE_TEXT_STAGE}' is ambiguous for build #${build_number}"
+                if [[ -n "${_STAGE_CONSOLE_AMBIGUOUS_STAGES:-}" ]]; then
+                    printf 'Matching stages:\n%s\n' "$_STAGE_CONSOLE_AMBIGUOUS_STAGES" >&2
+                fi
             else
                 bg_log_error "Could not retrieve console text for stage '${STATUS_CONSOLE_TEXT_STAGE}' in build #${build_number}"
             fi

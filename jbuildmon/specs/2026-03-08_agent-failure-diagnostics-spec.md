@@ -118,6 +118,13 @@ Add a new option `--console-text [stage-name]` to `buildgit status` that retriev
 When a stage name is provided:
 - Use the Jenkins Pipeline `wfapi` nodes endpoint to find the stage's node ID
 - Fetch the stage-specific log via the `log` endpoint for that node
+- Match stage names aggressively:
+  - exact match first
+  - case-insensitive exact match second
+  - unique case-insensitive partial match third
+  - if multiple stages match the partial text, fail and list the matching stage names instead of guessing
+- If the matched stage's own `wfapi/log` payload is empty, recursively inspect descendant stage/substage nodes and emit the first non-empty descendant logs in pipeline order
+- When descendant fallback emits multiple child stage logs, separate them with lightweight `===== Parent -> Child =====` headers so the source stage is obvious
 - If the stage name doesn't match any stage, print an error listing available stage names
 
 #### Console text output
@@ -190,6 +197,9 @@ New test file: `test/buildgit_agent_diagnostics.bats`
 - `status_console_text_outputs_raw` — `--console-text` outputs raw text, no banners
 - `status_console_text_specific_stage` — `--console-text "Stage Name"` filters to stage
 - `status_console_text_unknown_stage_lists_available` — unknown stage name shows error with available stages
+- `status_console_text_parent_stage_falls_back_to_substages` — empty parent stage log emits descendant substage logs in pipeline order
+- `status_console_text_partial_match_is_case_insensitive` — lowercase/partial stage input resolves when one unique stage matches
+- `status_console_text_ambiguous_stage_lists_matches` — ambiguous partial stage names fail with candidate matches
 - `status_console_text_exit_code_success` — exit 0 on success
 - `status_console_text_exit_code_not_found` — exit 1 when build not found
 

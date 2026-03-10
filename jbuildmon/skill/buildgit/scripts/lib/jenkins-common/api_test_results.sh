@@ -293,10 +293,141 @@ get_console_output() {
 }
 
 _STAGE_CONSOLE_AVAILABLE_STAGES=""
+_STAGE_CONSOLE_AMBIGUOUS_STAGES=""
 
 _normalize_stage_name_for_lookup() {
     local stage_name="$1"
     printf '%s\n' "${stage_name#Branch: }"
+}
+
+_stage_lookup_label() {
+    local stage_name="$1"
+    printf '%s\n' "$stage_name" | tr '[:upper:]' '[:lower:]'
+}
+
+_find_stage_console_match() {
+    local stages_json="$1"
+    local requested_stage_name="$2"
+    local normalized_requested requested_lower normalized_lower
+
+    normalized_requested=$(_normalize_stage_name_for_lookup "$requested_stage_name")
+    requested_lower=$(_stage_lookup_label "$requested_stage_name")
+    normalized_lower=$(_stage_lookup_label "$normalized_requested")
+    _STAGE_CONSOLE_AMBIGUOUS_STAGES=""
+
+    if [[ -z "$stages_json" || "$stages_json" == "[]" ]]; then
+        return 1
+    fi
+
+    local match_json
+    match_json=$(echo "$stages_json" | jq -c \
+        --arg requested "$requested_stage_name" \
+        --arg normalized "$normalized_requested" \
+        --arg requested_lower "$requested_lower" \
+        --arg normalized_lower "$normalized_lower" '
+        def normalized_name($name): ($name | sub("^Branch: "; ""));
+        def lowered($value): ($value | ascii_downcase);
+        def exact_match:
+            map(select((.name // "") == $requested or normalized_name(.name // "") == $normalized));
+        def exact_ci_match:
+            map(select(lowered(.name // "") == $requested_lower or lowered(normalized_name(.name // "")) == $normalized_lower));
+        def contains_ci_match:
+            map(select(
+                lowered(.name // "") | contains($requested_lower) or contains($normalized_lower)
+            ));
+        def best_match:
+            (exact_match) as $exact
+            | if ($exact | length) > 0 then $exact
+              else
+                (exact_ci_match) as $exact_ci
+                | if ($exact_ci | length) > 0 then $exact_ci else contains_ci_match end
+              end;
+
+        (best_match) as $matches
+        | if ($matches | length) == 1 then
+            {status: "ok", match: $matches[0]}
+          elif ($matches | length) > 1 then
+            {status: "ambiguous", matches: ($matches | map(.name))}
+          else
+            {status: "missing"}
+          end
+    ' 2>/dev/null) || return 1
+
+    local match_status
+    match_status=$(echo "$match_json" | jq -r '.status // "missing"' 2>/dev/null)
+    case "$match_status" in
+        ok)
+            echo "$match_json" | jq -c '.match' 2>/dev/null
+            return 0
+            ;;
+        ambiguous)
+            _STAGE_CONSOLE_AMBIGUOUS_STAGES=$(echo "$match_json" | jq -r '.matches[]' 2>/dev/null || true)
+            return 4
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+_get_stage_console_descendants() {
+    local stages_json="$1"
+    local blue_nodes_json="$2"
+    local root_stage_id="$3"
+
+    if [[ -z "$stages_json" || "$stages_json" == "[]" || -z "$blue_nodes_json" || "$blue_nodes_json" == "[]" || -z "$root_stage_id" ]]; then
+        echo "[]"
+        return 0
+    fi
+
+    echo "$stages_json" | jq -c \
+        --arg root_id "$root_stage_id" \
+        --argjson nodes "$blue_nodes_json" '
+        def node_by_id($id):
+            first($nodes[] | select((.id // "" | tostring) == ($id | tostring)));
+        def is_descendant_of($id):
+            if ($id | tostring) == ($root_id | tostring) then
+                true
+            else
+                (node_by_id($id)) as $node
+                | if ($node == null) then
+                    false
+                  else
+                    ($node.firstParent // "") as $parent
+                    | if $parent == "" then
+                        false
+                      else
+                        is_descendant_of($parent)
+                      end
+                  end
+            end;
+
+        [ .[] | select((.id // "") != "" and is_descendant_of(.id)) ]
+    ' 2>/dev/null || echo "[]"
+}
+
+_get_stage_console_log_text() {
+    local job_path="$1"
+    local build_number="$2"
+    local stage_id="$3"
+
+    local response http_code body
+    response=$(jenkins_api_with_status "${job_path}/${build_number}/execution/node/${stage_id}/wfapi/log" || true)
+    http_code=$(echo "$response" | tail -1)
+    body=$(echo "$response" | sed '$d')
+
+    if [[ "$http_code" != "200" ]]; then
+        return 1
+    fi
+
+    local body_type log_text
+    body_type=$(echo "$body" | jq -r 'type // empty' 2>/dev/null) || true
+    log_text=$(echo "$body" | jq -r 'if type == "object" then (.text // "") else empty end' 2>/dev/null) || true
+    if [[ "$body_type" == "object" ]]; then
+        printf '%s' "$log_text"
+    else
+        printf '%s' "$body"
+    fi
 }
 
 get_console_output_raw() {
@@ -330,44 +461,68 @@ get_stage_console_output() {
         return 1
     fi
 
-    local stages_json normalized_requested
+    local stages_json blue_nodes_json matched_stage_json matched_stage_id matched_stage_name
     stages_json=$(get_all_stages "$job_name" "$build_number")
     _STAGE_CONSOLE_AVAILABLE_STAGES=$(echo "$stages_json" | jq -r '.[].name' 2>/dev/null || true)
-    normalized_requested=$(_normalize_stage_name_for_lookup "$requested_stage_name")
+    matched_stage_json=$(_find_stage_console_match "$stages_json" "$requested_stage_name") || {
+        local match_rc=$?
+        if [[ "$match_rc" -eq 4 ]]; then
+            return 4
+        fi
+        return 3
+    }
 
-    local stage_id=""
-    if [[ -n "$stages_json" && "$stages_json" != "[]" ]]; then
-        stage_id=$(echo "$stages_json" | jq -r --arg requested "$requested_stage_name" --arg normalized "$normalized_requested" '
-            [
-                .[] |
-                select(
-                    (.name // "") == $requested or
-                    ((.name // "") | sub("^Branch: "; "")) == $normalized
-                ) |
-                .id
-            ][0] // empty
-        ' 2>/dev/null)
-    fi
-
-    if [[ -z "$stage_id" ]]; then
+    matched_stage_id=$(echo "$matched_stage_json" | jq -r '.id // empty' 2>/dev/null)
+    matched_stage_name=$(echo "$matched_stage_json" | jq -r '.name // empty' 2>/dev/null)
+    if [[ -z "$matched_stage_id" ]]; then
         return 3
     fi
 
-    local response http_code body
-    response=$(jenkins_api_with_status "${job_path}/${build_number}/execution/node/${stage_id}/wfapi/log" || true)
-    http_code=$(echo "$response" | tail -1)
-    body=$(echo "$response" | sed '$d')
-
-    if [[ "$http_code" != "200" ]]; then
+    local direct_log_text
+    if ! direct_log_text=$(_get_stage_console_log_text "$job_path" "$build_number" "$matched_stage_id"); then
         return 1
     fi
 
-    local log_text
-    log_text=$(echo "$body" | jq -r 'if type == "object" then (.text // "") else empty end' 2>/dev/null) || true
-    if [[ -n "$log_text" ]]; then
-        printf '%s\n' "$log_text"
+    if [[ -n "${direct_log_text//[$' \t\r\n']}" ]]; then
+        printf '%s\n' "$direct_log_text"
+        return 0
+    fi
+
+    blue_nodes_json=$(get_blue_ocean_nodes "$job_name" "$build_number" 2>/dev/null) || blue_nodes_json="[]"
+
+    local descendant_stages_json descendant_count descendant_index combined_output
+    descendant_stages_json=$(_get_stage_console_descendants "$stages_json" "$blue_nodes_json" "$matched_stage_id")
+    descendant_count=$(echo "$descendant_stages_json" | jq 'length' 2>/dev/null || echo 0)
+    if [[ "$descendant_count" -le 1 ]]; then
+        printf '%s\n' "$direct_log_text"
+        return 0
+    fi
+
+    combined_output=""
+    descendant_index=0
+    while [[ "$descendant_index" -lt "$descendant_count" ]]; do
+        local descendant_id descendant_name descendant_log
+        descendant_id=$(echo "$descendant_stages_json" | jq -r ".[$descendant_index].id // empty" 2>/dev/null)
+        descendant_name=$(echo "$descendant_stages_json" | jq -r ".[$descendant_index].name // empty" 2>/dev/null)
+        descendant_index=$((descendant_index + 1))
+        [[ -z "$descendant_id" ]] && continue
+        if ! descendant_log=$(_get_stage_console_log_text "$job_path" "$build_number" "$descendant_id"); then
+            return 1
+        fi
+        if [[ -z "${descendant_log//[$' \t\r\n']}" ]]; then
+            continue
+        fi
+        if [[ "$descendant_id" != "$matched_stage_id" ]]; then
+            combined_output+=$'\n'"===== ${matched_stage_name} -> ${descendant_name} ====="$'\n'
+        fi
+        combined_output+="$descendant_log"
+        combined_output+=$'\n'
+    done
+
+    if [[ -n "${combined_output//[$' \t\r\n']}" ]]; then
+        printf '%s' "$combined_output"
     else
-        printf '%s\n' "$body"
+        printf '%s\n' "$direct_log_text"
     fi
     return 0
 }

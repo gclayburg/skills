@@ -102,6 +102,10 @@ get_stage_console_output() {
             printf 'not ok 1 - failing test\n# stage detail\n'
             return 0
             ;;
+        stage_ambiguous)
+            _STAGE_CONSOLE_AMBIGUOUS_STAGES=$'Main Build Linux\nMain Build Mac'
+            return 4
+            ;;
         stage_missing)
             _STAGE_CONSOLE_AVAILABLE_STAGES=$'Build\nUnit Tests A\nUnit Tests B\nDeploy'
             return 3
@@ -192,6 +196,84 @@ WRAPPER
     [[ "$stderr" == *"Stage 'No Such Stage' not found"* ]] || fail "Missing stage-not-found error: $stderr"
     [[ "$stderr" == *"Available stages:"* ]] || fail "Missing available-stages header: $stderr"
     [[ "$stderr" == *"Unit Tests B"* ]] || fail "Missing stage list: $stderr"
+}
+
+@test "get_stage_console_output_falls_back_to_descendant_stage_logs_when_parent_log_is_empty" {
+    jenkins_job_path() {
+        echo "job/test-job"
+    }
+
+    get_all_stages() {
+        cat <<'JSON'
+[
+  {"id":"10","name":"Main Build","status":"FAILED","startTimeMillis":1,"durationMillis":1000},
+  {"id":"11","name":"Compile","status":"SUCCESS","startTimeMillis":2,"durationMillis":2000},
+  {"id":"12","name":"Unit Tests","status":"FAILED","startTimeMillis":3,"durationMillis":3000}
+]
+JSON
+    }
+
+    get_blue_ocean_nodes() {
+        cat <<'JSON'
+[
+  {"id":"10","name":"Main Build","type":"STAGE","firstParent":""},
+  {"id":"11","name":"Compile","type":"STAGE","firstParent":"10"},
+  {"id":"12","name":"Unit Tests","type":"STAGE","firstParent":"10"}
+]
+JSON
+    }
+
+    jenkins_api_with_status() {
+        case "$1" in
+            job/test-job/60/execution/node/10/wfapi/log)
+                printf '{"text":""}\n200\n'
+                ;;
+            job/test-job/60/execution/node/11/wfapi/log)
+                printf '{"text":"compile failed fast"}\n200\n'
+                ;;
+            job/test-job/60/execution/node/12/wfapi/log)
+                printf '{"text":"not ok 1 - unit test failure"}\n200\n'
+                ;;
+            *)
+                return 1
+                ;;
+        esac
+    }
+
+    run get_stage_console_output "test-job" "60" "main build"
+
+    assert_success
+    [[ "$output" == *"===== Main Build -> Compile ====="* ]] || fail "Missing compile section: $output"
+    [[ "$output" == *"compile failed fast"* ]] || fail "Missing compile log: $output"
+    [[ "$output" == *"===== Main Build -> Unit Tests ====="* ]] || fail "Missing unit tests section: $output"
+    [[ "$output" == *"not ok 1 - unit test failure"* ]] || fail "Missing unit test log: $output"
+}
+
+@test "get_stage_console_output_reports_ambiguous_partial_stage_names" {
+    local stages_json match_output
+    stages_json='[
+      {"id":"20","name":"Main Build Linux","status":"FAILED","startTimeMillis":1,"durationMillis":1000},
+      {"id":"21","name":"Main Build Mac","status":"FAILED","startTimeMillis":2,"durationMillis":1000}
+    ]'
+
+    run _find_stage_console_match "$stages_json" "main build"
+
+    [ "$status" -eq 4 ]
+}
+
+@test "status_console_text_ambiguous_stage_lists_matches" {
+    export TEST_TEMP_DIR
+    export BUILDGIT_TEST_SCENARIO="stage_ambiguous"
+    create_agent_diagnostics_wrapper
+
+    run --separate-stderr bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 60 --console-text "main build"
+
+    [ "$status" -eq 1 ]
+    assert_output ""
+    [[ "$stderr" == *"Stage 'main build' is ambiguous"* ]] || fail "Missing ambiguous-stage error: $stderr"
+    [[ "$stderr" == *"Matching stages:"* ]] || fail "Missing matching-stages header: $stderr"
+    [[ "$stderr" == *"Main Build Linux"* ]] || fail "Missing matching stage: $stderr"
+    [[ "$stderr" == *"Main Build Mac"* ]] || fail "Missing matching stage: $stderr"
 }
 
 @test "status_console_text_exit_code_not_found" {

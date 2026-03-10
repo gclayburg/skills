@@ -274,6 +274,8 @@ Special diagnostics:
   `buildgit status --json -v` adds untruncated failed-test `stdout` fields.
   `buildgit status --list-stages [--json]` lists pipeline stages for one build.
   `buildgit status --console-text [stage]` prints raw build or stage console text.
+  Stage lookup accepts exact, case-insensitive, and unique partial matches.
+  If a matched parent stage has an empty direct log, `--console-text` walks descendant substages and prints their logs in pipeline order with `Parent -> Child` section headers.
 
 Threads format placeholders for --threads (TTY monitoring only):
   %a=agent  %S=stage  %g=progress-bar  %p=percent  %e=elapsed  %E=estimate  %%=literal%
