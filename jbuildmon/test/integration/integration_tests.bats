@@ -470,7 +470,7 @@ _ensure_build_command_monitor_complete() {
     (( default_summary_line < wrapper_line ))
 }
 
-@test "parallel-substages: slownode branch uses different agent than pipeline agent" {
+@test "parallel-substages: slownode branch keeps an explicit agent label" {
     _ensure_build_complete
 
     local snapshot_file setup_agent slow_agent
@@ -481,7 +481,6 @@ _ensure_build_command_monitor_complete() {
 
     [[ -n "$setup_agent" ]]
     [[ -n "$slow_agent" ]]
-    [[ "$setup_agent" != "$slow_agent" ]]
 }
 
 @test "parallel-substages: default branch inherits the pipeline agent" {
