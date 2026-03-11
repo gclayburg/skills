@@ -12,7 +12,7 @@ jenkins_api() {
     local endpoint="$1"
     local url="${JENKINS_URL}${endpoint}"
 
-    curl -s -f -u "${JENKINS_USER_ID}:${JENKINS_API_TOKEN}" "$url"
+    curl -s -f -g -u "${JENKINS_USER_ID}:${JENKINS_API_TOKEN}" "$url"
 }
 
 # Make authenticated GET request and return body with HTTP status code
@@ -25,7 +25,7 @@ jenkins_api_with_status() {
     local endpoint="$1"
     local url="${JENKINS_URL}${endpoint}"
 
-    curl -s -w "\n%{http_code}" -u "${JENKINS_USER_ID}:${JENKINS_API_TOKEN}" "$url"
+    curl -s -g -w "\n%{http_code}" -u "${JENKINS_USER_ID}:${JENKINS_API_TOKEN}" "$url"
 }
 
 # Verify Jenkins connectivity and authentication
