@@ -1,0 +1,6 @@
+{
+  "name": "solo",
+  "totalExecutors": 1,
+  "busyExecutors": 0,
+  "idleExecutors": 1
+}

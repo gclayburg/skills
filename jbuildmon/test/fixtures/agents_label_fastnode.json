@@ -1,0 +1,6 @@
+{
+  "name": "fastnode",
+  "totalExecutors": 3,
+  "busyExecutors": 1,
+  "idleExecutors": 2
+}

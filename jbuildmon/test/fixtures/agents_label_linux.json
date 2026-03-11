@@ -1,0 +1,6 @@
+{
+  "name": "linux",
+  "totalExecutors": 2,
+  "busyExecutors": 1,
+  "idleExecutors": 1
+}

@@ -1,0 +1,17 @@
+{
+  "computer": [
+    {
+      "displayName": "solo-1",
+      "assignedLabels": [
+        { "name": "solo" }
+      ],
+      "numExecutors": 1,
+      "idle": false,
+      "offline": false,
+      "temporarilyOffline": false,
+      "executors": [
+        { "currentExecutable": null }
+      ]
+    }
+  ]
+}

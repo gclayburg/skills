@@ -1,0 +1,47 @@
+{
+  "computer": [
+    {
+      "displayName": "fastnode-1",
+      "assignedLabels": [
+        { "name": "fastnode" },
+        { "name": "linux" }
+      ],
+      "numExecutors": 2,
+      "idle": false,
+      "offline": false,
+      "temporarilyOffline": false,
+      "executors": [
+        { "currentExecutable": { "url": "http://jenkins.example.com/job/ralph1/101/" } },
+        { "currentExecutable": null }
+      ]
+    },
+    {
+      "displayName": "fastnode-2",
+      "assignedLabels": [
+        { "name": "fastnode" }
+      ],
+      "numExecutors": 1,
+      "idle": true,
+      "offline": true,
+      "temporarilyOffline": false,
+      "executors": [
+        { "currentExecutable": { "url": "http://jenkins.example.com/job/ralph1/102/" } }
+      ]
+    },
+    {
+      "displayName": "slownode-1",
+      "assignedLabels": [
+        { "name": "slownode" }
+      ],
+      "numExecutors": 3,
+      "idle": false,
+      "offline": false,
+      "temporarilyOffline": false,
+      "executors": [
+        { "currentExecutable": null },
+        { "currentExecutable": { "url": "http://jenkins.example.com/job/ralph1/103/" } },
+        { "currentExecutable": null }
+      ]
+    }
+  ]
+}
