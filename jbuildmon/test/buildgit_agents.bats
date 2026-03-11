@@ -142,3 +142,24 @@ EOF
     assert_output --partial "1 executor"
     refute_output --partial "1 executors"
 }
+
+@test "agents_human_output_does_not_depend_on_base64_decode_flag" {
+    create_agents_wrapper
+
+    mkdir -p "${TEST_TEMP_DIR}/bin"
+    cat > "${TEST_TEMP_DIR}/bin/base64" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "--decode" ]]; then
+    echo "base64: illegal option -- -" >&2
+    exit 64
+fi
+exec /usr/bin/base64 "$@"
+EOF
+    chmod +x "${TEST_TEMP_DIR}/bin/base64"
+
+    run bash -c "PATH=\"${TEST_TEMP_DIR}/bin:\$PATH\" \"${TEST_TEMP_DIR}/agents_wrapper.sh\" 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "Label: fastnode"
+    assert_output --partial "slownode-1"
+}

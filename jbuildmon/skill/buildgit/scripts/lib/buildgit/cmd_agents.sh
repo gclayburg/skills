@@ -198,6 +198,10 @@ _agents_pluralize() {
     fi
 }
 
+_decode_agents_payload() {
+    printf '%s\n' "$1" | jq -Rr '@base64d'
+}
+
 _render_agents_human() {
     local agents_json="$1"
     local label_count
@@ -222,12 +226,13 @@ _render_agents_human() {
         fi
         first_label=false
 
-        local label_name node_count total busy idle
-        label_name=$(printf '%s' "$label_payload" | base64 --decode | jq -r '.name')
-        node_count=$(printf '%s' "$label_payload" | base64 --decode | jq -r '.nodes | length')
-        total=$(printf '%s' "$label_payload" | base64 --decode | jq -r '.totalExecutors')
-        busy=$(printf '%s' "$label_payload" | base64 --decode | jq -r '.busyExecutors')
-        idle=$(printf '%s' "$label_payload" | base64 --decode | jq -r '.idleExecutors')
+        local label_json label_name node_count total busy idle
+        label_json=$(_decode_agents_payload "$label_payload")
+        label_name=$(printf '%s\n' "$label_json" | jq -r '.name')
+        node_count=$(printf '%s\n' "$label_json" | jq -r '.nodes | length')
+        total=$(printf '%s\n' "$label_json" | jq -r '.totalExecutors')
+        busy=$(printf '%s\n' "$label_json" | jq -r '.busyExecutors')
+        idle=$(printf '%s\n' "$label_json" | jq -r '.idleExecutors')
 
         echo "Label: ${label_name}"
         echo "  Nodes: ${node_count}"
@@ -238,7 +243,7 @@ _render_agents_human() {
         while IFS= read -r node_payload; do
             [[ -n "$node_payload" ]] || continue
             local node_json node_name node_executors node_busy node_status
-            node_json=$(printf '%s' "$node_payload" | base64 --decode)
+            node_json=$(_decode_agents_payload "$node_payload")
             node_name=$(printf '%s\n' "$node_json" | jq -r '.name')
             node_executors=$(printf '%s\n' "$node_json" | jq -r '.executors')
             node_busy=$(printf '%s\n' "$node_json" | jq -r '.busyExecutors')
@@ -257,7 +262,7 @@ _render_agents_human() {
                     printf '      Job: %s\n' "$job_url"
                 done < <(printf '%s\n' "$node_json" | jq -r '.runningJobs[]?')
             fi
-        done < <(printf '%s\n' "$label_payload" | base64 --decode | jq -r '.nodes[] | @base64')
+        done < <(printf '%s\n' "$label_json" | jq -r '.nodes[] | @base64')
     done < <(printf '%s\n' "$agents_json" | jq -r '.labels[] | @base64')
 }
 
