@@ -1,0 +1,17 @@
+{
+  "duration": 50.0,
+  "suites": [
+    {
+      "name": "LegacySuite",
+      "duration": 20.0,
+      "cases": [
+        {
+          "className": "pkg.LegacySuite",
+          "name": "testLegacy",
+          "duration": 20.0,
+          "status": "PASSED"
+        }
+      ]
+    }
+  ]
+}

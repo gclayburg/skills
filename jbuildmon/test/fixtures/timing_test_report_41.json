@@ -1,0 +1,17 @@
+{
+  "duration": 60.0,
+  "suites": [
+    {
+      "name": "BuildSuite",
+      "duration": 25.0,
+      "cases": [
+        {
+          "className": "pkg.BuildSuite",
+          "name": "testBuild",
+          "duration": 25.0,
+          "status": "PASSED"
+        }
+      ]
+    }
+  ]
+}

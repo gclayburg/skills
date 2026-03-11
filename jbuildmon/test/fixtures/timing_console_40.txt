@@ -1,0 +1,6 @@
+[Pipeline] { (Checkout)
+Running on git-agent in /workspace/ralph1
+[Pipeline] }
+[Pipeline] { (Build)
+Running on builder-40 in /workspace/ralph1
+[Pipeline] }

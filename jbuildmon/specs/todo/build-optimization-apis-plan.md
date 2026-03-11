@@ -9,7 +9,7 @@
 
 - [x] **Chunk A: `buildgit agents` command**
 - [x] **Chunk B: `buildgit queue` command**
-- [ ] **Chunk C: `buildgit timing` command**
+- [x] **Chunk C: `buildgit timing` command**
 - [ ] **Chunk D: `buildgit pipeline` command**
 - [ ] **Chunk E: Routing, sourcing, and help integration**
 - [ ] **Chunk F: Skill and documentation updates**

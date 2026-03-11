@@ -1,0 +1,7 @@
+{
+  "number": 40,
+  "duration": 200000,
+  "result": "SUCCESS",
+  "building": false,
+  "url": "http://jenkins.example.com/job/ralph1/40/"
+}

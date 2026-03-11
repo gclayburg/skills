@@ -1,0 +1,14 @@
+[
+  {
+    "id": "1",
+    "displayName": "Checkout",
+    "type": "STAGE",
+    "firstParent": ""
+  },
+  {
+    "id": "2",
+    "displayName": "Build",
+    "type": "STAGE",
+    "firstParent": "1"
+  }
+]

@@ -1,0 +1,32 @@
+[
+  {
+    "id": "1",
+    "displayName": "Checkout",
+    "type": "STAGE",
+    "firstParent": ""
+  },
+  {
+    "id": "10",
+    "displayName": "Tests",
+    "type": "PARALLEL",
+    "firstParent": "1"
+  },
+  {
+    "id": "2",
+    "displayName": "Unit Tests",
+    "type": "STAGE",
+    "firstParent": "10"
+  },
+  {
+    "id": "3",
+    "displayName": "Integration Tests",
+    "type": "STAGE",
+    "firstParent": "10"
+  },
+  {
+    "id": "4",
+    "displayName": "Package",
+    "type": "STAGE",
+    "firstParent": "3"
+  }
+]

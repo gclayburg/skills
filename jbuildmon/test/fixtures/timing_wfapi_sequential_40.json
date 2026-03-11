@@ -1,0 +1,18 @@
+{
+  "stages": [
+    {
+      "id": "1",
+      "name": "Checkout",
+      "status": "SUCCESS",
+      "startTimeMillis": 1000,
+      "durationMillis": 20000
+    },
+    {
+      "id": "2",
+      "name": "Build",
+      "status": "SUCCESS",
+      "startTimeMillis": 22000,
+      "durationMillis": 100000
+    }
+  ]
+}

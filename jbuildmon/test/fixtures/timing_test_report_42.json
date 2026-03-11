@@ -1,0 +1,41 @@
+{
+  "duration": 180.0,
+  "suites": [
+    {
+      "name": "UnitSuite",
+      "duration": 35.0,
+      "cases": [
+        {
+          "className": "pkg.UnitSuite",
+          "name": "testFast",
+          "duration": 10.0,
+          "status": "PASSED"
+        },
+        {
+          "className": "pkg.UnitSuite",
+          "name": "testSlow",
+          "duration": 25.0,
+          "status": "PASSED"
+        }
+      ]
+    },
+    {
+      "name": "IntegrationSuite",
+      "duration": 90.0,
+      "cases": [
+        {
+          "className": "pkg.IntegrationSuite",
+          "name": "testOne",
+          "duration": 40.0,
+          "status": "PASSED"
+        },
+        {
+          "className": "pkg.IntegrationSuite",
+          "name": "testTwo",
+          "duration": 50.0,
+          "status": "PASSED"
+        }
+      ]
+    }
+  ]
+}

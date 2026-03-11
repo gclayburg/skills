@@ -1,0 +1,12 @@
+[Pipeline] { (Checkout)
+Running on git-agent in /workspace/ralph1
+[Pipeline] }
+[Pipeline] { (Unit Tests)
+Running on agent-a in /workspace/ralph1
+[Pipeline] }
+[Pipeline] { (Integration Tests)
+Running on agent-b in /workspace/ralph1
+[Pipeline] }
+[Pipeline] { (Package)
+Running on agent-c in /workspace/ralph1
+[Pipeline] }
