@@ -23,28 +23,28 @@ trivial to implement and produces a verifiable file artifact.
 
 ---
 
-- [ ] **Chunk A: Script skeleton**
+### Chunk A: Script skeleton
 
-### Description
+#### Description
 
 Create the `jbuildmon/util/chunk-counter.sh` script with a shebang, `set -euo pipefail`,
 a `usage()` function, and a `main()` dispatch stub that prints the usage if no arguments
 are given or if an unknown subcommand is passed. The script does nothing useful yet but
 establishes the file and is executable.
 
-### Spec Reference
+#### Spec Reference
 
 Self-contained — this plan is the specification.
 
-### Dependencies
+#### Dependencies
 
 - None
 
-### Produces
+#### Produces
 
 - `jbuildmon/util/chunk-counter.sh`
 
-### Implementation Details
+#### Implementation Details
 
 1. Create `jbuildmon/util/` directory if it doesn't exist.
 2. Write `jbuildmon/util/chunk-counter.sh`:
@@ -90,7 +90,7 @@ Self-contained — this plan is the specification.
 4. **Verification:** Running `./jbuildmon/util/chunk-counter.sh` with no args prints usage
    and exits non-zero.
 
-### Test Plan
+#### Test Plan
 
 **Test File:** `jbuildmon/test/chunk_counter.bats`
 
@@ -106,27 +106,27 @@ Self-contained — this plan is the specification.
 
 ---
 
-- [ ] **Chunk B: `count-done` subcommand**
+### Chunk B: `count-done` subcommand
 
-### Description
+#### Description
 
 Implement `cmd_count_done()` in `chunk-counter.sh`. It counts lines in the plan file
 that match the completed-checkbox pattern `- [x]` (case-insensitive) and prints the
 integer count to stdout.
 
-### Spec Reference
+#### Spec Reference
 
 Self-contained — this plan is the specification.
 
-### Dependencies
+#### Dependencies
 
 - Chunk A (`chunk-counter.sh` skeleton must exist)
 
-### Produces
+#### Produces
 
 - Modified `jbuildmon/util/chunk-counter.sh` (adds `cmd_count_done()`)
 
-### Implementation Details
+#### Implementation Details
 
 1. Add `cmd_count_done()` to `chunk-counter.sh` before `main()`:
    ```bash
@@ -139,7 +139,7 @@ Self-contained — this plan is the specification.
 2. **Verification:** Given a plan file with two `- [x]` lines, running
    `chunk-counter.sh count-done <file>` prints `2`.
 
-### Test Plan
+#### Test Plan
 
 **Test File:** `jbuildmon/test/chunk_counter.bats`
 
@@ -163,26 +163,26 @@ Create fixture file `jbuildmon/test/fixtures/chunk_counter_sample.md` containing
 
 ---
 
-- [ ] **Chunk C: `count-remaining` subcommand**
+### Chunk C: `count-remaining` subcommand
 
-### Description
+#### Description
 
 Implement `cmd_count_remaining()` in `chunk-counter.sh`. It counts lines matching the
 incomplete-checkbox pattern `- [ ]` and prints the integer count to stdout.
 
-### Spec Reference
+#### Spec Reference
 
 Self-contained — this plan is the specification.
 
-### Dependencies
+#### Dependencies
 
 - Chunk A (`chunk-counter.sh` skeleton must exist)
 
-### Produces
+#### Produces
 
 - Modified `jbuildmon/util/chunk-counter.sh` (adds `cmd_count_remaining()`)
 
-### Implementation Details
+#### Implementation Details
 
 1. Add `cmd_count_remaining()` to `chunk-counter.sh` before `main()`:
    ```bash
@@ -194,7 +194,7 @@ Self-contained — this plan is the specification.
 2. **Verification:** Given the fixture with two `- [ ]` lines, running
    `chunk-counter.sh count-remaining <file>` prints `2`.
 
-### Test Plan
+#### Test Plan
 
 **Test File:** `jbuildmon/test/chunk_counter.bats`
 
@@ -210,9 +210,9 @@ Self-contained — this plan is the specification.
 
 ---
 
-- [ ] **Chunk D: `summary` subcommand**
+### Chunk D: `summary` subcommand
 
-### Description
+#### Description
 
 Implement `cmd_summary()` in `chunk-counter.sh`. It calls `cmd_count_done()` and
 `cmd_count_remaining()` internally, then prints a human-readable summary line:
@@ -223,20 +223,20 @@ Done: 2 / 4  (50%)
 
 If total is 0 (no checkboxes found), print `Done: 0 / 0  (n/a)`.
 
-### Spec Reference
+#### Spec Reference
 
 Self-contained — this plan is the specification.
 
-### Dependencies
+#### Dependencies
 
 - Chunk B (`cmd_count_done()` must exist)
 - Chunk C (`cmd_count_remaining()` must exist)
 
-### Produces
+#### Produces
 
 - Modified `jbuildmon/util/chunk-counter.sh` (adds `cmd_summary()`)
 
-### Implementation Details
+#### Implementation Details
 
 1. Add `cmd_summary()` to `chunk-counter.sh` before `main()`:
    ```bash
@@ -256,7 +256,7 @@ Self-contained — this plan is the specification.
    ```
 2. **Verification:** On the fixture file (2 done, 2 remaining), output is `Done: 2 / 4  (50%)`.
 
-### Test Plan
+#### Test Plan
 
 **Test File:** `jbuildmon/test/chunk_counter.bats`
 
@@ -273,19 +273,19 @@ Self-contained — this plan is the specification.
 
 ---
 
-- [ ] **Chunk E: Bats tests**
+### Chunk E: Bats tests
 
-### Description
+#### Description
 
 Write the complete `jbuildmon/test/chunk_counter.bats` test file covering all test cases
 from Chunks A–D. Create the fixture file `jbuildmon/test/fixtures/chunk_counter_sample.md`.
 Run the full test suite and confirm all tests pass.
 
-### Spec Reference
+#### Spec Reference
 
 Self-contained — this plan is the specification. Test cases defined in Chunks A–D above.
 
-### Dependencies
+#### Dependencies
 
 - Chunk A (skeleton — tests invoke the script)
 - Chunk B (`count-done` — tested here)
@@ -296,12 +296,12 @@ Self-contained — this plan is the specification. Test cases defined in Chunks 
 > all complete. The tests call all subcommands; any missing implementation will cause
 > test failures.
 
-### Produces
+#### Produces
 
 - `jbuildmon/test/chunk_counter.bats`
 - `jbuildmon/test/fixtures/chunk_counter_sample.md`
 
-### Implementation Details
+#### Implementation Details
 
 1. **Create fixture** `jbuildmon/test/fixtures/chunk_counter_sample.md`:
    ```markdown
@@ -326,7 +326,7 @@ Self-contained — this plan is the specification. Test cases defined in Chunks 
    jbuildmon/test/bats/bin/bats --jobs 10 jbuildmon/test/
    ```
 
-### Test Plan
+#### Test Plan
 
 **Test File:** `jbuildmon/test/chunk_counter.bats`
 
