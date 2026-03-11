@@ -62,7 +62,7 @@ _build_agents_data() {
 
     local labels_json
     if [[ -n "$label_filter" ]]; then
-        labels_json=$(jq -cn --arg label "$label_filter" '[$label]')
+        labels_json=$(jq -cn --arg target_label "$label_filter" '[$target_label]')
     else
         labels_json=$(printf '%s\n' "$computers_json" | jq -c '
             [
@@ -88,11 +88,11 @@ _build_agents_data() {
         label_entry=$(jq -cn \
             --argjson computers "$computers_json" \
             --argjson labelInfo "$label_info" \
-            --arg label "$label_name" '
+            --arg target_label "$label_name" '
             def label_nodes:
               [
                 $computers.computer[]?
-                | select(any(.assignedLabels[]?.name?; . == $label))
+                | select(any(.assignedLabels[]?.name?; . == $target_label))
               ];
             def node_busy($node):
               if ($node.offline // false) then
@@ -104,7 +104,7 @@ _build_agents_data() {
               (($node.numExecutors // 0) - node_busy($node));
 
             {
-              name: $label,
+              name: $target_label,
               totalExecutors: (
                 $labelInfo.totalExecutors
                 // ([label_nodes[] | (.numExecutors // 0)] | add // 0)
