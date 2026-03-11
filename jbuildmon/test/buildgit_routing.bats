@@ -52,6 +52,26 @@ teardown() {
     export JENKINS_API_TOKEN="${ORIG_JENKINS_API_TOKEN}"
 }
 
+create_dispatch_wrapper() {
+    cat > "${TEST_TEMP_DIR}/dispatch_wrapper.sh" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+trap '' PIPE
+
+export _BUILDGIT_TESTING=1
+source "${PROJECT_DIR}/buildgit"
+
+cmd_agents() { echo "cmd_agents:\$*"; }
+cmd_queue() { echo "cmd_queue:\$*"; }
+cmd_timing() { echo "cmd_timing:\$*"; }
+cmd_pipeline() { echo "cmd_pipeline:\$*"; }
+
+main "\$@"
+EOF
+
+    chmod +x "${TEST_TEMP_DIR}/dispatch_wrapper.sh"
+}
+
 # =============================================================================
 # Test Cases: Command Routing to Handlers
 # =============================================================================
@@ -101,6 +121,88 @@ teardown() {
     assert_failure
     # Should show error about job name requirement
     assert_output --partial "could not determine job name"
+}
+
+@test "routing_agents_dispatched" {
+    create_dispatch_wrapper
+
+    run bash -c "\"${TEST_TEMP_DIR}/dispatch_wrapper.sh\" agents --json 3>&- 2>&1"
+
+    assert_success
+    assert_output "cmd_agents:--json"
+}
+
+@test "routing_queue_dispatched" {
+    create_dispatch_wrapper
+
+    run bash -c "\"${TEST_TEMP_DIR}/dispatch_wrapper.sh\" queue -v 3>&- 2>&1"
+
+    assert_success
+    assert_output "cmd_queue:-v"
+}
+
+@test "routing_timing_dispatched" {
+    create_dispatch_wrapper
+
+    run bash -c "\"${TEST_TEMP_DIR}/dispatch_wrapper.sh\" timing 42 --tests 3>&- 2>&1"
+
+    assert_success
+    assert_output "cmd_timing:42 --tests"
+}
+
+@test "routing_pipeline_dispatched" {
+    create_dispatch_wrapper
+
+    run bash -c "\"${TEST_TEMP_DIR}/dispatch_wrapper.sh\" pipeline 42 --json 3>&- 2>&1"
+
+    assert_success
+    assert_output "cmd_pipeline:42 --json"
+}
+
+@test "help_contains_agents" {
+    cd "${TEST_REPO}"
+
+    run "${PROJECT_DIR}/buildgit" --help
+
+    assert_success
+    assert_output --partial "agents [--json] [--label <name>]"
+}
+
+@test "help_contains_timing" {
+    cd "${TEST_REPO}"
+
+    run "${PROJECT_DIR}/buildgit" --help
+
+    assert_success
+    assert_output --partial "timing [build#] [--json] [--tests] [-n <count>]"
+}
+
+@test "help_contains_pipeline" {
+    cd "${TEST_REPO}"
+
+    run "${PROJECT_DIR}/buildgit" --help
+
+    assert_success
+    assert_output --partial "pipeline [build#] [--json]"
+}
+
+@test "help_contains_queue" {
+    cd "${TEST_REPO}"
+
+    run "${PROJECT_DIR}/buildgit" --help
+
+    assert_success
+    assert_output --partial "queue [--json]"
+}
+
+@test "help_contains_optimization_section" {
+    cd "${TEST_REPO}"
+
+    run "${PROJECT_DIR}/buildgit" --help
+
+    assert_success
+    assert_output --partial "Build optimization:"
+    assert_output --partial "buildgit timing --tests"
 }
 
 # =============================================================================

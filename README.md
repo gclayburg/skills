@@ -218,6 +218,14 @@ Commands:
                       Display Jenkins build status (latest or specific build)
                       build# can be absolute (31) or relative (0=latest, -1=previous, -2=two ago)
                       Default: one-line output (TTY adds color)
+  agents [--json] [--label <name>]
+                      Show Jenkins executor capacity by label
+  timing [build#] [--json] [--tests] [-n <count>]
+                      Show per-stage and per-test-suite timing
+  pipeline [build#] [--json]
+                      Show pipeline structure (stages, parallelism, labels)
+  queue [--json]
+                      Show Jenkins build queue with wait reasons
   push [--no-follow] [--line] [--format <fmt>] [--prior-jobs <N>] [git-push-options] [remote] [branch]
                       Push commits and monitor Jenkins build
   build [--no-follow] [--line] [--format <fmt>] [--prior-jobs <N>]
@@ -262,6 +270,12 @@ Monitor ongoing Jenkins build jobs:
   buildgit status -f --prior-jobs 5  # Follow with last 5 builds shown first
   buildgit --job myjob build       # Trigger build for specific job
   buildgit --job myjob/main status # Query explicit multibranch branch job
+
+Build optimization:
+  buildgit agents                  # Executor capacity by label
+  buildgit queue                   # Current Jenkins queue and wait reasons
+  buildgit timing --tests          # Slowest stages and test suites for latest successful build
+  buildgit pipeline 42 --json      # Pipeline graph and agent labels for build #42
 
 Format placeholders for --format (use with --line):
   %s=status  %j=job  %n=build#  %t=tests  %d=duration
