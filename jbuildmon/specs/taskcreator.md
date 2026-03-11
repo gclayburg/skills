@@ -6,8 +6,9 @@ Use these instructions for breaking down a large specification.  The main object
 - Any file named `*-plan.md` or `*_plan.md` is an implementation plan that have rules for how they are updated
 - us `chunk_template.md` for template of sample chunk of implementation plan
 - Each chunk has a brief description, which has backing documentation in the referenced spec section
-- Each chunk starts as an un marked checkbox, meaning the task has not been completed.
-- When a task or 'chunk' in the plan has been implemented, it is marked as completed.
+- Each chunk starts as an unmarked checkbox in the `## Contents` list at the top of the plan. This is the **only** place checkboxes appear.
+- When a chunk has been implemented, its checkbox in the `## Contents` list is marked complete: `- [ ]` becomes `- [x]`.
+- Chunk detail sections (`## Chunk Detail`) use plain `### Chunk N: Title` headings with **no checkbox prefix**. Never put `- [ ]` in the detail section — it creates duplicate checkboxes that break progress counting tools.
 - Once all chunks in a plan have been implemented, the corresponding plan.md file is not useful and can be considered archival status
 
 ## Goals

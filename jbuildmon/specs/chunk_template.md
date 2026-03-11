@@ -17,27 +17,27 @@ Use this format for each chunk in an implementation plan.
 
 ## Chunk Detail
 
-- [ ] **Chunk N: <Chunk N Title>**
+### Chunk N: <Chunk N Title>
 
-### Description
+#### Description
 
 <Brief summary of what this chunk accomplishes>
 
-### Spec Reference
+#### Spec Reference
 
 See spec [<Section Name>](./<spec-filename>.md#<anchor>) sections X.X-X.X.
 
-### Dependencies
+#### Dependencies
 
 - <List chunk dependencies, e.g., "Chunk M (<function or feature name>)">
 - None (if no dependencies)
 
-### Produces
+#### Produces
 
 - `<path/to/source/file>`
 - `<path/to/test/file.bats>`
 
-### Implementation Details
+#### Implementation Details
 
 1. <First implementation step>:
    - <Sub-detail>
@@ -47,7 +47,7 @@ See spec [<Section Name>](./<spec-filename>.md#<anchor>) sections X.X-X.X.
    - <Sub-detail>
 3. <Additional steps as needed>
 
-### Test Plan
+#### Test Plan
 
 **Test File:** `test/<feature_name>.bats`
 

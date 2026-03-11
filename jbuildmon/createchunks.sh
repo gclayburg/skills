@@ -37,7 +37,8 @@ if [ -z "$ROOT_DIR" ] || [ ! -d "$ROOT_DIR/.git" ]; then
 fi
 
 #CMD="sherlock claude -- --dangerously-skip-permissions 'use $SPECS_DIR/taskcreator.md to create an implementation plan for $SPEC_FILE  '"
-CMD="docker sandbox run claude $ROOT_DIR -- 'use $SPECS_DIR/taskcreator.md to create an implementation plan for $SPEC_FILE  '"
+cd $ROOT_DIR
+CMD="docker sandbox run claude-ralph1 -- 'use $SPECS_DIR/taskcreator.md to create an implementation plan for $SPEC_FILE  '"
 
 echo "$CMD"
 eval "$CMD"
