@@ -7,7 +7,7 @@
 
 ## Contents
 
-- [ ] **Chunk A: `buildgit agents` command**
+- [x] **Chunk A: `buildgit agents` command**
 - [ ] **Chunk B: `buildgit queue` command**
 - [ ] **Chunk C: `buildgit timing` command**
 - [ ] **Chunk D: `buildgit pipeline` command**
