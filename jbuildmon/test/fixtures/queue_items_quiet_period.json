@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "id": 106,
+      "stuck": false,
+      "blocked": false,
+      "buildable": false,
+      "why": "In the quiet period. Expires in 4 sec",
+      "inQueueSince": 1699999996000,
+      "task": {
+        "name": "ralph1/quiet-period",
+        "url": "http://jenkins.example.com/job/ralph1/job/quiet-period/"
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "id": 101,
+      "stuck": false,
+      "blocked": false,
+      "buildable": true,
+      "why": "Waiting for next available executor",
+      "inQueueSince": 1699999955000,
+      "task": {
+        "name": "ralph1/main",
+        "url": "http://jenkins.example.com/job/ralph1/job/main/"
+      }
+    }
+  ]
+}

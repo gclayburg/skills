@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "id": 105,
+      "stuck": false,
+      "blocked": true,
+      "buildable": false,
+      "why": "Blocked by upstream project completion",
+      "inQueueSince": 1699999800000,
+      "task": {
+        "name": "ralph1/blocked-job",
+        "url": "http://jenkins.example.com/job/ralph1/job/blocked-job/"
+      }
+    }
+  ]
+}

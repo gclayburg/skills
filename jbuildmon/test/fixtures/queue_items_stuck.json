@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "id": 104,
+      "stuck": true,
+      "blocked": false,
+      "buildable": false,
+      "why": "There are no nodes with the label 'gpu'",
+      "inQueueSince": 1699999700000,
+      "task": {
+        "name": "ralph1/stuck-job",
+        "url": "http://jenkins.example.com/job/ralph1/job/stuck-job/"
+      }
+    }
+  ]
+}

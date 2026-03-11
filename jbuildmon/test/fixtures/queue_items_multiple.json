@@ -1,0 +1,28 @@
+{
+  "items": [
+    {
+      "id": 102,
+      "stuck": false,
+      "blocked": false,
+      "buildable": true,
+      "why": "Waiting for next available executor",
+      "inQueueSince": 1699999955000,
+      "task": {
+        "name": "ralph1/feature-x",
+        "url": "http://jenkins.example.com/job/ralph1/job/feature-x/"
+      }
+    },
+    {
+      "id": 103,
+      "stuck": false,
+      "blocked": false,
+      "buildable": false,
+      "why": "Build #88 is already in progress",
+      "inQueueSince": 1699999880000,
+      "task": {
+        "name": "ralph1/release",
+        "url": "http://jenkins.example.com/job/ralph1/job/release/"
+      }
+    }
+  ]
+}
