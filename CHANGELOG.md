@@ -4,6 +4,9 @@ All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are do
 
 ## [Unreleased] - 1.3.0-dev
 
+### Added
+- **Build optimization commands** — `buildgit agents`, `buildgit queue`, `buildgit timing`, and `buildgit pipeline` expose Jenkins executor capacity, queue wait reasons, per-stage and test-suite timing, and pipeline structure to help diagnose CI bottlenecks.
+
 ## [1.2.0] - 2026-03-10
 
 ### Added

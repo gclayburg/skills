@@ -12,7 +12,7 @@
 - [x] **Chunk C: `buildgit timing` command**
 - [x] **Chunk D: `buildgit pipeline` command**
 - [x] **Chunk E: Routing, sourcing, and help integration**
-- [ ] **Chunk F: Skill and documentation updates**
+- [x] **Chunk F: Skill and documentation updates**
 
 ---
 

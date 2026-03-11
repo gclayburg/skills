@@ -1,6 +1,6 @@
 ---
 name: buildgit
-description: Jenkins CI/CD build pipeline monitor. Check build status, push and monitor builds,  follow builds in real-time. Use when the user asks about CI/CD status,  build results, wants to push code and monitor the Jenkins build, or asks if CI is passing. Triggers include "check build", "build status", "is CI passing", "is the build green", "push and watch", "push and monitor", "what failed in CI",  "why did the build fail", "follow the build", "watch the build", "trigger a build",  "run the build".
+description: Jenkins CI/CD build pipeline monitor. Check build status, push and monitor builds, follow builds in real-time, and analyze build timing, executor capacity, pipeline structure, and queue contention. Use when the user asks about CI/CD status, build results, wants to push code and monitor the Jenkins build, asks if CI is passing, or needs help optimizing Jenkins throughput. Triggers include "check build", "build status", "is CI passing", "is the build green", "push and watch", "push and monitor", "what failed in CI", "why did the build fail", "follow the build", "watch the build", "trigger a build", "run the build", "why is Jenkins slow", "which agents are busy", "what is in the queue", "show pipeline structure", and "find the bottleneck".
 license: MIT
 ---
 
@@ -8,19 +8,12 @@ license: MIT
 
 A CLI for git operations and monitoring Jenkins CI/CD build pipelines.
 
-## When to Use This Skill
-
-- monitoring the status of a Jenkins build job for your project
-- pushing your git changes and monitoring the Jenkins build
-- triggerring a Jenkins build
-- showing any Jenkins pipeline build errors 
-- determining what failed in a build so it can be fixed
-
 ## What this skill does
 
 - replacement for `git push` command.  Instead of `git push` use `buildgit push`
 - uses git to push changes then expects a Jenkins build to automatically start, then monitors it
 - shows Jenkins build status in many different ways
+- analyzes build timing, executor capacity, pipeline structure, and queue contention to enable build optimization
 - uses Jenkins REST api to monitor and track a Jenkins pipeline build job
 - any command unknown to `buildgit` is delegated to `git`, e.g. `buildgit log` would run `git log`
 
@@ -73,6 +66,17 @@ push the staged changes and monitor the build.  fix any errors you find.
 | `scripts/buildgit build --no-follow` | Trigger only, no monitoring |
 | `scripts/buildgit build --line` | Trigger + compact one-line monitoring (TTY shows progress bar) |
 | `scripts/buildgit build --format '<fmt>'` | Trigger + compact one-line monitoring with custom format |
+| `scripts/buildgit agents` | Show Jenkins executor capacity by label |
+| `scripts/buildgit agents --json` | Emit executor capacity and node details as JSON |
+| `scripts/buildgit agents --label <name>` | Show executor capacity for one Jenkins label |
+| `scripts/buildgit timing` | Show per-stage timing for the latest successful build |
+| `scripts/buildgit timing --tests` | Include slowest test suites and test counts in timing output |
+| `scripts/buildgit timing --tests --json` | Emit timing, parallel bottlenecks, and test suite timing as JSON |
+| `scripts/buildgit timing -n <N> --json` | Emit timing JSON for the latest N builds |
+| `scripts/buildgit pipeline` | Show pipeline structure, stage hierarchy, and parallel branches |
+| `scripts/buildgit pipeline --json` | Emit pipeline graph, stage types, and agent labels as JSON |
+| `scripts/buildgit queue` | Show the current Jenkins queue and wait reasons |
+| `scripts/buildgit queue --json` | Emit queued items, wait reasons, and queue duration as JSON |
 | `scripts/buildgit --console auto status` | Show default console log on failure |
 | `scripts/buildgit --console <N> status` | Show last N raw console lines on failure |
 | `scripts/buildgit --job <name|name/branch> <cmd>` | Override auto-detected job name (supports multibranch) |
@@ -129,6 +133,15 @@ On failed builds, buildgit shows a curated error summary by default.
 
 For agent-safe follow mode, prefer:
 - `scripts/buildgit status -f --once` to follow exactly one build and exit
+
+## Build Optimization
+
+Use this workflow when the user wants to reduce build time or understand Jenkins contention:
+
+1. Run `scripts/buildgit queue` to see whether builds are waiting on capacity or blocked by quiet periods.
+2. Run `scripts/buildgit agents` to identify which executor labels are saturated or offline.
+3. Run `scripts/buildgit timing --tests` on a recent successful build to find slow stages, parallel bottlenecks, and expensive test suites.
+4. Run `scripts/buildgit pipeline` to understand stage ordering, parallel branches, and agent-label placement, then use [references/build-optimization.md](references/build-optimization.md) for the full workflow and constraints.
 
 ## Dynamic Context
 
