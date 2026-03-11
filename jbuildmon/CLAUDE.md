@@ -1,7 +1,7 @@
 ## Testing
 - This project uses bats-core for unit testing.
 - IMPORTANT: bats-core is located at `jbuildmon/test/bats/bin/bats`; do not use any bats command from your `$PATH`.
-- when running bats-core tests always use the --jobs option for speed: `bats --jobs 10 ...`
+- when running bats-core tests always use the --jobs option for speed on all available cpus: `bats --jobs $(command -v parallel >/dev/null 2>&1 && { nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1; } || echo 1 ) ...`
 - Note: The `'buildgit status -f'` command will run indefinitely, waiting for the next build after printing output. Terminate it with `SIGTERM` signal.
 - **Tests must never silently skip in CI.** If a test cannot run because the environment is not set up (missing credentials, missing Jenkins job, missing infrastructure), the test must **fail** with a clear error — not skip. Skipping hides failures and gives false confidence. Unit tests mock their dependencies and are self-contained. Integration tests require real infrastructure; if that infrastructure is unavailable, that is a broken environment and must be surfaced as a failure.
 - **Bats fd 3 and SIGPIPE in parallel mode:** bats-core uses fd 3 for internal output capture. When running tests in parallel (`--jobs`), two things cause SIGPIPE (exit 141) or hangs:
