@@ -1,0 +1,28 @@
+{
+  "id": "101",
+  "urlName": "execution/node/101",
+  "testResult": {
+    "totalCount": 5,
+    "skipCount": 0,
+    "failCount": 1,
+    "suites": [
+      {
+        "name": "buildgit_status_follow",
+        "duration": 122.3,
+        "cases": [
+          { "status": "PASSED" },
+          { "status": "FAILED" },
+          { "status": "REGRESSION" }
+        ]
+      },
+      {
+        "name": "buildgit_status_json",
+        "duration": 4.5,
+        "cases": [
+          { "status": "PASSED" },
+          { "status": "PASSED" }
+        ]
+      }
+    ]
+  }
+}

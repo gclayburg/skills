@@ -4,7 +4,7 @@
 
 ## Contents
 
-- [ ] **Chunk 1: Stage-Level Test Correlation Library**
+- [x] **Chunk 1: Stage-Level Test Correlation Library**
 - [ ] **Chunk 2: Feature 2 — `buildgit agents --nodes`**
 - [ ] **Chunk 3: Feature 1 — `buildgit timing --tests --by-stage`**
 - [ ] **Chunk 4: Feature 3 — `buildgit timing --compare` and multi-build table**
@@ -107,8 +107,10 @@ See spec [Feature 1](./todo/2026-03-11_build-optimization-diagnostics-spec.md#fe
 
 #### Implementation Log
 
-<!-- Filled in by the implementing agent after completing this chunk.
-     Summarize: files changed, key decisions, anything the finalize step needs to know. -->
+- Added [`jbuildmon/skill/buildgit/scripts/lib/jenkins-common/stage_test_correlation.sh`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/skill/buildgit/scripts/lib/jenkins-common/stage_test_correlation.sh) with `fetch_stage_test_suites` and `_fetch_node_test_results`; both degrade to empty JSON on missing node data, invalid responses, or non-200/non-404 statuses.
+- Updated [`jbuildmon/skill/buildgit/scripts/lib/jenkins-common.sh`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/skill/buildgit/scripts/lib/jenkins-common.sh) to source the new shared library so later timing/pipeline chunks can consume it without additional loader changes.
+- Added [`jbuildmon/test/stage_test_correlation.bats`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/stage_test_correlation.bats) plus four new fixtures under [`jbuildmon/test/fixtures`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/fixtures) to cover stage-keyed aggregation, suite field extraction, silent 404 handling, empty-build behavior, and FAILED-vs-REGRESSION counting.
+- Key decision: failure counts intentionally include only `FAILED` cases, matching the chunk spec and preserving room for later callers to represent regressions separately if needed.
 
 ---
 
