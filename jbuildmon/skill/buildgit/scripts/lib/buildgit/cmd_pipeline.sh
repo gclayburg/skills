@@ -198,6 +198,58 @@ _classify_pipeline_stages() {
     ' 2>/dev/null || echo '{"parallelStructureAvailable":true,"stages":[],"graph":{"edges":[]}}'
 }
 
+_enrich_pipeline_stages_with_tests() {
+    local classified_json="$1"
+    local stage_tests_map_json="$2"
+
+    if [[ -z "$classified_json" ]]; then
+        echo '{"parallelStructureAvailable":false,"stages":[],"graph":{"edges":[]}}'
+        return 0
+    fi
+
+    if [[ -z "$stage_tests_map_json" || "$stage_tests_map_json" == "{}" ]]; then
+        printf '%s\n' "$classified_json"
+        return 0
+    fi
+
+    jq -n \
+        --argjson classified "$classified_json" \
+        --argjson stage_tests "$stage_tests_map_json" '
+        def enrich($node):
+            if ($node.type // "") == "parallel" then
+                $node + {
+                    branches: [
+                        ($node.branches // [])[]?
+                        | enrich(.)
+                    ]
+                }
+            else
+                (
+                    $node + {
+                        children: [
+                            ($node.children // [])[]?
+                            | enrich(.)
+                        ]
+                    }
+                ) as $enriched
+                | if ($stage_tests | has($enriched.name // "")) then
+                    $enriched + {
+                        testSuites: ($stage_tests[$enriched.name] // [])
+                    }
+                  else
+                    $enriched
+                  end
+            end;
+
+        $classified + {
+            stages: [
+                ($classified.stages // [])[]?
+                | enrich(.)
+            ]
+        }
+    ' 2>/dev/null || printf '%s\n' "$classified_json"
+}
+
 _render_pipeline_node_human() {
     local node_json="$1"
     local prefix="${2:-}"
@@ -224,6 +276,17 @@ _render_pipeline_node_human() {
             printf '%s%s %s [%s] -- sequential\n' "$prefix" "$connector" "$name" "$label"
         else
             printf '%s%s %s -- sequential\n' "$prefix" "$connector" "$name"
+        fi
+        local suite_count total_tests cumulative_duration
+        suite_count=$(printf '%s\n' "$node_json" | jq -r '(.testSuites // []) | length' 2>/dev/null) || suite_count=0
+        if [[ "$suite_count" -gt 0 ]]; then
+            total_tests=$(printf '%s\n' "$node_json" | jq -r '[.testSuites[]?.tests // 0] | add // 0' 2>/dev/null) || total_tests=0
+            cumulative_duration=$(printf '%s\n' "$node_json" | jq -r '[.testSuites[]?.durationMs // 0] | add // 0' 2>/dev/null) || cumulative_duration=0
+            printf '%s%s suites, %s tests, %s cumulative\n' \
+                "$next_prefix" \
+                "$suite_count" \
+                "$total_tests" \
+                "$(format_stage_duration "$cumulative_duration")"
         fi
         child_key="children"
     fi
@@ -280,7 +343,7 @@ _render_pipeline_for_build() {
     local build_number="$2"
 
     local stages_json blue_nodes_json computers_json node_label_map_json
-    local console_output stage_agent_map_json classified_json
+    local console_output stage_agent_map_json classified_json stage_tests_map_json
 
     stages_json=$(get_all_stages "$job_name" "$build_number")
     blue_nodes_json=$(get_blue_ocean_nodes "$job_name" "$build_number")
@@ -289,6 +352,8 @@ _render_pipeline_for_build() {
     console_output=$(get_console_output "$job_name" "$build_number" 2>/dev/null) || console_output=""
     stage_agent_map_json=$(_build_stage_agent_map "$console_output")
     classified_json=$(_classify_pipeline_stages "$stages_json" "$blue_nodes_json" "$stage_agent_map_json" "$node_label_map_json")
+    stage_tests_map_json=$(fetch_stage_test_suites "$job_name" "$build_number")
+    classified_json=$(_enrich_pipeline_stages_with_tests "$classified_json" "$stage_tests_map_json")
 
     jq -n \
         --argjson build_number "$build_number" \

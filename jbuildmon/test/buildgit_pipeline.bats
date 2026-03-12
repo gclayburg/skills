@@ -74,11 +74,17 @@ jenkins_api() {
             echo '{"lastBuild":{"number":42}}'
             ;;
         "/job/ralph1/42/wfapi/describe")
-            cat "${FIXTURE_DIR}/timing_wfapi_\${PIPELINE_FIXTURE_SET:-parallel}_42.json"
+            if [[ "\${PIPELINE_FIXTURE_SET:-parallel}" == "pipeline" ]]; then
+                cat "${FIXTURE_DIR}/pipeline_wfapi_42.json"
+            else
+                cat "${FIXTURE_DIR}/timing_wfapi_\${PIPELINE_FIXTURE_SET:-parallel}_42.json"
+            fi
             ;;
         "/blue/rest/organizations/jenkins/pipelines/ralph1/runs/42/nodes/")
             if [[ "\${PIPELINE_BLUE_MODE:-ok}" == "missing" ]]; then
                 echo "[]"
+            elif [[ "\${PIPELINE_FIXTURE_SET:-parallel}" == "pipeline" ]]; then
+                cat "${FIXTURE_DIR}/pipeline_blue_nodes_42.json"
             else
                 cat "${FIXTURE_DIR}/timing_blue_nodes_\${PIPELINE_FIXTURE_SET:-parallel}_42.json"
             fi
@@ -87,7 +93,33 @@ jenkins_api() {
             cat "${FIXTURE_DIR}/agents_computers.json"
             ;;
         "/job/ralph1/42/consoleText")
-            cat "${FIXTURE_DIR}/timing_console_42.txt"
+            if [[ "\${PIPELINE_FIXTURE_SET:-parallel}" == "pipeline" ]]; then
+                cat "${FIXTURE_DIR}/pipeline_console_42.txt"
+            else
+                cat "${FIXTURE_DIR}/timing_console_42.txt"
+            fi
+            ;;
+        *)
+            echo "unexpected endpoint: \$endpoint" >&2
+            return 1
+            ;;
+    esac
+}
+
+jenkins_api_with_status() {
+    local endpoint="\$1"
+
+    case "\$endpoint" in
+        "/job/ralph1/42/execution/node/20/wfapi/testResults")
+            cat "${FIXTURE_DIR}/pipeline_node_20_tests.json"
+            printf '\n200\n'
+            ;;
+        "/job/ralph1/42/execution/node/21/wfapi/testResults")
+            cat "${FIXTURE_DIR}/pipeline_node_21_tests.json"
+            printf '\n200\n'
+            ;;
+        "/job/ralph1/42/execution/node/"*"/wfapi/testResults")
+            printf '\n404\n'
             ;;
         *)
             echo "unexpected endpoint: \$endpoint" >&2
@@ -183,4 +215,102 @@ EOF
     json_count=$(printf '%s\n' "$output" | jq -r '.. | objects | select(.name? == "Tests") | (.branches | length)')
 
     [[ "$human_count" == "$json_count" ]]
+}
+
+@test "pipeline_human_shows_test_summary_for_stages_with_tests" {
+    create_pipeline_wrapper
+
+    run bash -c "PIPELINE_FIXTURE_SET=pipeline \"${TEST_TEMP_DIR}/pipeline_wrapper.sh\" 42 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "Unit Tests [fastnode] -- sequential"
+    assert_output --partial "2 suites, 5 tests, 2m 6s cumulative"
+    assert_output --partial "Integration Tests [slownode] -- sequential"
+    assert_output --partial "3 suites, 9 tests, 2m 48s cumulative"
+}
+
+@test "pipeline_human_omits_test_summary_for_stages_without_tests" {
+    create_pipeline_wrapper
+
+    run bash -c "PIPELINE_FIXTURE_SET=pipeline \"${TEST_TEMP_DIR}/pipeline_wrapper.sh\" 42 3>&- 2>&1"
+
+    assert_success
+    refute_output --partial "0 suites"
+    [[ "$(printf '%s\n' "$output" | grep -c 'suites, .* tests, .* cumulative')" -eq 2 ]]
+}
+
+@test "pipeline_json_includes_testSuites_field" {
+    create_pipeline_wrapper
+
+    run bash -c "PIPELINE_FIXTURE_SET=pipeline \"${TEST_TEMP_DIR}/pipeline_wrapper.sh\" 42 --json 3>&- 2>&1"
+
+    assert_success
+    echo "$output" | jq -e '.. | objects | select(.name? == "Unit Tests") | has("testSuites")' >/dev/null
+}
+
+@test "pipeline_json_testSuites_fields_correct" {
+    create_pipeline_wrapper
+
+    run bash -c "PIPELINE_FIXTURE_SET=pipeline \"${TEST_TEMP_DIR}/pipeline_wrapper.sh\" 42 --json 3>&- 2>&1"
+
+    assert_success
+    echo "$output" | jq -e '
+        .. | objects
+        | select(.name? == "Integration Tests")
+        | .testSuites[1] == {
+            "name": "buildgit_timing",
+            "tests": 4,
+            "durationMs": 79200,
+            "failures": 0
+        }
+    ' >/dev/null
+}
+
+@test "pipeline_json_testSuites_omitted_when_no_tests" {
+    create_pipeline_wrapper
+
+    run bash -c "PIPELINE_FIXTURE_SET=pipeline \"${TEST_TEMP_DIR}/pipeline_wrapper.sh\" 42 --json 3>&- 2>&1"
+
+    assert_success
+    echo "$output" | jq -e '
+        .. | objects
+        | select(.name? == "Checkout" or .name? == "Package")
+        | has("testSuites") | not
+    ' >/dev/null
+}
+
+@test "pipeline_json_testSuites_has_failures_count" {
+    create_pipeline_wrapper
+
+    run bash -c "PIPELINE_FIXTURE_SET=pipeline \"${TEST_TEMP_DIR}/pipeline_wrapper.sh\" 42 --json 3>&- 2>&1"
+
+    assert_success
+    echo "$output" | jq -e '
+        .. | objects
+        | select(.name? == "Unit Tests")
+        | .testSuites[0].failures == 1
+    ' >/dev/null
+}
+
+@test "pipeline_human_cumulative_duration_correct" {
+    create_pipeline_wrapper
+
+    run bash -c "PIPELINE_FIXTURE_SET=pipeline \"${TEST_TEMP_DIR}/pipeline_wrapper.sh\" 42 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "2 suites, 5 tests, 2m 6s cumulative"
+    assert_output --partial "3 suites, 9 tests, 2m 48s cumulative"
+}
+
+@test "pipeline_enrich_no_test_data_returns_unchanged" {
+    create_pipeline_wrapper
+
+    run bash -c "PIPELINE_FIXTURE_SET=parallel PIPELINE_BLUE_MODE=missing \"${TEST_TEMP_DIR}/pipeline_wrapper.sh\" 42 --json 3>&- 2>&1"
+
+    assert_success
+    echo "$output" | jq -e '
+        .. | objects
+        | select(.name? == "Checkout" or .name? == "Unit Tests" or .name? == "Integration Tests" or .name? == "Package")
+        | has("testSuites") | not
+    ' >/dev/null
 }

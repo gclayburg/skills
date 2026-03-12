@@ -8,7 +8,7 @@
 - [x] **Chunk 2: Feature 2 — `buildgit agents --nodes`**
 - [x] **Chunk 3: Feature 1 — `buildgit timing --tests --by-stage`**
 - [x] **Chunk 4: Feature 3 — `buildgit timing --compare` and multi-build table**
-- [ ] **Chunk 5: Feature 4 — `buildgit pipeline` enriched with test suites**
+- [x] **Chunk 5: Feature 4 — `buildgit pipeline` enriched with test suites**
 
 
 ## Chunk Detail
@@ -518,8 +518,10 @@ See spec [Feature 4](./todo/2026-03-11_build-optimization-diagnostics-spec.md#fe
 
 #### Implementation Log
 
-<!-- Filled in by the implementing agent after completing this chunk.
-     Summarize: files changed, key decisions, anything the finalize step needs to know. -->
+- Updated [`jbuildmon/skill/buildgit/scripts/lib/buildgit/cmd_pipeline.sh`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/skill/buildgit/scripts/lib/buildgit/cmd_pipeline.sh) to enrich classified pipeline stages with per-stage `testSuites` from the shared stage-correlation library and to render per-stage human summaries with suite count, test count, and cumulative duration.
+- Added chunk-specific fixtures [`jbuildmon/test/fixtures/pipeline_wfapi_42.json`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/fixtures/pipeline_wfapi_42.json), [`jbuildmon/test/fixtures/pipeline_blue_nodes_42.json`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/fixtures/pipeline_blue_nodes_42.json), [`jbuildmon/test/fixtures/pipeline_node_20_tests.json`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/fixtures/pipeline_node_20_tests.json), [`jbuildmon/test/fixtures/pipeline_node_21_tests.json`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/fixtures/pipeline_node_21_tests.json), and [`jbuildmon/test/fixtures/pipeline_console_42.txt`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/fixtures/pipeline_console_42.txt) so pipeline tests do not depend on timing fixtures.
+- Extended [`jbuildmon/test/buildgit_pipeline.bats`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/buildgit_pipeline.bats) with chunk 5 coverage for human summaries, JSON `testSuites`, omission on non-test stages, failure counts, cumulative durations, and the no-test-data path.
+- Key decisions: enrichment is recursive by stage name across both `children` and `branches`, stages without correlated test data omit `testSuites` entirely, and the human summary uses cumulative suite duration rather than stage wall time to match the spec.
 
 ---
 
