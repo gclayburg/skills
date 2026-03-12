@@ -4,6 +4,7 @@ _parse_timing_options() {
     TIMING_JSON=false
     TIMING_COUNT=1
     TIMING_TESTS=false
+    TIMING_BY_STAGE=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -13,6 +14,10 @@ _parse_timing_options() {
                 ;;
             --tests)
                 TIMING_TESTS=true
+                shift
+                ;;
+            --by-stage)
+                TIMING_BY_STAGE=true
                 shift
                 ;;
             -n)
@@ -309,12 +314,73 @@ _render_timing_json() {
     printf '%s\n' "$timing_json" | jq '.'
 }
 
+_render_timing_by_stage_human() {
+    local timing_json="$1"
+    local stage_tests_map_json="$2"
+
+    _render_timing_human "$timing_json" "false"
+
+    local stage_count
+    stage_count=$(printf '%s\n' "$stage_tests_map_json" | jq -r 'keys | length' 2>/dev/null) || stage_count=0
+    if [[ "$stage_count" -eq 0 ]]; then
+        return 0
+    fi
+
+    echo "Test suite timing by stage:"
+    while IFS= read -r stage_name; do
+        [[ -n "$stage_name" ]] || continue
+
+        local stage_meta stage_duration stage_agent
+        stage_meta=$(printf '%s\n' "$timing_json" | jq -c --arg stage_name "$stage_name" '
+            (
+                first(.stages[]? | select((.name // "") == $stage_name))
+                | {
+                    durationMillis: (.durationMillis // 0),
+                    agent: (.agent // "")
+                }
+            ) // (
+                first(.parallelGroups[]? | select((.name // "") == $stage_name))
+                | {
+                    durationMillis: (.wallDurationMillis // 0),
+                    agent: ""
+                }
+            ) // {
+                durationMillis: 0,
+                agent: ""
+            }
+        ' 2>/dev/null) || stage_meta='{"durationMillis":0,"agent":""}'
+        stage_duration=$(printf '%s\n' "$stage_meta" | jq -r '.durationMillis // 0' 2>/dev/null) || stage_duration=0
+        stage_agent=$(printf '%s\n' "$stage_meta" | jq -r '.agent // empty' 2>/dev/null) || stage_agent=""
+
+        if [[ -n "$stage_agent" ]]; then
+            printf '  %s (wall %s, %s):\n' "$stage_name" "$(format_stage_duration "$stage_duration")" "$stage_agent"
+        else
+            printf '  %s (wall %s):\n' "$stage_name" "$(format_stage_duration "$stage_duration")"
+        fi
+
+        while IFS= read -r suite_json; do
+            [[ -n "$suite_json" ]] || continue
+            local suite_name suite_duration suite_tests
+            suite_name=$(printf '%s\n' "$suite_json" | jq -r '.name // "unknown"' 2>/dev/null) || suite_name="unknown"
+            suite_duration=$(printf '%s\n' "$suite_json" | jq -r '.durationMs // 0' 2>/dev/null) || suite_duration=0
+            suite_tests=$(printf '%s\n' "$suite_json" | jq -r '.tests // 0' 2>/dev/null) || suite_tests=0
+            printf '    %s  %s  (%s tests)\n' "$suite_name" "$(format_stage_duration "$suite_duration")" "$suite_tests"
+        done < <(printf '%s\n' "$stage_tests_map_json" | jq -c --arg stage_name "$stage_name" '.[$stage_name][]?' 2>/dev/null)
+    done < <(printf '%s\n' "$timing_json" | jq -r --argjson tests_by_stage "$stage_tests_map_json" '
+        .stages[]?
+        | (.name // "") as $stage_name
+        | select($stage_name != "" and ($tests_by_stage | has($stage_name)))
+        | $stage_name
+    ' 2>/dev/null)
+}
+
 _render_timing_for_build() {
     local job_name="$1"
     local build_number="$2"
 
     local build_info_json total_duration stages_json blue_nodes_json console_output
     local stage_agent_map_json test_report_json test_suites_json grouped_json timing_json
+    local stage_tests_map_json
 
     build_info_json=$(get_build_info "$job_name" "$build_number")
     total_duration=$(printf '%s\n' "$build_info_json" | jq -r '.duration // 0' 2>/dev/null) || total_duration=0
@@ -330,13 +396,19 @@ _render_timing_for_build() {
     test_suites_json=$(_build_timing_test_suites "$test_report_json")
     stages_json=$(_build_timing_stages_json "$stages_json" "$stage_agent_map_json" "$test_suites_json")
     grouped_json=$(_build_parallel_groups "$stages_json" "$blue_nodes_json")
+    stage_tests_map_json="{}"
+    if [[ "$TIMING_BY_STAGE" == "true" && "$TIMING_TESTS" == "true" ]]; then
+        stage_tests_map_json=$(fetch_stage_test_suites "$job_name" "$build_number")
+    fi
 
     timing_json=$(jq -n \
         --argjson build_number "$build_number" \
         --argjson total_duration "$total_duration" \
         --argjson stages "$(printf '%s\n' "$grouped_json" | jq '.stages // []')" \
         --argjson parallel_groups "$(printf '%s\n' "$grouped_json" | jq '.parallelGroups // []')" \
-        --argjson test_suites "$test_suites_json" '
+        --argjson test_suites "$test_suites_json" \
+        --argjson tests_by_stage "$stage_tests_map_json" \
+        --arg timing_by_stage "$TIMING_BY_STAGE" '
         {
             build: {
                 number: $build_number,
@@ -346,12 +418,17 @@ _render_timing_for_build() {
             parallelGroups: $parallel_groups,
             testSuites: $test_suites
         }
+        | if $timing_by_stage == "true" then . + {testsByStage: $tests_by_stage} else . end
     ')
 
     if [[ "$TIMING_JSON" == "true" ]]; then
         _render_timing_json "$timing_json"
     else
-        _render_timing_human "$timing_json" "$TIMING_TESTS"
+        if [[ "$TIMING_BY_STAGE" == "true" && "$TIMING_TESTS" == "true" ]]; then
+            _render_timing_by_stage_human "$timing_json" "$stage_tests_map_json"
+        else
+            _render_timing_human "$timing_json" "$TIMING_TESTS"
+        fi
     fi
 }
 

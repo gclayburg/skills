@@ -77,7 +77,11 @@ jenkins_api() {
             cat "${FIXTURE_DIR}/timing_build_info_40.json"
             ;;
         "/job/ralph1/42/wfapi/describe")
-            cat "${FIXTURE_DIR}/timing_wfapi_\${TIMING_FIXTURE_SET:-parallel}_42.json"
+            if [[ "\${TIMING_WFAPI_SET:-\${TIMING_FIXTURE_SET:-parallel}}" == "stage_tests" ]]; then
+                cat "${FIXTURE_DIR}/timing_stage_tests_wfapi_42.json"
+            else
+                cat "${FIXTURE_DIR}/timing_wfapi_\${TIMING_WFAPI_SET:-\${TIMING_FIXTURE_SET:-parallel}}_42.json"
+            fi
             ;;
         "/job/ralph1/41/wfapi/describe")
             cat "${FIXTURE_DIR}/timing_wfapi_sequential_41.json"
@@ -132,6 +136,17 @@ jenkins_api_with_status() {
         "/job/ralph1/40/testReport/api/json?tree=duration,suites[name,duration,cases[className,name,duration,status]]")
             cat "${FIXTURE_DIR}/timing_test_report_40.json"
             printf '\n200\n'
+            ;;
+        "/job/ralph1/42/execution/node/10/wfapi/testResults")
+            cat "${FIXTURE_DIR}/timing_stage_tests_node_10_tests.json"
+            printf '\n200\n'
+            ;;
+        "/job/ralph1/42/execution/node/11/wfapi/testResults")
+            cat "${FIXTURE_DIR}/timing_stage_tests_node_11_tests.json"
+            printf '\n200\n'
+            ;;
+        "/job/ralph1/42/execution/node/1/wfapi/testResults"|"/job/ralph1/42/execution/node/4/wfapi/testResults")
+            printf '\n404\n'
             ;;
         *)
             echo "unexpected endpoint: \$endpoint" >&2
@@ -248,4 +263,75 @@ EOF
 
     assert_success
     refute_output --partial "Test suite timing (top 10 slowest):"
+}
+
+@test "timing_by_stage_groups_suites_under_stage" {
+    create_timing_wrapper
+
+    run bash -c "TIMING_WFAPI_SET=stage_tests \"${TEST_TEMP_DIR}/timing_wrapper.sh\" 42 --tests --by-stage 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "Test suite timing by stage:"
+    assert_output --partial "  Unit Tests (wall 1m 0s, agent-a):"
+    assert_output --partial "    com.example.unit.LoginSpec"
+    assert_output --partial "  Integration Tests (wall 2m 0s, agent-b):"
+}
+
+@test "timing_by_stage_shows_stage_wall_time_and_agent" {
+    create_timing_wrapper
+
+    run bash -c "TIMING_WFAPI_SET=stage_tests \"${TEST_TEMP_DIR}/timing_wrapper.sh\" 42 --tests --by-stage 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "Unit Tests (wall 1m 0s, agent-a):"
+    assert_output --partial "Integration Tests (wall 2m 0s, agent-b):"
+}
+
+@test "timing_by_stage_suite_line_has_duration_and_count" {
+    create_timing_wrapper
+
+    run bash -c "TIMING_WFAPI_SET=stage_tests \"${TEST_TEMP_DIR}/timing_wrapper.sh\" 42 --tests --by-stage 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "com.example.integration.ApiTimingIT  3m 29s  (50 tests)"
+}
+
+@test "timing_by_stage_without_tests_flag_ignored" {
+    create_timing_wrapper
+
+    run bash -c "TIMING_WFAPI_SET=stage_tests \"${TEST_TEMP_DIR}/timing_wrapper.sh\" 42 --by-stage 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "Parallel group: Tests (wall 2m 0s, bottleneck: Integration Tests)"
+    refute_output --partial "Test suite timing by stage:"
+}
+
+@test "timing_by_stage_json_has_testsByStage_field" {
+    create_timing_wrapper
+
+    run bash -c "TIMING_WFAPI_SET=stage_tests \"${TEST_TEMP_DIR}/timing_wrapper.sh\" 42 --tests --by-stage --json 3>&- 2>&1"
+
+    assert_success
+    echo "$output" | jq -e '.testsByStage["Unit Tests"][0].name == "com.example.unit.LoginSpec"' >/dev/null
+    echo "$output" | jq -e '.testsByStage["Integration Tests"][0].tests == 50' >/dev/null
+}
+
+@test "timing_by_stage_stage_with_no_tests_omitted" {
+    create_timing_wrapper
+
+    run bash -c "TIMING_WFAPI_SET=stage_tests \"${TEST_TEMP_DIR}/timing_wrapper.sh\" 42 --tests --by-stage --json 3>&- 2>&1"
+
+    assert_success
+    echo "$output" | jq -e '(.testsByStage | has("Package")) | not' >/dev/null
+    refute_output --partial "Package (wall"
+}
+
+@test "timing_by_stage_framework_agnostic" {
+    create_timing_wrapper
+
+    run bash -c "TIMING_WFAPI_SET=stage_tests \"${TEST_TEMP_DIR}/timing_wrapper.sh\" 42 --tests --by-stage 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "pytest/test_api.py::test_round_trip"
+    refute_output --partial ".bats"
 }
