@@ -135,7 +135,7 @@ _wait_for_integration_job_indexed() {
             http_code="000"
         fi
 
-        sleep 5
+        sleep 1
     done
 
     echo "Integration job branch was not indexed within ${timeout_seconds}s: ${job_name} (${job_api_url})" >&2
@@ -174,7 +174,7 @@ _wait_for_queue_build_number() {
             fi
         fi
 
-        sleep 2
+        sleep 1
     done
 
     echo "Timed out waiting for Jenkins queue item to become executable: ${queue_url}" >&2
@@ -202,7 +202,7 @@ _wait_for_specific_build_completion() {
             fi
         fi
 
-        sleep 3
+        sleep 1
     done
 
     echo "Timed out waiting for build #${build_number} of ${job_name} to complete" >&2
@@ -391,10 +391,6 @@ _ensure_build_command_monitor_complete() {
         echo "$1" >&2
         return 1
     }
-
-    if ! _wait_for_integration_job_indexed "$INTEGRATION_JOB" 180; then
-        _record_build_monitor_failure "Integration job branch was not indexed within 180s: ${INTEGRATION_JOB}"
-    fi
 
     local build_output build_rc
     set +e

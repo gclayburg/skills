@@ -16,7 +16,7 @@ pipeline {
         stage('Setup') {
             steps {
                 echo 'Integration test pipeline: parallel-substages'
-                sleep 7
+                sleep 2
             }
         }
         stage('Parallel Work') {
@@ -24,7 +24,7 @@ pipeline {
                 stage('Quick Task') {
                     steps {
                         echo 'Simple parallel branch, no sub-stages'
-                        sleep 12
+                        sleep 2
                     }
                 }
                 stage('Slow Pipeline') {
@@ -33,13 +33,13 @@ pipeline {
                         stage('Compile') {
                             steps {
                                 echo 'Compiling on slownode...'
-                                sleep 8
+                                sleep 4
                             }
                         }
                         stage('Package') {
                             steps {
                                 echo 'Packaging on slownode...'
-                                sleep 8
+                                sleep 4
                             }
                         }
                     }
@@ -49,19 +49,19 @@ pipeline {
                         stage('Lint') {
                             steps {
                                 echo 'Linting on default agent...'
-                                sleep 6
+                                sleep 3
                             }
                         }
                         stage('Analyze') {
                             steps {
                                 echo 'Analyzing on default agent...'
-                                sleep 6
+                                sleep 3
                             }
                         }
                         stage('Report') {
                             steps {
                                 echo 'Reporting on default agent...'
-                                sleep 6
+                                sleep 3
                             }
                         }
                     }

@@ -15,7 +15,7 @@ pipeline {
         stage('Init') {
             steps {
                 echo 'Starting parallel nested threads test'
-                sleep 7
+                sleep 2
             }
         }
         stage('Parallel Work') {
@@ -23,7 +23,7 @@ pipeline {
                 stage('Simple Branch') {
                     steps {
                         echo 'Simple branch with direct steps'
-                        sleep 12
+                        sleep 2
                     }
                 }
                 stage('Nested Branch') {
@@ -34,13 +34,13 @@ pipeline {
                         stage('Step A') {
                             steps {
                                 echo 'Nested sub-stage A on slownode'
-                                sleep 8
+                                sleep 4
                             }
                         }
                         stage('Step B') {
                             steps {
                                 echo 'Nested sub-stage B on slownode'
-                                sleep 8
+                                sleep 4
                             }
                         }
                     }
@@ -50,13 +50,13 @@ pipeline {
                         stage('Step X') {
                             steps {
                                 echo 'Nested sub-stage X on default agent'
-                                sleep 6
+                                sleep 3
                             }
                         }
                         stage('Step Y') {
                             steps {
                                 echo 'Nested sub-stage Y on default agent'
-                                sleep 6
+                                sleep 3
                             }
                         }
                     }
