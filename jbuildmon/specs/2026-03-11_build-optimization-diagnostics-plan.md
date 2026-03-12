@@ -5,7 +5,7 @@
 ## Contents
 
 - [x] **Chunk 1: Stage-Level Test Correlation Library**
-- [ ] **Chunk 2: Feature 2 — `buildgit agents --nodes`**
+- [x] **Chunk 2: Feature 2 — `buildgit agents --nodes`**
 - [ ] **Chunk 3: Feature 1 — `buildgit timing --tests --by-stage`**
 - [ ] **Chunk 4: Feature 3 — `buildgit timing --compare` and multi-build table**
 - [ ] **Chunk 5: Feature 4 — `buildgit pipeline` enriched with test suites**
@@ -220,8 +220,10 @@ See spec [Feature 2](./todo/2026-03-11_build-optimization-diagnostics-spec.md#fe
 
 #### Implementation Log
 
-<!-- Filled in by the implementing agent after completing this chunk.
-     Summarize: files changed, key decisions, anything the finalize step needs to know. -->
+- Updated [`jbuildmon/skill/buildgit/scripts/lib/buildgit/cmd_agents.sh`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/skill/buildgit/scripts/lib/buildgit/cmd_agents.sh) to add `--nodes`, a node-centric JSON builder, and separate human/JSON renderers that reuse the existing `/computer/api/json` payload and leave the label view untouched.
+- Updated [`jbuildmon/skill/buildgit/scripts/buildgit`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/skill/buildgit/scripts/buildgit) help text to advertise `agents --nodes`; finalize should propagate the help change to the remaining documentation files listed in the plan workflow.
+- Added [`jbuildmon/test/fixtures/agents_computers_overlap.json`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/fixtures/agents_computers_overlap.json) plus seven `--nodes` tests in [`jbuildmon/test/buildgit_agents.bats`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/buildgit_agents.bats) covering human output, executor/busy counts, alpha sorting, label lists, JSON shape, and default-view regression protection.
+- Key decision: the node view intentionally derives busy executors from active executor URLs and sorts node labels alphabetically, matching the chunk spec while avoiding any dependency on per-label API lookups.
 
 ---
 
