@@ -69,3 +69,4 @@ These files represent completed specifications in the specs/ directory.  This li
 - 2026-03-09_threads-parallel-substage-visibility-spec.md  make `--threads` show active nested substages inside parallel branches, reuse substage duration estimates, and cover the behavior with redraw/unit/integration tests
 - 2026-03-06_format-stage-display-spec.md  add customizable format strings, width/alignment controls, and env/default precedence for `--threads` live per-stage TTY rows
 - 2026-03-08_agent-failure-diagnostics-spec.md  add `status --console-text [stage]`, `status --list-stages`, and verbose failed-test stdout/untruncated diagnostics for agent workflows
+- 2026-03-11_build-optimization-diagnostics-spec.md  add node-centric agent overlap diagnostics, stage-correlated timing views/comparisons, and pipeline test-suite enrichment for build optimization work

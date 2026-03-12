@@ -1,9 +1,9 @@
 ## Build Optimization Diagnostics
 
 - **Date:** `2026-03-11T17:09:09-0600`
-- **References:** `specs/todo/rebalance-build.md`
+- **References:** `specs/done-reports/rebalance-build.md`
 - **Supersedes:** none
-- **State:** `DRAFT`
+- **State:** `IMPLEMENTED`
 
 ### Background
 

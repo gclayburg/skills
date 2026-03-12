@@ -1,6 +1,6 @@
 # Implementation Plan: Build Optimization Diagnostics
 
-**Parent spec:** `jbuildmon/specs/todo/2026-03-11_build-optimization-diagnostics-spec.md`
+**Parent spec:** `jbuildmon/specs/2026-03-11_build-optimization-diagnostics-spec.md`
 
 ## Contents
 
@@ -21,7 +21,7 @@ Create a shared library that maps JUnit test suites to their parent pipeline sta
 
 #### Spec Reference
 
-See spec [Feature 1](./todo/2026-03-11_build-optimization-diagnostics-spec.md#feature-1-test-to-stage-mapping-in-timing-output) §Data source and [Feature 4](./todo/2026-03-11_build-optimization-diagnostics-spec.md#feature-4-test-to-stage-assignment-in-pipeline-output) §Requirements — "Features 1 and 4 overlap in data source... implementation should share the underlying test-report-to-stage correlation logic."
+See spec [Feature 1](./2026-03-11_build-optimization-diagnostics-spec.md#feature-1-test-to-stage-mapping-in-timing-output) §Data source and [Feature 4](./2026-03-11_build-optimization-diagnostics-spec.md#feature-4-test-to-stage-assignment-in-pipeline-output) §Requirements — "Features 1 and 4 overlap in data source... implementation should share the underlying test-report-to-stage correlation logic."
 
 #### Dependencies
 
@@ -122,7 +122,7 @@ Add a `--nodes` flag to `buildgit agents` that pivots the output from a label-ce
 
 #### Spec Reference
 
-See spec [Feature 2](./todo/2026-03-11_build-optimization-diagnostics-spec.md#feature-2-agent-node-label-overlap-view) §Specification and §Requirements.
+See spec [Feature 2](./2026-03-11_build-optimization-diagnostics-spec.md#feature-2-agent-node-label-overlap-view) §Specification and §Requirements.
 
 #### Dependencies
 
@@ -235,7 +235,7 @@ Add a `--by-stage` flag to `buildgit timing` that groups test suite output under
 
 #### Spec Reference
 
-See spec [Feature 1](./todo/2026-03-11_build-optimization-diagnostics-spec.md#feature-1-test-to-stage-mapping-in-timing-output) §Specification and §Requirements.
+See spec [Feature 1](./2026-03-11_build-optimization-diagnostics-spec.md#feature-1-test-to-stage-mapping-in-timing-output) §Specification and §Requirements.
 
 #### Dependencies
 
@@ -332,7 +332,7 @@ Add a `--compare A B` flag to `buildgit timing` for side-by-side comparison of t
 
 #### Spec Reference
 
-See spec [Feature 3](./todo/2026-03-11_build-optimization-diagnostics-spec.md#feature-3-build-timing-comparison) §Specification and §Requirements.
+See spec [Feature 3](./2026-03-11_build-optimization-diagnostics-spec.md#feature-3-build-timing-comparison) §Specification and §Requirements.
 
 #### Dependencies
 
@@ -444,7 +444,7 @@ Enrich `buildgit pipeline` output so each stage that ran tests includes a `testS
 
 #### Spec Reference
 
-See spec [Feature 4](./todo/2026-03-11_build-optimization-diagnostics-spec.md#feature-4-test-to-stage-assignment-in-pipeline-output) §Specification and §Requirements.
+See spec [Feature 4](./2026-03-11_build-optimization-diagnostics-spec.md#feature-4-test-to-stage-assignment-in-pipeline-output) §Specification and §Requirements.
 
 #### Dependencies
 
@@ -527,7 +527,7 @@ See spec [Feature 4](./todo/2026-03-11_build-optimization-diagnostics-spec.md#fe
 
 ## SPEC Workflow
 
-**Parent spec:** `jbuildmon/specs/todo/2026-03-11_build-optimization-diagnostics-spec.md`
+**Parent spec:** `jbuildmon/specs/2026-03-11_build-optimization-diagnostics-spec.md`
 
 Read `specs/CLAUDE.md` for full workflow rules. The workflow below applies to multi-chunk plan implementation.
 

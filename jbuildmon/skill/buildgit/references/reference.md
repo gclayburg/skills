@@ -191,6 +191,101 @@ $ buildgit -v status 60 --json | jq '.test_results.failed_tests[0]'
 }
 ```
 
+## Agent capacity by node (`agents --nodes`)
+
+Use `--nodes` when label overlap matters more than the default label-centric grouping:
+
+```bash
+$ buildgit agents --nodes
+Node: agent6 guthrie  (3 executors, 0 busy)
+  Labels: agent6, dockernode, fastnode, guthrie
+
+Node: agent8_sixcore  (3 executors, 1 busy)
+  Labels: agent8_sixcore, fastnode, fullspeed, sixcore
+```
+
+JSON output pivots to a top-level `nodes` array:
+
+```bash
+$ buildgit agents --nodes --json | jq '.nodes[0]'
+{
+  "name": "agent6 guthrie",
+  "executors": 3,
+  "busy": 0,
+  "idle": 3,
+  "online": true,
+  "labels": ["agent6", "dockernode", "fastnode", "guthrie"]
+}
+```
+
+## Timing by stage (`timing --tests --by-stage`)
+
+```bash
+$ buildgit timing --tests --by-stage
+Build #42 - total 4m 21s
+...
+Test suite timing by stage:
+  Unit Tests A (wall 51s, agent6 guthrie):
+    buildgit_status_follow  2m 2s  (74 tests)
+    buildgit_push           1m 1s  (20 tests)
+  Unit Tests B (wall 1m 50s, agent8_sixcore):
+    nested_stages           3m 29s  (50 tests)
+```
+
+In JSON mode, the same run adds `testsByStage` keyed by stage name:
+
+```bash
+$ buildgit timing --tests --by-stage --json | jq '.testsByStage["Unit Tests A"]'
+[
+  {"name":"buildgit_status_follow","tests":74,"durationMs":122300,"failures":0}
+]
+```
+
+## Build timing comparison (`timing --compare`)
+
+```bash
+$ buildgit timing --compare 40 42
+Timing comparison: Build #40 vs #42
+                      #40        #42       Delta
+Total               4m 33s     4m 21s      -12s
+  Unit Tests A         48s        51s       +3s
+  Unit Tests B       2m 4s      1m 50s     -14s
+```
+
+Positive deltas mean the newer build was slower for that row. Negative deltas mean it improved.
+
+## Multi-build timing table (`timing -n`)
+
+```bash
+$ buildgit timing -n 3
+Build  Total   Unit A  Unit B  Integration  Deploy
+#40    4m 36s    51s   3m 28s     4m 25s       4s
+#41    4m 33s    48s   2m  4s     4m 22s       4s
+#42    4m 21s    51s   1m 50s     4m 10s       4s
+```
+
+If you also pass `--tests`, buildgit prints the compact table first and then the detailed suite timing for only the newest build in the requested range.
+
+## Pipeline test-suite summaries
+
+Human-readable pipeline output now includes a per-stage test summary when that stage published JUnit results:
+
+```bash
+$ buildgit pipeline 42
+...
+└─ Unit Tests B [fastnode] -- sequential
+     6 suites, 156 tests, 5m 24s cumulative
+```
+
+JSON output now includes per-stage `testSuites` arrays:
+
+```bash
+$ buildgit pipeline 42 --json | jq '.stages[] | select(.name=="Unit Tests B") | .testSuites'
+[
+  {"name":"nested_stages","tests":50,"durationMs":209000,"failures":0}
+]
+```
+
 ## Show status for last N builds (--line)
 
 ```bash
