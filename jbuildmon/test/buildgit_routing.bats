@@ -174,7 +174,7 @@ EOF
     run "${PROJECT_DIR}/buildgit" --help
 
     assert_success
-    assert_output --partial "timing [build#] [--json] [--tests] [--by-stage] [-n <count>]"
+    assert_output --partial "timing [build#] [--json] [--tests] [--by-stage] [--compare <a> <b>] [-n <count>]"
 }
 
 @test "help_contains_pipeline" {

@@ -7,7 +7,7 @@
 - [x] **Chunk 1: Stage-Level Test Correlation Library**
 - [x] **Chunk 2: Feature 2 — `buildgit agents --nodes`**
 - [x] **Chunk 3: Feature 1 — `buildgit timing --tests --by-stage`**
-- [ ] **Chunk 4: Feature 3 — `buildgit timing --compare` and multi-build table**
+- [x] **Chunk 4: Feature 3 — `buildgit timing --compare` and multi-build table**
 - [ ] **Chunk 5: Feature 4 — `buildgit pipeline` enriched with test suites**
 
 
@@ -429,8 +429,10 @@ See spec [Feature 3](./todo/2026-03-11_build-optimization-diagnostics-spec.md#fe
 
 #### Implementation Log
 
-<!-- Filled in by the implementing agent after completing this chunk.
-     Summarize: files changed, key decisions, anything the finalize step needs to know. -->
+- Updated [`jbuildmon/skill/buildgit/scripts/lib/buildgit/cmd_timing.sh`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/skill/buildgit/scripts/lib/buildgit/cmd_timing.sh) to add `--compare`, resolve relative compare build refs, split timing JSON assembly from rendering, render human/JSON compare output with signed deltas, and render the new multi-build timing table for `-n N`.
+- Updated [`jbuildmon/skill/buildgit/scripts/buildgit`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/skill/buildgit/scripts/buildgit) and [`jbuildmon/test/buildgit_routing.bats`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/buildgit_routing.bats) so the help synopsis now documents `timing --compare <a> <b>` and the new compact table behavior examples.
+- Extended [`jbuildmon/test/buildgit_timing.bats`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/buildgit_timing.bats) with compare-mode coverage, signed delta assertions, JSON delta validation, compact `-n` table assertions, and the `-n --tests` behavior that prepends the table but keeps detailed output for only the latest build.
+- Key decisions: missing top-level stages render as `0s` in compare/table mode instead of `<1s`, delta cells always carry an explicit `+` or `-` sign, and `-n N --tests` now follows the parent spec requirement by showing the summary table first and detailed suite timing only for the newest build in the requested window.
 
 ---
 

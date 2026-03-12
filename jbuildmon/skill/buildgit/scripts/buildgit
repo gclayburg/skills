@@ -60,7 +60,7 @@ Commands:
                       Default: one-line output (TTY adds color)
   agents [--json] [--label <name>] [--nodes]
                       Show Jenkins executor capacity by label
-  timing [build#] [--json] [--tests] [--by-stage] [-n <count>]
+  timing [build#] [--json] [--tests] [--by-stage] [--compare <a> <b>] [-n <count>]
                       Show per-stage and per-test-suite timing
   pipeline [build#] [--json]
                       Show pipeline structure (stages, parallelism, labels)
@@ -117,6 +117,8 @@ Build optimization:
   buildgit queue                   # Current Jenkins queue and wait reasons
   buildgit timing --tests          # Slowest stages and test suites for latest successful build
   buildgit timing --tests --by-stage # Group test suites under their parent pipeline stage
+  buildgit timing --compare 40 42  # Compare stage timing and deltas across two builds
+  buildgit timing -n 3             # Compact timing table for the last 3 builds
   buildgit pipeline 42 --json      # Pipeline graph and agent labels for build #42
 
 Format placeholders for --format (use with --line):

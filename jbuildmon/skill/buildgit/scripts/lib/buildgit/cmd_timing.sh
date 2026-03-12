@@ -5,6 +5,9 @@ _parse_timing_options() {
     TIMING_COUNT=1
     TIMING_TESTS=false
     TIMING_BY_STAGE=false
+    TIMING_COMPARE=false
+    TIMING_COMPARE_A=""
+    TIMING_COMPARE_B=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -19,6 +22,21 @@ _parse_timing_options() {
             --by-stage)
                 TIMING_BY_STAGE=true
                 shift
+                ;;
+            --compare)
+                TIMING_COMPARE=true
+                if [[ -z "${2:-}" || -z "${3:-}" ]]; then
+                    _usage_error "--compare requires two build numbers"
+                fi
+                if ! [[ "${2}" =~ ^(0|-0|[1-9][0-9]*|-[1-9][0-9]*)$ ]]; then
+                    _usage_error "--compare build numbers must be absolute or relative integers"
+                fi
+                if ! [[ "${3}" =~ ^(0|-0|[1-9][0-9]*|-[1-9][0-9]*)$ ]]; then
+                    _usage_error "--compare build numbers must be absolute or relative integers"
+                fi
+                TIMING_COMPARE_A="$2"
+                TIMING_COMPARE_B="$3"
+                shift 3
                 ;;
             -n)
                 if [[ -z "${2:-}" ]]; then
@@ -42,6 +60,9 @@ _parse_timing_options() {
                 _usage_error "Unknown option for timing command: $1"
                 ;;
             *)
+                if [[ "$TIMING_COMPARE" == "true" ]]; then
+                    _usage_error "Cannot combine --compare with a positional build number"
+                fi
                 if [[ "$TIMING_BUILD_SET" == "true" ]]; then
                     _usage_error "timing accepts at most one build number"
                 fi
@@ -57,8 +78,25 @@ _resolve_timing_build_number() {
     local job_name="$1"
     local requested_build="${2:-}"
 
-    if [[ -n "$requested_build" && "$requested_build" != "0" ]]; then
+    if [[ "$requested_build" =~ ^[1-9][0-9]*$ ]]; then
         printf '%s\n' "$requested_build"
+        return 0
+    fi
+
+    if [[ "$requested_build" =~ ^-[1-9][0-9]*$ ]]; then
+        local relative_offset="${requested_build#-}"
+        local latest_build_number
+        latest_build_number=$(get_last_build_number "$job_name")
+        if [[ ! "$latest_build_number" =~ ^[0-9]+$ ]] || [[ "$latest_build_number" == "0" ]]; then
+            return 1
+        fi
+
+        local resolved_build_number=$((latest_build_number - relative_offset))
+        if [[ "$resolved_build_number" -lt 1 ]]; then
+            return 1
+        fi
+
+        printf '%s\n' "$resolved_build_number"
         return 0
     fi
 
@@ -77,6 +115,7 @@ _resolve_timing_build_number() {
     fi
 
     printf '%s\n' "$build_number"
+    return 0
 }
 
 _fetch_test_report_timing() {
@@ -314,6 +353,183 @@ _render_timing_json() {
     printf '%s\n' "$timing_json" | jq '.'
 }
 
+_format_timing_value() {
+    local duration_ms="${1:-0}"
+
+    if [[ "$duration_ms" -eq 0 ]]; then
+        printf '0s\n'
+        return 0
+    fi
+
+    format_stage_duration "$duration_ms"
+}
+
+_format_timing_delta() {
+    local duration_ms="${1:-0}"
+    local sign=""
+    local abs_duration="$duration_ms"
+
+    if [[ "$duration_ms" -eq 0 ]]; then
+        printf '0s\n'
+        return 0
+    fi
+
+    if [[ "$duration_ms" -lt 0 ]]; then
+        sign="-"
+        abs_duration=$(( -duration_ms ))
+    else
+        sign="+"
+    fi
+
+    printf '%s%s\n' "$sign" "$(_format_timing_value "$abs_duration")"
+}
+
+_timing_value_for_entry() {
+    local timing_json="$1"
+    local entry_name="$2"
+
+    printf '%s\n' "$timing_json" | jq -r --arg entry_name "$entry_name" '
+        first(
+            .stages[]?
+            | select(.parallelGroup == null and (.name // "") == $entry_name)
+            | .durationMillis
+        ) // first(
+            .parallelGroups[]?
+            | select((.name // "") == $entry_name)
+            | .wallDurationMillis
+        ) // 0
+    ' 2>/dev/null || echo "0"
+}
+
+_collect_timing_entry_names() {
+    local timings_json="$1"
+
+    printf '%s\n' "$timings_json" | jq -r '
+        reduce .[]? as $timing (
+            [];
+            reduce (
+                [
+                    ($timing.stages[]? | select(.parallelGroup == null) | (.name // "")),
+                    ($timing.parallelGroups[]? | (.name // ""))
+                ]
+                | flatten[]
+            ) as $name (
+                .;
+                if $name == "" or index($name) then . else . + [$name] end
+            )
+        )
+        | .[]
+    ' 2>/dev/null
+}
+
+_render_timing_compare_human() {
+    local timing_a_json="$1"
+    local timing_b_json="$2"
+    local timings_json
+    timings_json=$(jq -n --argjson a "$timing_a_json" --argjson b "$timing_b_json" '[$a, $b]')
+
+    local build_a build_b total_a total_b total_delta
+    build_a=$(printf '%s\n' "$timing_a_json" | jq -r '.build.number // 0')
+    build_b=$(printf '%s\n' "$timing_b_json" | jq -r '.build.number // 0')
+    total_a=$(printf '%s\n' "$timing_a_json" | jq -r '.build.totalDurationMillis // 0')
+    total_b=$(printf '%s\n' "$timing_b_json" | jq -r '.build.totalDurationMillis // 0')
+    total_delta=$((total_b - total_a))
+
+    printf 'Timing comparison: Build #%s vs #%s\n' "$build_a" "$build_b"
+    printf '%-22s %10s %10s %10s\n' "" "#${build_a}" "#${build_b}" "Delta"
+    printf '%-22s %10s %10s %10s\n' \
+        "Total" \
+        "$(format_duration "$total_a")" \
+        "$(format_duration "$total_b")" \
+        "$(_format_timing_delta "$total_delta")"
+
+    local entry_name entry_a entry_b entry_delta
+    while IFS= read -r entry_name; do
+        [[ -n "$entry_name" ]] || continue
+        entry_a=$(_timing_value_for_entry "$timing_a_json" "$entry_name")
+        entry_b=$(_timing_value_for_entry "$timing_b_json" "$entry_name")
+        entry_delta=$((entry_b - entry_a))
+        printf '  %-20s %10s %10s %10s\n' \
+            "$entry_name" \
+            "$(_format_timing_value "$entry_a")" \
+            "$(_format_timing_value "$entry_b")" \
+            "$(_format_timing_delta "$entry_delta")"
+    done < <(_collect_timing_entry_names "$timings_json")
+}
+
+_render_timing_compare_json() {
+    local timing_a_json="$1"
+    local timing_b_json="$2"
+
+    jq -n --argjson a "$timing_a_json" --argjson b "$timing_b_json" '
+        def top_level_map($timing):
+            (
+                [
+                    ($timing.stages[]? | select(.parallelGroup == null) | {
+                        key: (.name // ""),
+                        value: (.durationMillis // 0)
+                    }),
+                    ($timing.parallelGroups[]? | {
+                        key: (.name // ""),
+                        value: (.wallDurationMillis // 0)
+                    })
+                ]
+                | flatten
+                | map(select(.key != ""))
+                | from_entries
+            );
+
+        (top_level_map($a)) as $map_a
+        | (top_level_map($b)) as $map_b
+        | (($map_a + $map_b) | keys_unsorted) as $stage_names
+        | {
+            builds: [$a, $b],
+            deltas: {
+                total: (($b.build.totalDurationMillis // 0) - ($a.build.totalDurationMillis // 0)),
+                stages: (
+                    reduce $stage_names[] as $stage_name (
+                        {};
+                        . + {
+                            ($stage_name): (($map_b[$stage_name] // 0) - ($map_a[$stage_name] // 0))
+                        }
+                    )
+                )
+            }
+        }
+    '
+}
+
+_render_timing_multi_table_human() {
+    local builds_array_json="$1"
+    local entry_names=()
+    local entry_name
+
+    while IFS= read -r entry_name; do
+        [[ -n "$entry_name" ]] || continue
+        entry_names+=("$entry_name")
+    done < <(_collect_timing_entry_names "$builds_array_json")
+
+    printf '%-8s %-10s' "Build" "Total"
+    local header_name
+    for header_name in "${entry_names[@]}"; do
+        printf ' %-12s' "${header_name:0:12}"
+    done
+    printf '\n'
+
+    local build_json build_number total_duration value
+    while IFS= read -r build_json; do
+        [[ -n "$build_json" ]] || continue
+        build_number=$(printf '%s\n' "$build_json" | jq -r '.build.number // 0')
+        total_duration=$(printf '%s\n' "$build_json" | jq -r '.build.totalDurationMillis // 0')
+        printf '%-8s %-10s' "#${build_number}" "$(format_duration "$total_duration")"
+        for entry_name in "${entry_names[@]}"; do
+            value=$(_timing_value_for_entry "$build_json" "$entry_name")
+            printf ' %-12s' "$(_format_timing_value "$value")"
+        done
+        printf '\n'
+    done < <(printf '%s\n' "$builds_array_json" | jq -c '.[]?')
+}
+
 _render_timing_by_stage_human() {
     local timing_json="$1"
     local stage_tests_map_json="$2"
@@ -374,7 +590,7 @@ _render_timing_by_stage_human() {
     ' 2>/dev/null)
 }
 
-_render_timing_for_build() {
+_build_timing_for_build() {
     local job_name="$1"
     local build_number="$2"
 
@@ -421,14 +637,18 @@ _render_timing_for_build() {
         | if $timing_by_stage == "true" then . + {testsByStage: $tests_by_stage} else . end
     ')
 
-    if [[ "$TIMING_JSON" == "true" ]]; then
-        _render_timing_json "$timing_json"
+    printf '%s\n' "$timing_json"
+}
+
+_render_single_timing_human() {
+    local timing_json="$1"
+    local stage_tests_map_json
+
+    stage_tests_map_json=$(printf '%s\n' "$timing_json" | jq -c '.testsByStage // {}' 2>/dev/null) || stage_tests_map_json="{}"
+    if [[ "$TIMING_BY_STAGE" == "true" && "$TIMING_TESTS" == "true" ]]; then
+        _render_timing_by_stage_human "$timing_json" "$stage_tests_map_json"
     else
-        if [[ "$TIMING_BY_STAGE" == "true" && "$TIMING_TESTS" == "true" ]]; then
-            _render_timing_by_stage_human "$timing_json" "$stage_tests_map_json"
-        else
-            _render_timing_human "$timing_json" "$TIMING_TESTS"
-        fi
+        _render_timing_human "$timing_json" "$TIMING_TESTS"
     fi
 }
 
@@ -437,6 +657,28 @@ cmd_timing() {
 
     if ! _validate_jenkins_setup "inspect Jenkins build timing" "status"; then
         return 1
+    fi
+
+    if [[ "$TIMING_COMPARE" == "true" ]]; then
+        local resolved_a resolved_b timing_a_json timing_b_json
+        if ! resolved_a=$(_resolve_timing_build_number "$_VALIDATED_JOB_NAME" "$TIMING_COMPARE_A"); then
+            bg_log_error "Cannot inspect Jenkins build timing - could not resolve compare build number '${TIMING_COMPARE_A}'"
+            return 1
+        fi
+        if ! resolved_b=$(_resolve_timing_build_number "$_VALIDATED_JOB_NAME" "$TIMING_COMPARE_B"); then
+            bg_log_error "Cannot inspect Jenkins build timing - could not resolve compare build number '${TIMING_COMPARE_B}'"
+            return 1
+        fi
+
+        timing_a_json=$(_build_timing_for_build "$_VALIDATED_JOB_NAME" "$resolved_a") || return 1
+        timing_b_json=$(_build_timing_for_build "$_VALIDATED_JOB_NAME" "$resolved_b") || return 1
+
+        if [[ "$TIMING_JSON" == "true" ]]; then
+            _render_timing_compare_json "$timing_a_json" "$timing_b_json" | jq '.'
+        else
+            _render_timing_compare_human "$timing_a_json" "$timing_b_json"
+        fi
+        return 0
     fi
 
     local resolved_build
@@ -453,22 +695,14 @@ cmd_timing() {
     fi
 
     local rendered_json="[]"
-    local build_number first_output=true
+    local latest_timing_json=""
+    local build_number
     for ((build_number = start_build; build_number <= end_build; build_number++)); do
         local build_render
-        build_render=$(_render_timing_for_build "$_VALIDATED_JOB_NAME" "$build_number") || return 1
-
-        if [[ "$TIMING_JSON" == "true" ]]; then
-            rendered_json=$(printf '%s\n' "$rendered_json" | jq \
-                --argjson build_render "$build_render" '. + [$build_render]')
-        else
-            if [[ "$first_output" != "true" ]]; then
-                echo ""
-            fi
-            printf '%s\n' "$build_render"
-        fi
-
-        first_output=false
+        build_render=$(_build_timing_for_build "$_VALIDATED_JOB_NAME" "$build_number") || return 1
+        rendered_json=$(printf '%s\n' "$rendered_json" | jq \
+            --argjson build_render "$build_render" '. + [$build_render]')
+        latest_timing_json="$build_render"
     done
 
     if [[ "$TIMING_JSON" == "true" ]]; then
@@ -477,5 +711,17 @@ cmd_timing() {
         else
             printf '%s\n' "$rendered_json" | jq '.'
         fi
+        return 0
     fi
+
+    if [[ "$TIMING_COUNT" -gt 1 ]]; then
+        _render_timing_multi_table_human "$rendered_json"
+        if [[ "$TIMING_TESTS" == "true" ]]; then
+            echo ""
+            _render_single_timing_human "$latest_timing_json"
+        fi
+        return 0
+    fi
+
+    _render_single_timing_human "$latest_timing_json"
 }

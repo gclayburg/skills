@@ -64,6 +64,9 @@ jenkins_api() {
         "/api/json")
             echo '{"_class":"hudson.model.Hudson"}'
             ;;
+        "/job/ralph1/api/json")
+            echo '{"lastBuild":{"number":42}}'
+            ;;
         "/job/ralph1/lastSuccessfulBuild/buildNumber")
             echo "42"
             ;;
@@ -251,9 +254,11 @@ EOF
     run bash -c "\"${TEST_TEMP_DIR}/timing_wrapper.sh\" -n 3 42 3>&- 2>&1"
 
     assert_success
-    assert_output --partial "Build #40 - total 3m 20s"
-    assert_output --partial "Build #41 - total 4m 10s"
-    assert_output --partial "Build #42 - total 5m 30s"
+    assert_output --partial "Build    Total"
+    assert_output --partial "#40"
+    assert_output --partial "#41"
+    assert_output --partial "#42"
+    refute_output --partial "Build #40 - total"
 }
 
 @test "timing_no_test_report" {
@@ -334,4 +339,101 @@ EOF
     assert_success
     assert_output --partial "pytest/test_api.py::test_round_trip"
     refute_output --partial ".bats"
+}
+
+@test "timing_compare_shows_both_build_numbers" {
+    create_timing_wrapper
+
+    run bash -c "\"${TEST_TEMP_DIR}/timing_wrapper.sh\" --compare 40 42 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "Timing comparison: Build #40 vs #42"
+}
+
+@test "timing_compare_shows_delta_column" {
+    create_timing_wrapper
+
+    run bash -c "\"${TEST_TEMP_DIR}/timing_wrapper.sh\" --compare 40 42 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "Delta"
+    assert_output --partial "+2m 10s"
+}
+
+@test "timing_compare_zero_delta_shown_as_0s" {
+    create_timing_wrapper
+
+    run bash -c "\"${TEST_TEMP_DIR}/timing_wrapper.sh\" --compare 41 41 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "0s"
+}
+
+@test "timing_compare_negative_delta_has_minus" {
+    create_timing_wrapper
+
+    run bash -c "\"${TEST_TEMP_DIR}/timing_wrapper.sh\" --compare 42 40 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "-2m 10s"
+}
+
+@test "timing_compare_positive_delta_has_plus" {
+    create_timing_wrapper
+
+    run bash -c "\"${TEST_TEMP_DIR}/timing_wrapper.sh\" --compare 40 42 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "+10s"
+}
+
+@test "timing_compare_json_has_builds_and_deltas" {
+    create_timing_wrapper
+
+    run bash -c "\"${TEST_TEMP_DIR}/timing_wrapper.sh\" --compare 40 42 --json 3>&- 2>&1"
+
+    assert_success
+    echo "$output" | jq -e '.builds | length == 2' >/dev/null
+    echo "$output" | jq -e '.deltas.total == 130000' >/dev/null
+    echo "$output" | jq -e '.deltas.stages["Checkout"] == 10000' >/dev/null
+}
+
+@test "timing_n_without_tests_renders_table" {
+    create_timing_wrapper
+
+    run bash -c "\"${TEST_TEMP_DIR}/timing_wrapper.sh\" -n 3 42 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "Build    Total"
+    assert_output --partial "Checkout"
+    assert_output --partial "Build"
+    assert_output --partial "Tests"
+    refute_output --partial "Build #42 - total"
+}
+
+@test "timing_n_with_tests_prepends_table" {
+    create_timing_wrapper
+
+    run bash -c "\"${TEST_TEMP_DIR}/timing_wrapper.sh\" -n 3 42 --tests 3>&- 2>&1"
+
+    assert_success
+    local table_line detail_line
+    table_line=$(printf '%s\n' "$output" | grep -n "^Build    Total" | cut -d: -f1)
+    detail_line=$(printf '%s\n' "$output" | grep -n "^Build #42 - total 5m 30s" | cut -d: -f1)
+    [[ -n "$table_line" ]]
+    [[ -n "$detail_line" ]]
+    [[ "$table_line" -lt "$detail_line" ]]
+    refute_output --partial "Build #40 - total"
+    refute_output --partial "Build #41 - total"
+}
+
+@test "timing_compare_missing_stage_in_one_build" {
+    create_timing_wrapper
+
+    run bash -c "\"${TEST_TEMP_DIR}/timing_wrapper.sh\" --compare 40 42 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "Build                    1m 40s"
+    assert_output --partial "Tests"
+    assert_output --partial "+2m 0s"
 }
