@@ -96,9 +96,9 @@ The `stdout` field comes from the Jenkins test report API field `suites[].cases[
 #### Examples
 
 ```bash
-buildgit status 60 --all -v         # Full failure details, untruncated
-buildgit status 60 --json -v        # JSON with full stdout/stderr for failed tests
-buildgit status --all -v            # Latest build, verbose failure output
+buildgit -v status 60 --all          # Full failure details, untruncated
+buildgit -v status 60 --json        # JSON with full stdout/stderr for failed tests
+buildgit -v status --all            # Latest build, verbose failure output
 ```
 
 ### Feature 2: `--console-text` shows raw console output for a build or stage
@@ -146,7 +146,7 @@ buildgit status 60 --console-text "Unit Tests D"
 buildgit status 60 --console-text "Unit Tests D" | grep -A 20 "not ok"
 
 # Agent workflow: find what failed, then drill into the stage
-buildgit status 60 --json -v | jq '.test_results.failed_tests[0]'
+buildgit -v status 60 --json | jq '.test_results.failed_tests[0]'
 buildgit status 60 --console-text "Unit Tests D" | grep -A 20 "follow_completed_build"
 ```
 
