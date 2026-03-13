@@ -167,7 +167,7 @@ _build_timing_test_suites() {
                 ),
                 testCount: ((.cases // []) | length)
             }
-            | if .testCount > 0 then . else . end
+            | select(.testCount > 0)
         ]
         | sort_by(.durationMillis)
         | reverse
@@ -178,14 +178,21 @@ _build_timing_stages_json() {
     local stages_json="$1"
     local stage_agent_map_json="$2"
     local test_suites_json="${3:-[]}"
+    local node_label_map_json="${4:-"{}"}"
 
     printf '%s\n' "$stages_json" | jq -c \
         --argjson agent_map "$stage_agent_map_json" \
-        --argjson test_suites "$test_suites_json" '
+        --argjson test_suites "$test_suites_json" \
+        --argjson label_map "$node_label_map_json" '
+        def resolve_label($agent):
+            if $agent == "" then ""
+            else ($label_map[$agent].primaryLabel // $agent)
+            end;
         [
             .[]?
+            | ($agent_map[.name] // "") as $agent
             | . + {
-                agent: ($agent_map[.name] // "")
+                agent: resolve_label($agent)
             }
         ]
     ' 2>/dev/null || echo "[]"
@@ -390,34 +397,66 @@ _timing_value_for_entry() {
 
     printf '%s\n' "$timing_json" | jq -r --arg entry_name "$entry_name" '
         first(
-            .stages[]?
-            | select(.parallelGroup == null and (.name // "") == $entry_name)
-            | .durationMillis
-        ) // first(
             .parallelGroups[]?
             | select((.name // "") == $entry_name)
             | .wallDurationMillis
+        ) // first(
+            .stages[]?
+            | select((.name // "") == $entry_name)
+            | .durationMillis
         ) // 0
     ' 2>/dev/null || echo "0"
 }
 
+# Returns entry names in hierarchical order: sequential stages at top level,
+# parallel groups followed by their member stages.
+# Also outputs a second field (tab-separated) indicating depth: 0=top, 1=child.
 _collect_timing_entry_names() {
     local timings_json="$1"
 
     printf '%s\n' "$timings_json" | jq -r '
+        # Collect all unique sequential stage names, parallel group names,
+        # and parallel member names across all builds
         reduce .[]? as $timing (
-            [];
-            reduce (
-                [
-                    ($timing.stages[]? | select(.parallelGroup == null) | (.name // "")),
-                    ($timing.parallelGroups[]? | (.name // ""))
-                ]
-                | flatten[]
-            ) as $name (
+            {seq: [], groups: [], members: {}};
+
+            # Sequential stages (parallelGroup == null)
+            reduce ($timing.stages[]? | select(.parallelGroup == null) | (.name // "")) as $name (
                 .;
-                if $name == "" or index($name) then . else . + [$name] end
+                if $name == "" or (.seq | index($name)) then . else .seq += [$name] end
+            )
+            # Parallel groups and their member stages
+            | reduce ($timing.parallelGroups[]?) as $group (
+                .;
+                ($group.name // "") as $gname
+                | if $gname == "" then .
+                  else
+                    (if .groups | index($gname) then . else .groups += [$gname] end)
+                    | reduce ($group.stages[]? | (.name // "")) as $mname (
+                        .;
+                        if $mname == "" then .
+                        else .members[$gname] = ((.members[$gname] // []) + (if (.members[$gname] // []) | index($mname) then [] else [$mname] end))
+                        end
+                    )
+                  end
             )
         )
+        # Output in hierarchical order: for each entry, emit name\tdepth
+        | .seq as $seq | .groups as $groups | .members as $members
+        | [
+            ($seq[]? | . as $name
+                | if ($groups | index($name)) then
+                    # This sequential name is also a parallel group — emit group + members instead
+                    empty
+                  else
+                    "\($name)\t0"
+                  end
+            ),
+            ($groups[]? | . as $gname |
+                "\($gname)\t0",
+                (($members[$gname] // [])[]? | "\(.)\t1")
+            )
+          ]
         | .[]
     ' 2>/dev/null
 }
@@ -443,17 +482,25 @@ _render_timing_compare_human() {
         "$(format_duration "$total_b")" \
         "$(_format_timing_delta "$total_delta")"
 
-    local entry_name entry_a entry_b entry_delta
-    while IFS= read -r entry_name; do
+    local entry_line entry_name entry_depth entry_a entry_b entry_delta
+    while IFS=$'\t' read -r entry_name entry_depth; do
         [[ -n "$entry_name" ]] || continue
         entry_a=$(_timing_value_for_entry "$timing_a_json" "$entry_name")
         entry_b=$(_timing_value_for_entry "$timing_b_json" "$entry_name")
         entry_delta=$((entry_b - entry_a))
-        printf '  %-20s %10s %10s %10s\n' \
-            "$entry_name" \
-            "$(_format_timing_value "$entry_a")" \
-            "$(_format_timing_value "$entry_b")" \
-            "$(_format_timing_delta "$entry_delta")"
+        if [[ "${entry_depth:-0}" == "1" ]]; then
+            printf '    %-18s %10s %10s %10s\n' \
+                "$entry_name" \
+                "$(_format_timing_value "$entry_a")" \
+                "$(_format_timing_value "$entry_b")" \
+                "$(_format_timing_delta "$entry_delta")"
+        else
+            printf '  %-20s %10s %10s %10s\n' \
+                "$entry_name" \
+                "$(_format_timing_value "$entry_a")" \
+                "$(_format_timing_value "$entry_b")" \
+                "$(_format_timing_delta "$entry_delta")"
+        fi
     done < <(_collect_timing_entry_names "$timings_json")
 }
 
@@ -462,10 +509,10 @@ _render_timing_compare_json() {
     local timing_b_json="$2"
 
     jq -n --argjson a "$timing_a_json" --argjson b "$timing_b_json" '
-        def top_level_map($timing):
+        def stage_map($timing):
             (
                 [
-                    ($timing.stages[]? | select(.parallelGroup == null) | {
+                    ($timing.stages[]? | {
                         key: (.name // ""),
                         value: (.durationMillis // 0)
                     }),
@@ -479,8 +526,8 @@ _render_timing_compare_json() {
                 | from_entries
             );
 
-        (top_level_map($a)) as $map_a
-        | (top_level_map($b)) as $map_b
+        (stage_map($a)) as $map_a
+        | (stage_map($b)) as $map_b
         | (($map_a + $map_b) | keys_unsorted) as $stage_names
         | {
             builds: [$a, $b],
@@ -502,9 +549,9 @@ _render_timing_compare_json() {
 _render_timing_multi_table_human() {
     local builds_array_json="$1"
     local entry_names=()
-    local entry_name
+    local entry_name entry_depth
 
-    while IFS= read -r entry_name; do
+    while IFS=$'\t' read -r entry_name entry_depth; do
         [[ -n "$entry_name" ]] || continue
         entry_names+=("$entry_name")
     done < <(_collect_timing_entry_names "$builds_array_json")
@@ -595,7 +642,8 @@ _build_timing_for_build() {
     local build_number="$2"
 
     local build_info_json total_duration stages_json blue_nodes_json console_output
-    local stage_agent_map_json test_report_json test_suites_json grouped_json timing_json
+    local stage_agent_map_json node_label_map_json computers_json
+    local test_report_json test_suites_json grouped_json timing_json
     local stage_tests_map_json
 
     build_info_json=$(get_build_info "$job_name" "$build_number")
@@ -604,13 +652,21 @@ _build_timing_for_build() {
     blue_nodes_json=$(get_blue_ocean_nodes "$job_name" "$build_number")
     console_output=$(get_console_output "$job_name" "$build_number")
     stage_agent_map_json=$(_build_stage_agent_map "$console_output")
+    computers_json=""
+    if declare -F _fetch_pipeline_computers >/dev/null 2>&1; then
+        computers_json=$(_fetch_pipeline_computers 2>/dev/null) || computers_json=""
+    fi
+    node_label_map_json="{}"
+    if declare -F _build_node_label_map >/dev/null 2>&1; then
+        node_label_map_json=$(_build_node_label_map "$computers_json")
+    fi
 
     test_report_json=""
     if [[ "$TIMING_TESTS" == "true" || "$TIMING_JSON" == "true" ]]; then
         test_report_json=$(_fetch_test_report_timing "$job_name" "$build_number" 2>/dev/null) || test_report_json=""
     fi
     test_suites_json=$(_build_timing_test_suites "$test_report_json")
-    stages_json=$(_build_timing_stages_json "$stages_json" "$stage_agent_map_json" "$test_suites_json")
+    stages_json=$(_build_timing_stages_json "$stages_json" "$stage_agent_map_json" "$test_suites_json" "$node_label_map_json")
     grouped_json=$(_build_parallel_groups "$stages_json" "$blue_nodes_json")
     stage_tests_map_json="{}"
     if [[ "$TIMING_BY_STAGE" == "true" && "$TIMING_TESTS" == "true" ]]; then

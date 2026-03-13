@@ -30,7 +30,7 @@ _fetch_node_test_results() {
                     name: (.name // ""),
                     tests: ((.cases // []) | length),
                     durationMs: ((((.duration // 0) * 1000) | floor)),
-                    failures: ((.cases // []) | map(select(.status == "FAILED")) | length)
+                    failures: ((.cases // []) | map(select(.status == "FAILED" or .status == "REGRESSION")) | length)
                 })
             ' 2>/dev/null) || true
 

@@ -216,7 +216,7 @@ _enrich_pipeline_stages_with_tests() {
         --argjson classified "$classified_json" \
         --argjson stage_tests "$stage_tests_map_json" '
         def enrich($node):
-            if ($node.type // "") == "parallel" then
+            (if ($node.type // "") == "parallel" then
                 $node + {
                     branches: [
                         ($node.branches // [])[]?
@@ -224,22 +224,19 @@ _enrich_pipeline_stages_with_tests() {
                     ]
                 }
             else
-                (
-                    $node + {
-                        children: [
-                            ($node.children // [])[]?
-                            | enrich(.)
-                        ]
-                    }
-                ) as $enriched
-                | if ($stage_tests | has($enriched.name // "")) then
-                    $enriched + {
-                        testSuites: ($stage_tests[$enriched.name] // [])
-                    }
-                  else
-                    $enriched
-                  end
-            end;
+                $node + {
+                    children: [
+                        ($node.children // [])[]?
+                        | enrich(.)
+                    ]
+                }
+            end) as $enriched
+            | ($enriched.name // "") as $node_name
+            | if ($stage_tests | has($node_name)) then
+                $enriched + { testSuites: ($stage_tests[$node_name] // []) }
+              else
+                $enriched
+              end;
 
         $classified + {
             stages: [
@@ -267,8 +264,22 @@ _render_pipeline_node_human() {
     name=$(printf '%s\n' "$node_json" | jq -r '.name // "unknown"')
 
     if [[ "$type" == "parallel" ]]; then
-        child_count=$(printf '%s\n' "$node_json" | jq -r '(.branches // []) | length')
-        printf '%s%s %s -- parallel fork (%s branches)\n' "$prefix" "$connector" "$name" "$child_count"
+        local suite_count_p
+        suite_count_p=$(printf '%s\n' "$node_json" | jq -r '(.testSuites // []) | length' 2>/dev/null) || suite_count_p=0
+        if [[ "$suite_count_p" -gt 0 ]]; then
+            printf '%s%s %s -- parallel\n' "$prefix" "$connector" "$name"
+            local total_tests_p cumulative_duration_p
+            total_tests_p=$(printf '%s\n' "$node_json" | jq -r '[.testSuites[]?.tests // 0] | add // 0' 2>/dev/null) || total_tests_p=0
+            cumulative_duration_p=$(printf '%s\n' "$node_json" | jq -r '[.testSuites[]?.durationMs // 0] | add // 0' 2>/dev/null) || cumulative_duration_p=0
+            printf '%s%s suites, %s tests, %s cumulative\n' \
+                "$next_prefix" \
+                "$suite_count_p" \
+                "$total_tests_p" \
+                "$(format_stage_duration "$cumulative_duration_p")"
+        else
+            child_count=$(printf '%s\n' "$node_json" | jq -r '(.branches // []) | length')
+            printf '%s%s %s -- parallel fork (%s branches)\n' "$prefix" "$connector" "$name" "$child_count"
+        fi
         child_key="branches"
     else
         label=$(printf '%s\n' "$node_json" | jq -r '.agentLabel // empty')

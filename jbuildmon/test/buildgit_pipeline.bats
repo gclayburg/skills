@@ -74,7 +74,7 @@ jenkins_api() {
             echo '{"lastBuild":{"number":42}}'
             ;;
         "/job/ralph1/42/wfapi/describe")
-            if [[ "\${PIPELINE_FIXTURE_SET:-parallel}" == "pipeline" ]]; then
+            if [[ "\${PIPELINE_FIXTURE_SET:-parallel}" == "pipeline" || "\${PIPELINE_FIXTURE_SET:-parallel}" == "parallel_stages" ]]; then
                 cat "${FIXTURE_DIR}/pipeline_wfapi_42.json"
             else
                 cat "${FIXTURE_DIR}/timing_wfapi_\${PIPELINE_FIXTURE_SET:-parallel}_42.json"
@@ -85,6 +85,8 @@ jenkins_api() {
                 echo "[]"
             elif [[ "\${PIPELINE_FIXTURE_SET:-parallel}" == "pipeline" ]]; then
                 cat "${FIXTURE_DIR}/pipeline_blue_nodes_42.json"
+            elif [[ "\${PIPELINE_FIXTURE_SET:-parallel}" == "parallel_stages" ]]; then
+                cat "${FIXTURE_DIR}/pipeline_blue_nodes_parallel_stages_42.json"
             else
                 cat "${FIXTURE_DIR}/timing_blue_nodes_\${PIPELINE_FIXTURE_SET:-parallel}_42.json"
             fi
@@ -288,7 +290,7 @@ EOF
     echo "$output" | jq -e '
         .. | objects
         | select(.name? == "Unit Tests")
-        | .testSuites[0].failures == 1
+        | .testSuites[0].failures == 2
     ' >/dev/null
 }
 
@@ -313,4 +315,33 @@ EOF
         | select(.name? == "Checkout" or .name? == "Unit Tests" or .name? == "Integration Tests" or .name? == "Package")
         | has("testSuites") | not
     ' >/dev/null
+}
+
+@test "pipeline_json_testSuites_on_parallel_type_nodes" {
+    create_pipeline_wrapper
+
+    # parallel_stages fixture: Unit Tests and Integration Tests are type PARALLEL (real Jenkins behavior)
+    run bash -c "PIPELINE_FIXTURE_SET=parallel_stages \"${TEST_TEMP_DIR}/pipeline_wrapper.sh\" 42 --json 3>&- 2>&1"
+
+    assert_success
+    echo "$output" | jq -e '
+        .. | objects
+        | select(.name? == "Unit Tests" and .type? == "parallel")
+        | has("testSuites")
+    ' >/dev/null
+    echo "$output" | jq -e '
+        .. | objects
+        | select(.name? == "Integration Tests" and .type? == "parallel")
+        | has("testSuites")
+    ' >/dev/null
+}
+
+@test "pipeline_human_parallel_type_test_node_shows_suite_info" {
+    create_pipeline_wrapper
+
+    run bash -c "PIPELINE_FIXTURE_SET=parallel_stages \"${TEST_TEMP_DIR}/pipeline_wrapper.sh\" 42 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "suites"
+    refute_output --partial "parallel fork (0 branches)"
 }

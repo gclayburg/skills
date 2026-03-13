@@ -84,7 +84,7 @@ _build_agents_data() {
         [[ -n "$label_name" ]] || continue
 
         local label_info
-        label_info=$(_fetch_label_info "$label_name")
+        label_info=$(_fetch_label_info "$label_name" 2>/dev/null) || label_info=""
         if [[ -z "$label_info" ]]; then
             label_info='{}'
         fi

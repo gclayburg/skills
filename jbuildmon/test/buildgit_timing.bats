@@ -427,6 +427,28 @@ EOF
     refute_output --partial "Build #41 - total"
 }
 
+@test "timing_compare_parallel_members_shown_under_group" {
+    create_timing_wrapper
+
+    run bash -c "\"${TEST_TEMP_DIR}/timing_wrapper.sh\" --compare 40 42 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "Tests"
+    assert_output --partial "Unit Tests"
+    assert_output --partial "Integration Tests"
+}
+
+@test "timing_compare_json_includes_parallel_member_deltas" {
+    create_timing_wrapper
+
+    run bash -c "\"${TEST_TEMP_DIR}/timing_wrapper.sh\" --compare 40 42 --json 3>&- 2>&1"
+
+    assert_success
+    echo "$output" | jq -e '.deltas.stages["Unit Tests"] == 60000' >/dev/null
+    echo "$output" | jq -e '.deltas.stages["Integration Tests"] == 120000' >/dev/null
+    echo "$output" | jq -e '.deltas.stages["Tests"] == 120000' >/dev/null
+}
+
 @test "timing_compare_missing_stage_in_one_build" {
     create_timing_wrapper
 
@@ -436,4 +458,25 @@ EOF
     assert_output --partial "Build                    1m 40s"
     assert_output --partial "Tests"
     assert_output --partial "+2m 0s"
+}
+
+@test "timing_compare_uses_wall_time_not_wrapper_for_parallel_group" {
+    create_timing_wrapper
+
+    # parallel_wrapper fixture: "Tests" is both a wfapi stage (2s wrapper) and a parallel group (wall 2m 0s)
+    # Human output must use wall time (2m 0s), not the wrapper stage duration (2s)
+    run bash -c "TIMING_WFAPI_SET=parallel_wrapper \"${TEST_TEMP_DIR}/timing_wrapper.sh\" --compare 40 42 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "+2m 0s"
+    refute_output --partial "+2s"
+}
+
+@test "timing_compare_json_uses_wall_time_for_parallel_group" {
+    create_timing_wrapper
+
+    run bash -c "TIMING_WFAPI_SET=parallel_wrapper \"${TEST_TEMP_DIR}/timing_wrapper.sh\" --compare 40 42 --json 3>&- 2>&1"
+
+    assert_success
+    echo "$output" | jq -e '.deltas.stages["Tests"] == 120000' >/dev/null
 }

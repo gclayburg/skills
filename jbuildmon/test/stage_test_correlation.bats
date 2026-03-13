@@ -79,7 +79,7 @@ _mock_stage_corr_node_api() {
             "name": "buildgit_status_follow",
             "tests": 3,
             "durationMs": 122300,
-            "failures": 1
+            "failures": 2
         }
     ' >/dev/null
 }
@@ -162,5 +162,5 @@ _mock_stage_corr_node_api() {
     run _fetch_node_test_results "/job/test-job" "42" "101"
 
     assert_success
-    echo "$output" | jq -e '.[0].failures == 1' >/dev/null
+    echo "$output" | jq -e '.[0].failures == 2' >/dev/null
 }
