@@ -163,3 +163,78 @@ EOF
     assert_output --partial "Label: fastnode"
     assert_output --partial "slownode-1"
 }
+
+@test "agents_nodes_human_readable_basic" {
+    create_agents_wrapper
+
+    run bash -c "AGENTS_COMPUTERS_FIXTURE=agents_computers_overlap.json \"${TEST_TEMP_DIR}/agents_wrapper.sh\" --nodes 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "Node: agent2 oak"
+    assert_output --partial "Node: agent6 guthrie"
+    assert_output --partial "  Labels: agent2, dockernode"
+}
+
+@test "agents_nodes_human_executor_count" {
+    create_agents_wrapper
+
+    run bash -c "AGENTS_COMPUTERS_FIXTURE=agents_computers_overlap.json \"${TEST_TEMP_DIR}/agents_wrapper.sh\" --nodes 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "Node: agent2 oak  (2 executors, 1 busy)"
+    assert_output --partial "Node: agent6 guthrie  (3 executors, 0 busy)"
+}
+
+@test "agents_nodes_sorted_alphabetically" {
+    create_agents_wrapper
+
+    run bash -c "AGENTS_COMPUTERS_FIXTURE=agents_computers_overlap.json \"${TEST_TEMP_DIR}/agents_wrapper.sh\" --nodes 3>&- 2>&1"
+
+    assert_success
+    local first second third
+    first=$(printf '%s\n' "$output" | grep '^Node:' | sed -n '1p')
+    second=$(printf '%s\n' "$output" | grep '^Node:' | sed -n '2p')
+    third=$(printf '%s\n' "$output" | grep '^Node:' | sed -n '3p')
+    [ "$first" = "Node: agent2 oak  (2 executors, 1 busy)" ]
+    [ "$second" = "Node: agent6 guthrie  (3 executors, 0 busy)" ]
+    [ "$third" = "Node: builder9 west  (1 executor, 1 busy)" ]
+}
+
+@test "agents_nodes_each_label_listed" {
+    create_agents_wrapper
+
+    run bash -c "AGENTS_COMPUTERS_FIXTURE=agents_computers_overlap.json \"${TEST_TEMP_DIR}/agents_wrapper.sh\" --nodes 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "  Labels: agent6, dockernode, fastnode, guthrie"
+}
+
+@test "agents_nodes_json_has_nodes_array" {
+    create_agents_wrapper
+
+    run bash -c "AGENTS_COMPUTERS_FIXTURE=agents_computers_overlap.json \"${TEST_TEMP_DIR}/agents_wrapper.sh\" --nodes --json 3>&- 2>&1"
+
+    assert_success
+    echo "$output" | jq -e '.nodes | type == "array"' >/dev/null
+    echo "$output" | jq -e '.nodes | length == 3' >/dev/null
+}
+
+@test "agents_nodes_json_node_fields" {
+    create_agents_wrapper
+
+    run bash -c "AGENTS_COMPUTERS_FIXTURE=agents_computers_overlap.json \"${TEST_TEMP_DIR}/agents_wrapper.sh\" --nodes --json 3>&- 2>&1"
+
+    assert_success
+    echo "$output" | jq -e '.nodes[1] | has("name") and has("executors") and has("busy") and has("idle") and has("online") and has("labels")' >/dev/null
+    echo "$output" | jq -e '.nodes[1].labels == ["agent6","dockernode","fastnode","guthrie"]' >/dev/null
+}
+
+@test "agents_nodes_does_not_affect_default_view" {
+    create_agents_wrapper
+
+    run bash -c "AGENTS_COMPUTERS_FIXTURE=agents_computers_overlap.json \"${TEST_TEMP_DIR}/agents_wrapper.sh\" 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "Label: dockernode"
+    refute_output --partial "Node: agent2 oak"
+}

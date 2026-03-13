@@ -1,0 +1,32 @@
+{
+  "stages": [
+    {
+      "id": "22",
+      "name": "Checkout",
+      "status": "SUCCESS",
+      "startTimeMillis": 1000,
+      "durationMillis": 30000
+    },
+    {
+      "id": "20",
+      "name": "Unit Tests",
+      "status": "SUCCESS",
+      "startTimeMillis": 40000,
+      "durationMillis": 60000
+    },
+    {
+      "id": "21",
+      "name": "Integration Tests",
+      "status": "SUCCESS",
+      "startTimeMillis": 40000,
+      "durationMillis": 120000
+    },
+    {
+      "id": "23",
+      "name": "Package",
+      "status": "SUCCESS",
+      "startTimeMillis": 170000,
+      "durationMillis": 45000
+    }
+  ]
+}

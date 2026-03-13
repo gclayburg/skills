@@ -1,0 +1,28 @@
+{
+  "id": "42",
+  "name": "#42",
+  "status": "SUCCESS",
+  "stages": [
+    {
+      "id": "101",
+      "name": "Unit Tests A",
+      "status": "SUCCESS",
+      "startTimeMillis": 1700000000000,
+      "durationMillis": 122300
+    },
+    {
+      "id": "102",
+      "name": "Unit Tests B",
+      "status": "SUCCESS",
+      "startTimeMillis": 1700000123000,
+      "durationMillis": 168400
+    },
+    {
+      "id": "103",
+      "name": "Lint",
+      "status": "SUCCESS",
+      "startTimeMillis": 1700000291400,
+      "durationMillis": 30000
+    }
+  ]
+}

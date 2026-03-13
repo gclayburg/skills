@@ -1,0 +1,52 @@
+{
+  "computer": [
+    {
+      "displayName": "agent2 oak",
+      "assignedLabels": [
+        { "name": "agent2" },
+        { "name": "dockernode" }
+      ],
+      "numExecutors": 2,
+      "idle": false,
+      "offline": false,
+      "temporarilyOffline": false,
+      "executors": [
+        { "currentExecutable": { "url": "http://jenkins.example.com/job/ralph1/201/" } },
+        { "currentExecutable": null }
+      ]
+    },
+    {
+      "displayName": "agent6 guthrie",
+      "assignedLabels": [
+        { "name": "agent6" },
+        { "name": "dockernode" },
+        { "name": "fastnode" },
+        { "name": "guthrie" }
+      ],
+      "numExecutors": 3,
+      "idle": true,
+      "offline": false,
+      "temporarilyOffline": false,
+      "executors": [
+        { "currentExecutable": null },
+        { "currentExecutable": null },
+        { "currentExecutable": null }
+      ]
+    },
+    {
+      "displayName": "builder9 west",
+      "assignedLabels": [
+        { "name": "builder9" },
+        { "name": "fastnode" },
+        { "name": "west" }
+      ],
+      "numExecutors": 1,
+      "idle": false,
+      "offline": false,
+      "temporarilyOffline": false,
+      "executors": [
+        { "currentExecutable": { "url": "http://jenkins.example.com/job/ralph1/202/" } }
+      ]
+    }
+  ]
+}

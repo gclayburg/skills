@@ -1,0 +1,53 @@
+{
+  "suites": [
+    {
+      "name": "buildgit_status_follow",
+      "duration": 122.3,
+      "enclosingBlockNames": ["Unit Tests A"],
+      "cases": [
+        { "status": "PASSED" },
+        { "status": "FAILED" },
+        { "status": "REGRESSION" }
+      ]
+    },
+    {
+      "name": "buildgit_status_json",
+      "duration": 4.5,
+      "enclosingBlockNames": ["Unit Tests A"],
+      "cases": [
+        { "status": "PASSED" },
+        { "status": "PASSED" }
+      ]
+    },
+    {
+      "name": "buildgit_agents",
+      "duration": 33.9,
+      "enclosingBlockNames": ["Unit Tests B"],
+      "cases": [
+        { "status": "PASSED" },
+        { "status": "PASSED" },
+        { "status": "PASSED" }
+      ]
+    },
+    {
+      "name": "buildgit_timing",
+      "duration": 79.2,
+      "enclosingBlockNames": ["Unit Tests B"],
+      "cases": [
+        { "status": "PASSED" },
+        { "status": "PASSED" },
+        { "status": "SKIPPED" },
+        { "status": "PASSED" }
+      ]
+    },
+    {
+      "name": "buildgit_pipeline",
+      "duration": 55.1,
+      "enclosingBlockNames": ["Unit Tests B"],
+      "cases": [
+        { "status": "PASSED" },
+        { "status": "PASSED" }
+      ]
+    }
+  ]
+}

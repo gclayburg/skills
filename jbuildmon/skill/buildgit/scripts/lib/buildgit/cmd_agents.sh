@@ -1,5 +1,6 @@
 _parse_agents_options() {
     AGENTS_JSON=false
+    AGENTS_NODES=false
     AGENTS_LABEL=""
     AGENTS_VERBOSE=false
 
@@ -7,6 +8,10 @@ _parse_agents_options() {
         case "$1" in
             --json)
                 AGENTS_JSON=true
+                shift
+                ;;
+            --nodes)
+                AGENTS_NODES=true
                 shift
                 ;;
             --label)
@@ -79,7 +84,7 @@ _build_agents_data() {
         [[ -n "$label_name" ]] || continue
 
         local label_info
-        label_info=$(_fetch_label_info "$label_name")
+        label_info=$(_fetch_label_info "$label_name" 2>/dev/null) || label_info=""
         if [[ -z "$label_info" ]]; then
             label_info='{}'
         fi
@@ -186,6 +191,46 @@ _build_agents_data() {
     '
 }
 
+_build_agents_nodes_data() {
+    local computers_json="$1"
+
+    if [[ -z "$computers_json" ]]; then
+        printf '{"nodes":[]}\n'
+        return 0
+    fi
+
+    printf '%s\n' "$computers_json" | jq -c '
+        def node_busy:
+          if (.offline // false) then
+            0
+          else
+            [ .executors[]? | select(.currentExecutable.url? != null) ] | length
+          end;
+
+        {
+          nodes: [
+            .computer[]?
+            | {
+                name: (.displayName // .id // "unknown"),
+                executors: (.numExecutors // 0),
+                busy: node_busy,
+                idle: ((.numExecutors // 0) - node_busy),
+                online: ((.offline // false) | not),
+                labels: (
+                  [
+                    .assignedLabels[]?.name?
+                    | select(type == "string" and length > 0)
+                  ]
+                  | unique
+                  | sort
+                )
+              }
+          ]
+          | sort_by(.name)
+        }
+    '
+}
+
 _agents_pluralize() {
     local count="$1"
     local singular="$2"
@@ -271,6 +316,46 @@ _render_agents_json() {
     printf '%s\n' "$agents_json" | jq '.'
 }
 
+_render_agents_nodes_human() {
+    local nodes_json="$1"
+    local node_count
+    node_count=$(printf '%s\n' "$nodes_json" | jq -r '.nodes | length')
+
+    if [[ "$node_count" -eq 0 ]]; then
+        echo "No nodes found"
+        return 0
+    fi
+
+    local first_node=true
+    local node_payload
+    while IFS= read -r node_payload; do
+        [[ -n "$node_payload" ]] || continue
+
+        if [[ "$first_node" != "true" ]]; then
+            echo ""
+        fi
+        first_node=false
+
+        local node_json node_name executors busy labels
+        node_json=$(_decode_agents_payload "$node_payload")
+        node_name=$(printf '%s\n' "$node_json" | jq -r '.name')
+        executors=$(printf '%s\n' "$node_json" | jq -r '.executors')
+        busy=$(printf '%s\n' "$node_json" | jq -r '.busy')
+        labels=$(printf '%s\n' "$node_json" | jq -r '.labels | join(", ")')
+
+        printf 'Node: %s  (%s, %s busy)\n' \
+            "$node_name" \
+            "$(_agents_pluralize "$executors" "executor")" \
+            "$busy"
+        printf '  Labels: %s\n' "$labels"
+    done < <(printf '%s\n' "$nodes_json" | jq -r '.nodes[] | @base64')
+}
+
+_render_agents_nodes_json() {
+    local nodes_json="$1"
+    printf '%s\n' "$nodes_json" | jq '.'
+}
+
 cmd_agents() {
     _parse_agents_options "$@"
 
@@ -291,6 +376,21 @@ cmd_agents() {
         bg_log_error "Cannot inspect Jenkins agents - cannot connect to Jenkins"
         bg_log_essential "Suggestion: Check JENKINS_URL and credentials"
         return 1
+    fi
+
+    if [[ "$AGENTS_NODES" == "true" ]]; then
+        local computers_json
+        computers_json=$(_fetch_computers)
+
+        local nodes_json
+        nodes_json=$(_build_agents_nodes_data "$computers_json")
+
+        if [[ "$AGENTS_JSON" == "true" ]]; then
+            _render_agents_nodes_json "$nodes_json"
+        else
+            _render_agents_nodes_human "$nodes_json"
+        fi
+        return 0
     fi
 
     local agents_json

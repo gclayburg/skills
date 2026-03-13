@@ -6,6 +6,11 @@ All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are do
 
 ### Added
 - **Build optimization commands** — `buildgit agents`, `buildgit queue`, `buildgit timing`, and `buildgit pipeline` expose Jenkins executor capacity, queue wait reasons, per-stage and test-suite timing, and pipeline structure to help diagnose CI bottlenecks.
+- **`buildgit agents --nodes`** — Adds a node-centric agent view that shows each Jenkins node once with its full label set, executor counts, busy/idle totals, and JSON `nodes[]` output for overlap analysis.
+- **`buildgit timing --tests --by-stage`** — Correlates JUnit suites back to their Jenkins pipeline stages, appends a human-readable `Test suite timing by stage:` section, and adds JSON `testsByStage` output.
+- **`buildgit timing --compare <a> <b>`** — Compares two builds side-by-side with signed per-stage timing deltas and JSON `builds[]` plus `deltas`.
+- **Compact multi-build timing table** — `buildgit timing -n <count>` now renders a stage timing table across recent builds; `-n <count> --tests` prepends the table and keeps detailed suite timing for only the newest build.
+- **Pipeline test-suite enrichment** — `buildgit pipeline` now annotates stages that published JUnit results with per-stage test summaries in human output and `testSuites` arrays in JSON.
 
 ## [1.2.0] - 2026-03-10
 

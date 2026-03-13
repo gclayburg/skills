@@ -1,14 +1,14 @@
 # Implementation Plan: Build Optimization Diagnostics
 
-**Parent spec:** `jbuildmon/specs/todo/2026-03-11_build-optimization-diagnostics-spec.md`
+**Parent spec:** `jbuildmon/specs/2026-03-11_build-optimization-diagnostics-spec.md`
 
 ## Contents
 
-- [ ] **Chunk 1: Stage-Level Test Correlation Library**
-- [ ] **Chunk 2: Feature 2 — `buildgit agents --nodes`**
-- [ ] **Chunk 3: Feature 1 — `buildgit timing --tests --by-stage`**
-- [ ] **Chunk 4: Feature 3 — `buildgit timing --compare` and multi-build table**
-- [ ] **Chunk 5: Feature 4 — `buildgit pipeline` enriched with test suites**
+- [x] **Chunk 1: Stage-Level Test Correlation Library**
+- [x] **Chunk 2: Feature 2 — `buildgit agents --nodes`**
+- [x] **Chunk 3: Feature 1 — `buildgit timing --tests --by-stage`**
+- [x] **Chunk 4: Feature 3 — `buildgit timing --compare` and multi-build table**
+- [x] **Chunk 5: Feature 4 — `buildgit pipeline` enriched with test suites**
 
 
 ## Chunk Detail
@@ -21,7 +21,7 @@ Create a shared library that maps JUnit test suites to their parent pipeline sta
 
 #### Spec Reference
 
-See spec [Feature 1](./todo/2026-03-11_build-optimization-diagnostics-spec.md#feature-1-test-to-stage-mapping-in-timing-output) §Data source and [Feature 4](./todo/2026-03-11_build-optimization-diagnostics-spec.md#feature-4-test-to-stage-assignment-in-pipeline-output) §Requirements — "Features 1 and 4 overlap in data source... implementation should share the underlying test-report-to-stage correlation logic."
+See spec [Feature 1](./2026-03-11_build-optimization-diagnostics-spec.md#feature-1-test-to-stage-mapping-in-timing-output) §Data source and [Feature 4](./2026-03-11_build-optimization-diagnostics-spec.md#feature-4-test-to-stage-assignment-in-pipeline-output) §Requirements — "Features 1 and 4 overlap in data source... implementation should share the underlying test-report-to-stage correlation logic."
 
 #### Dependencies
 
@@ -107,8 +107,10 @@ See spec [Feature 1](./todo/2026-03-11_build-optimization-diagnostics-spec.md#fe
 
 #### Implementation Log
 
-<!-- Filled in by the implementing agent after completing this chunk.
-     Summarize: files changed, key decisions, anything the finalize step needs to know. -->
+- Added [`jbuildmon/skill/buildgit/scripts/lib/jenkins-common/stage_test_correlation.sh`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/skill/buildgit/scripts/lib/jenkins-common/stage_test_correlation.sh) with `fetch_stage_test_suites` and `_fetch_node_test_results`; both degrade to empty JSON on missing node data, invalid responses, or non-200/non-404 statuses.
+- Updated [`jbuildmon/skill/buildgit/scripts/lib/jenkins-common.sh`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/skill/buildgit/scripts/lib/jenkins-common.sh) to source the new shared library so later timing/pipeline chunks can consume it without additional loader changes.
+- Added [`jbuildmon/test/stage_test_correlation.bats`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/stage_test_correlation.bats) plus four new fixtures under [`jbuildmon/test/fixtures`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/fixtures) to cover stage-keyed aggregation, suite field extraction, silent 404 handling, empty-build behavior, and FAILED-vs-REGRESSION counting.
+- Key decision: failure counts intentionally include only `FAILED` cases, matching the chunk spec and preserving room for later callers to represent regressions separately if needed.
 
 ---
 
@@ -120,7 +122,7 @@ Add a `--nodes` flag to `buildgit agents` that pivots the output from a label-ce
 
 #### Spec Reference
 
-See spec [Feature 2](./todo/2026-03-11_build-optimization-diagnostics-spec.md#feature-2-agent-node-label-overlap-view) §Specification and §Requirements.
+See spec [Feature 2](./2026-03-11_build-optimization-diagnostics-spec.md#feature-2-agent-node-label-overlap-view) §Specification and §Requirements.
 
 #### Dependencies
 
@@ -218,8 +220,10 @@ See spec [Feature 2](./todo/2026-03-11_build-optimization-diagnostics-spec.md#fe
 
 #### Implementation Log
 
-<!-- Filled in by the implementing agent after completing this chunk.
-     Summarize: files changed, key decisions, anything the finalize step needs to know. -->
+- Updated [`jbuildmon/skill/buildgit/scripts/lib/buildgit/cmd_agents.sh`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/skill/buildgit/scripts/lib/buildgit/cmd_agents.sh) to add `--nodes`, a node-centric JSON builder, and separate human/JSON renderers that reuse the existing `/computer/api/json` payload and leave the label view untouched.
+- Updated [`jbuildmon/skill/buildgit/scripts/buildgit`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/skill/buildgit/scripts/buildgit) help text to advertise `agents --nodes`; finalize should propagate the help change to the remaining documentation files listed in the plan workflow.
+- Added [`jbuildmon/test/fixtures/agents_computers_overlap.json`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/fixtures/agents_computers_overlap.json) plus seven `--nodes` tests in [`jbuildmon/test/buildgit_agents.bats`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/buildgit_agents.bats) covering human output, executor/busy counts, alpha sorting, label lists, JSON shape, and default-view regression protection.
+- Key decision: the node view intentionally derives busy executors from active executor URLs and sorts node labels alphabetically, matching the chunk spec while avoiding any dependency on per-label API lookups.
 
 ---
 
@@ -231,7 +235,7 @@ Add a `--by-stage` flag to `buildgit timing` that groups test suite output under
 
 #### Spec Reference
 
-See spec [Feature 1](./todo/2026-03-11_build-optimization-diagnostics-spec.md#feature-1-test-to-stage-mapping-in-timing-output) §Specification and §Requirements.
+See spec [Feature 1](./2026-03-11_build-optimization-diagnostics-spec.md#feature-1-test-to-stage-mapping-in-timing-output) §Specification and §Requirements.
 
 #### Dependencies
 
@@ -313,8 +317,10 @@ See spec [Feature 1](./todo/2026-03-11_build-optimization-diagnostics-spec.md#fe
 
 #### Implementation Log
 
-<!-- Filled in by the implementing agent after completing this chunk.
-     Summarize: files changed, key decisions, anything the finalize step needs to know. -->
+- Updated [`jbuildmon/skill/buildgit/scripts/lib/buildgit/cmd_timing.sh`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/skill/buildgit/scripts/lib/buildgit/cmd_timing.sh) to parse `--by-stage`, fetch stage-correlated suites only when combined with `--tests`, render a new `Test suite timing by stage:` human section, and include `testsByStage` in JSON output for by-stage runs.
+- Updated [`jbuildmon/skill/buildgit/scripts/buildgit`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/skill/buildgit/scripts/buildgit) help text and [`jbuildmon/test/buildgit_routing.bats`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/buildgit_routing.bats) so the documented timing synopsis now includes `--by-stage`.
+- Extended [`jbuildmon/test/buildgit_timing.bats`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/buildgit_timing.bats) with the seven chunk-specific cases and added stage-correlation fixtures [`jbuildmon/test/fixtures/timing_stage_tests_wfapi_42.json`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/fixtures/timing_stage_tests_wfapi_42.json), [`jbuildmon/test/fixtures/timing_stage_tests_node_10_tests.json`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/fixtures/timing_stage_tests_node_10_tests.json), and [`jbuildmon/test/fixtures/timing_stage_tests_node_11_tests.json`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/fixtures/timing_stage_tests_node_11_tests.json).
+- Key decision: the by-stage section preserves the existing top-level stage timing output, then appends correlated suites in pipeline stage order, omitting stages whose node-level test endpoint returns no suites while leaving `--by-stage` inert when `--tests` is absent.
 
 ---
 
@@ -326,7 +332,7 @@ Add a `--compare A B` flag to `buildgit timing` for side-by-side comparison of t
 
 #### Spec Reference
 
-See spec [Feature 3](./todo/2026-03-11_build-optimization-diagnostics-spec.md#feature-3-build-timing-comparison) §Specification and §Requirements.
+See spec [Feature 3](./2026-03-11_build-optimization-diagnostics-spec.md#feature-3-build-timing-comparison) §Specification and §Requirements.
 
 #### Dependencies
 
@@ -423,8 +429,10 @@ See spec [Feature 3](./todo/2026-03-11_build-optimization-diagnostics-spec.md#fe
 
 #### Implementation Log
 
-<!-- Filled in by the implementing agent after completing this chunk.
-     Summarize: files changed, key decisions, anything the finalize step needs to know. -->
+- Updated [`jbuildmon/skill/buildgit/scripts/lib/buildgit/cmd_timing.sh`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/skill/buildgit/scripts/lib/buildgit/cmd_timing.sh) to add `--compare`, resolve relative compare build refs, split timing JSON assembly from rendering, render human/JSON compare output with signed deltas, and render the new multi-build timing table for `-n N`.
+- Updated [`jbuildmon/skill/buildgit/scripts/buildgit`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/skill/buildgit/scripts/buildgit) and [`jbuildmon/test/buildgit_routing.bats`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/buildgit_routing.bats) so the help synopsis now documents `timing --compare <a> <b>` and the new compact table behavior examples.
+- Extended [`jbuildmon/test/buildgit_timing.bats`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/buildgit_timing.bats) with compare-mode coverage, signed delta assertions, JSON delta validation, compact `-n` table assertions, and the `-n --tests` behavior that prepends the table but keeps detailed output for only the latest build.
+- Key decisions: missing top-level stages render as `0s` in compare/table mode instead of `<1s`, delta cells always carry an explicit `+` or `-` sign, and `-n N --tests` now follows the parent spec requirement by showing the summary table first and detailed suite timing only for the newest build in the requested window.
 
 ---
 
@@ -436,7 +444,7 @@ Enrich `buildgit pipeline` output so each stage that ran tests includes a `testS
 
 #### Spec Reference
 
-See spec [Feature 4](./todo/2026-03-11_build-optimization-diagnostics-spec.md#feature-4-test-to-stage-assignment-in-pipeline-output) §Specification and §Requirements.
+See spec [Feature 4](./2026-03-11_build-optimization-diagnostics-spec.md#feature-4-test-to-stage-assignment-in-pipeline-output) §Specification and §Requirements.
 
 #### Dependencies
 
@@ -510,14 +518,16 @@ See spec [Feature 4](./todo/2026-03-11_build-optimization-diagnostics-spec.md#fe
 
 #### Implementation Log
 
-<!-- Filled in by the implementing agent after completing this chunk.
-     Summarize: files changed, key decisions, anything the finalize step needs to know. -->
+- Updated [`jbuildmon/skill/buildgit/scripts/lib/buildgit/cmd_pipeline.sh`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/skill/buildgit/scripts/lib/buildgit/cmd_pipeline.sh) to enrich classified pipeline stages with per-stage `testSuites` from the shared stage-correlation library and to render per-stage human summaries with suite count, test count, and cumulative duration.
+- Added chunk-specific fixtures [`jbuildmon/test/fixtures/pipeline_wfapi_42.json`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/fixtures/pipeline_wfapi_42.json), [`jbuildmon/test/fixtures/pipeline_blue_nodes_42.json`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/fixtures/pipeline_blue_nodes_42.json), [`jbuildmon/test/fixtures/pipeline_node_20_tests.json`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/fixtures/pipeline_node_20_tests.json), [`jbuildmon/test/fixtures/pipeline_node_21_tests.json`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/fixtures/pipeline_node_21_tests.json), and [`jbuildmon/test/fixtures/pipeline_console_42.txt`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/fixtures/pipeline_console_42.txt) so pipeline tests do not depend on timing fixtures.
+- Extended [`jbuildmon/test/buildgit_pipeline.bats`](/Users/gclaybur/dev/ralph1/.claude/worktrees/optimize-diag-v4/jbuildmon/test/buildgit_pipeline.bats) with chunk 5 coverage for human summaries, JSON `testSuites`, omission on non-test stages, failure counts, cumulative durations, and the no-test-data path.
+- Key decisions: enrichment is recursive by stage name across both `children` and `branches`, stages without correlated test data omit `testSuites` entirely, and the human summary uses cumulative suite duration rather than stage wall time to match the spec.
 
 ---
 
 ## SPEC Workflow
 
-**Parent spec:** `jbuildmon/specs/todo/2026-03-11_build-optimization-diagnostics-spec.md`
+**Parent spec:** `jbuildmon/specs/2026-03-11_build-optimization-diagnostics-spec.md`
 
 Read `specs/CLAUDE.md` for full workflow rules. The workflow below applies to multi-chunk plan implementation.
 

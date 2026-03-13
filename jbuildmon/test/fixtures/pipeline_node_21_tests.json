@@ -1,0 +1,38 @@
+{
+  "id": "21",
+  "urlName": "execution/node/21",
+  "testResult": {
+    "totalCount": 9,
+    "skipCount": 1,
+    "failCount": 0,
+    "suites": [
+      {
+        "name": "buildgit_agents",
+        "duration": 33.9,
+        "cases": [
+          { "status": "PASSED" },
+          { "status": "PASSED" },
+          { "status": "PASSED" }
+        ]
+      },
+      {
+        "name": "buildgit_timing",
+        "duration": 79.2,
+        "cases": [
+          { "status": "PASSED" },
+          { "status": "PASSED" },
+          { "status": "SKIPPED" },
+          { "status": "PASSED" }
+        ]
+      },
+      {
+        "name": "buildgit_pipeline",
+        "duration": 55.1,
+        "cases": [
+          { "status": "PASSED" },
+          { "status": "PASSED" }
+        ]
+      }
+    ]
+  }
+}

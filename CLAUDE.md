@@ -30,9 +30,9 @@ Commands:
                       Display Jenkins build status (latest or specific build)
                       build# can be absolute (31) or relative (0=latest, -1=previous, -2=two ago)
                       Default: one-line output (TTY adds color)
-  agents [--json] [--label <name>]
+  agents [--json] [--label <name>] [--nodes]
                       Show Jenkins executor capacity by label
-  timing [build#] [--json] [--tests] [-n <count>]
+  timing [build#] [--json] [--tests] [--by-stage] [--compare <a> <b>] [-n <count>]
                       Show per-stage and per-test-suite timing
   pipeline [build#] [--json]
                       Show pipeline structure (stages, parallelism, labels)
@@ -85,8 +85,12 @@ Monitor ongoing Jenkins build jobs:
 
 Build optimization:
   buildgit agents                  # Executor capacity by label
+  buildgit agents --nodes          # Executor capacity by node with all labels
   buildgit queue                   # Current Jenkins queue and wait reasons
   buildgit timing --tests          # Slowest stages and test suites for latest successful build
+  buildgit timing --tests --by-stage # Group test suites under their parent pipeline stage
+  buildgit timing --compare 40 42  # Compare stage timing and deltas across two builds
+  buildgit timing -n 3             # Compact timing table for the last 3 builds
   buildgit pipeline 42 --json      # Pipeline graph and agent labels for build #42
 
 Format placeholders for --format (use with --line):

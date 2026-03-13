@@ -64,6 +64,9 @@ jenkins_api() {
         "/api/json")
             echo '{"_class":"hudson.model.Hudson"}'
             ;;
+        "/job/ralph1/api/json")
+            echo '{"lastBuild":{"number":42}}'
+            ;;
         "/job/ralph1/lastSuccessfulBuild/buildNumber")
             echo "42"
             ;;
@@ -77,7 +80,11 @@ jenkins_api() {
             cat "${FIXTURE_DIR}/timing_build_info_40.json"
             ;;
         "/job/ralph1/42/wfapi/describe")
-            cat "${FIXTURE_DIR}/timing_wfapi_\${TIMING_FIXTURE_SET:-parallel}_42.json"
+            if [[ "\${TIMING_WFAPI_SET:-\${TIMING_FIXTURE_SET:-parallel}}" == "stage_tests" ]]; then
+                cat "${FIXTURE_DIR}/timing_stage_tests_wfapi_42.json"
+            else
+                cat "${FIXTURE_DIR}/timing_wfapi_\${TIMING_WFAPI_SET:-\${TIMING_FIXTURE_SET:-parallel}}_42.json"
+            fi
             ;;
         "/job/ralph1/41/wfapi/describe")
             cat "${FIXTURE_DIR}/timing_wfapi_sequential_41.json"
@@ -132,6 +139,14 @@ jenkins_api_with_status() {
         "/job/ralph1/40/testReport/api/json?tree=duration,suites[name,duration,cases[className,name,duration,status]]")
             cat "${FIXTURE_DIR}/timing_test_report_40.json"
             printf '\n200\n'
+            ;;
+        "/job/ralph1/42/testReport/api/json?tree=suites[name,duration,enclosingBlockNames,cases[status]]")
+            if [[ "\${TIMING_WFAPI_SET:-}" == "stage_tests" ]]; then
+                cat "${FIXTURE_DIR}/timing_stage_tests_test_report_42.json"
+                printf '\n200\n'
+            else
+                printf '\n404\n'
+            fi
             ;;
         *)
             echo "unexpected endpoint: \$endpoint" >&2
@@ -236,9 +251,11 @@ EOF
     run bash -c "\"${TEST_TEMP_DIR}/timing_wrapper.sh\" -n 3 42 3>&- 2>&1"
 
     assert_success
-    assert_output --partial "Build #40 - total 3m 20s"
-    assert_output --partial "Build #41 - total 4m 10s"
-    assert_output --partial "Build #42 - total 5m 30s"
+    assert_output --partial "Build    Total"
+    assert_output --partial "#40"
+    assert_output --partial "#41"
+    assert_output --partial "#42"
+    refute_output --partial "Build #40 - total"
 }
 
 @test "timing_no_test_report" {
@@ -248,4 +265,215 @@ EOF
 
     assert_success
     refute_output --partial "Test suite timing (top 10 slowest):"
+}
+
+@test "timing_by_stage_groups_suites_under_stage" {
+    create_timing_wrapper
+
+    run bash -c "TIMING_WFAPI_SET=stage_tests \"${TEST_TEMP_DIR}/timing_wrapper.sh\" 42 --tests --by-stage 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "Test suite timing by stage:"
+    assert_output --partial "  Unit Tests (wall 1m 0s, agent-a):"
+    assert_output --partial "    com.example.unit.LoginSpec"
+    assert_output --partial "  Integration Tests (wall 2m 0s, agent-b):"
+}
+
+@test "timing_by_stage_shows_stage_wall_time_and_agent" {
+    create_timing_wrapper
+
+    run bash -c "TIMING_WFAPI_SET=stage_tests \"${TEST_TEMP_DIR}/timing_wrapper.sh\" 42 --tests --by-stage 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "Unit Tests (wall 1m 0s, agent-a):"
+    assert_output --partial "Integration Tests (wall 2m 0s, agent-b):"
+}
+
+@test "timing_by_stage_suite_line_has_duration_and_count" {
+    create_timing_wrapper
+
+    run bash -c "TIMING_WFAPI_SET=stage_tests \"${TEST_TEMP_DIR}/timing_wrapper.sh\" 42 --tests --by-stage 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "com.example.integration.ApiTimingIT  3m 29s  (50 tests)"
+}
+
+@test "timing_by_stage_without_tests_flag_ignored" {
+    create_timing_wrapper
+
+    run bash -c "TIMING_WFAPI_SET=stage_tests \"${TEST_TEMP_DIR}/timing_wrapper.sh\" 42 --by-stage 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "Parallel group: Tests (wall 2m 0s, bottleneck: Integration Tests)"
+    refute_output --partial "Test suite timing by stage:"
+}
+
+@test "timing_by_stage_json_has_testsByStage_field" {
+    create_timing_wrapper
+
+    run bash -c "TIMING_WFAPI_SET=stage_tests \"${TEST_TEMP_DIR}/timing_wrapper.sh\" 42 --tests --by-stage --json 3>&- 2>&1"
+
+    assert_success
+    echo "$output" | jq -e '.testsByStage["Unit Tests"][0].name == "com.example.unit.LoginSpec"' >/dev/null
+    echo "$output" | jq -e '.testsByStage["Integration Tests"][0].tests == 50' >/dev/null
+}
+
+@test "timing_by_stage_stage_with_no_tests_omitted" {
+    create_timing_wrapper
+
+    run bash -c "TIMING_WFAPI_SET=stage_tests \"${TEST_TEMP_DIR}/timing_wrapper.sh\" 42 --tests --by-stage --json 3>&- 2>&1"
+
+    assert_success
+    echo "$output" | jq -e '(.testsByStage | has("Package")) | not' >/dev/null
+    refute_output --partial "Package (wall"
+}
+
+@test "timing_by_stage_framework_agnostic" {
+    create_timing_wrapper
+
+    run bash -c "TIMING_WFAPI_SET=stage_tests \"${TEST_TEMP_DIR}/timing_wrapper.sh\" 42 --tests --by-stage 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "pytest/test_api.py::test_round_trip"
+    refute_output --partial ".bats"
+}
+
+@test "timing_compare_shows_both_build_numbers" {
+    create_timing_wrapper
+
+    run bash -c "\"${TEST_TEMP_DIR}/timing_wrapper.sh\" --compare 40 42 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "Timing comparison: Build #40 vs #42"
+}
+
+@test "timing_compare_shows_delta_column" {
+    create_timing_wrapper
+
+    run bash -c "\"${TEST_TEMP_DIR}/timing_wrapper.sh\" --compare 40 42 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "Delta"
+    assert_output --partial "+2m 10s"
+}
+
+@test "timing_compare_zero_delta_shown_as_0s" {
+    create_timing_wrapper
+
+    run bash -c "\"${TEST_TEMP_DIR}/timing_wrapper.sh\" --compare 41 41 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "0s"
+}
+
+@test "timing_compare_negative_delta_has_minus" {
+    create_timing_wrapper
+
+    run bash -c "\"${TEST_TEMP_DIR}/timing_wrapper.sh\" --compare 42 40 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "-2m 10s"
+}
+
+@test "timing_compare_positive_delta_has_plus" {
+    create_timing_wrapper
+
+    run bash -c "\"${TEST_TEMP_DIR}/timing_wrapper.sh\" --compare 40 42 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "+10s"
+}
+
+@test "timing_compare_json_has_builds_and_deltas" {
+    create_timing_wrapper
+
+    run bash -c "\"${TEST_TEMP_DIR}/timing_wrapper.sh\" --compare 40 42 --json 3>&- 2>&1"
+
+    assert_success
+    echo "$output" | jq -e '.builds | length == 2' >/dev/null
+    echo "$output" | jq -e '.deltas.total == 130000' >/dev/null
+    echo "$output" | jq -e '.deltas.stages["Checkout"] == 10000' >/dev/null
+}
+
+@test "timing_n_without_tests_renders_table" {
+    create_timing_wrapper
+
+    run bash -c "\"${TEST_TEMP_DIR}/timing_wrapper.sh\" -n 3 42 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "Build    Total"
+    assert_output --partial "Checkout"
+    assert_output --partial "Build"
+    assert_output --partial "Tests"
+    refute_output --partial "Build #42 - total"
+}
+
+@test "timing_n_with_tests_prepends_table" {
+    create_timing_wrapper
+
+    run bash -c "\"${TEST_TEMP_DIR}/timing_wrapper.sh\" -n 3 42 --tests 3>&- 2>&1"
+
+    assert_success
+    local table_line detail_line
+    table_line=$(printf '%s\n' "$output" | grep -n "^Build    Total" | cut -d: -f1)
+    detail_line=$(printf '%s\n' "$output" | grep -n "^Build #42 - total 5m 30s" | cut -d: -f1)
+    [[ -n "$table_line" ]]
+    [[ -n "$detail_line" ]]
+    [[ "$table_line" -lt "$detail_line" ]]
+    refute_output --partial "Build #40 - total"
+    refute_output --partial "Build #41 - total"
+}
+
+@test "timing_compare_parallel_members_shown_under_group" {
+    create_timing_wrapper
+
+    run bash -c "\"${TEST_TEMP_DIR}/timing_wrapper.sh\" --compare 40 42 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "Tests"
+    assert_output --partial "Unit Tests"
+    assert_output --partial "Integration Tests"
+}
+
+@test "timing_compare_json_includes_parallel_member_deltas" {
+    create_timing_wrapper
+
+    run bash -c "\"${TEST_TEMP_DIR}/timing_wrapper.sh\" --compare 40 42 --json 3>&- 2>&1"
+
+    assert_success
+    echo "$output" | jq -e '.deltas.stages["Unit Tests"] == 60000' >/dev/null
+    echo "$output" | jq -e '.deltas.stages["Integration Tests"] == 120000' >/dev/null
+    echo "$output" | jq -e '.deltas.stages["Tests"] == 120000' >/dev/null
+}
+
+@test "timing_compare_missing_stage_in_one_build" {
+    create_timing_wrapper
+
+    run bash -c "\"${TEST_TEMP_DIR}/timing_wrapper.sh\" --compare 40 42 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "Build                    1m 40s"
+    assert_output --partial "Tests"
+    assert_output --partial "+2m 0s"
+}
+
+@test "timing_compare_uses_wall_time_not_wrapper_for_parallel_group" {
+    create_timing_wrapper
+
+    # parallel_wrapper fixture: "Tests" is both a wfapi stage (2s wrapper) and a parallel group (wall 2m 0s)
+    # Human output must use wall time (2m 0s), not the wrapper stage duration (2s)
+    run bash -c "TIMING_WFAPI_SET=parallel_wrapper \"${TEST_TEMP_DIR}/timing_wrapper.sh\" --compare 40 42 3>&- 2>&1"
+
+    assert_success
+    assert_output --partial "+2m 0s"
+    refute_output --partial "+2s"
+}
+
+@test "timing_compare_json_uses_wall_time_for_parallel_group" {
+    create_timing_wrapper
+
+    run bash -c "TIMING_WFAPI_SET=parallel_wrapper \"${TEST_TEMP_DIR}/timing_wrapper.sh\" --compare 40 42 --json 3>&- 2>&1"
+
+    assert_success
+    echo "$output" | jq -e '.deltas.stages["Tests"] == 120000' >/dev/null
 }

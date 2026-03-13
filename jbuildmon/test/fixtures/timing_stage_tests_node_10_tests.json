@@ -1,0 +1,28 @@
+{
+  "id": "10",
+  "urlName": "Unit Tests",
+  "testResult": {
+    "totalCount": 94,
+    "skipCount": 0,
+    "failCount": 0,
+    "suites": [
+      {
+        "name": "com.example.unit.LoginSpec",
+        "duration": 61.8,
+        "cases": [
+          {"status": "PASSED"},
+          {"status": "PASSED"},
+          {"status": "PASSED"}
+        ]
+      },
+      {
+        "name": "pytest/test_api.py::test_round_trip",
+        "duration": 12.2,
+        "cases": [
+          {"status": "PASSED"},
+          {"status": "PASSED"}
+        ]
+      }
+    ]
+  }
+}

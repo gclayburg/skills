@@ -69,12 +69,16 @@ push the staged changes and monitor the build.  fix any errors you find.
 | `scripts/buildgit agents` | Show Jenkins executor capacity by label |
 | `scripts/buildgit agents --json` | Emit executor capacity and node details as JSON |
 | `scripts/buildgit agents --label <name>` | Show executor capacity for one Jenkins label |
+| `scripts/buildgit agents --nodes` | Pivot to one row per Jenkins node with all labels and busy/idle counts |
 | `scripts/buildgit timing` | Show per-stage timing for the latest successful build |
 | `scripts/buildgit timing --tests` | Include slowest test suites and test counts in timing output |
+| `scripts/buildgit timing --tests --by-stage` | Group test suites under the pipeline stages that published them |
+| `scripts/buildgit timing --compare <a> <b>` | Compare two builds side by side with signed per-stage deltas |
+| `scripts/buildgit timing -n <N>` | Show a compact stage timing table across the latest N builds |
 | `scripts/buildgit timing --tests --json` | Emit timing, parallel bottlenecks, and test suite timing as JSON |
 | `scripts/buildgit timing -n <N> --json` | Emit timing JSON for the latest N builds |
 | `scripts/buildgit pipeline` | Show pipeline structure, stage hierarchy, and parallel branches |
-| `scripts/buildgit pipeline --json` | Emit pipeline graph, stage types, and agent labels as JSON |
+| `scripts/buildgit pipeline --json` | Emit pipeline graph, stage types, agent labels, and per-stage `testSuites` as JSON |
 | `scripts/buildgit queue` | Show the current Jenkins queue and wait reasons |
 | `scripts/buildgit queue --json` | Emit queued items, wait reasons, and queue duration as JSON |
 | `scripts/buildgit --console auto status` | Show default console log on failure |
@@ -139,9 +143,10 @@ For agent-safe follow mode, prefer:
 Use this workflow when the user wants to reduce build time or understand Jenkins contention:
 
 1. Run `scripts/buildgit queue` to see whether builds are waiting on capacity or blocked by quiet periods.
-2. Run `scripts/buildgit agents` to identify which executor labels are saturated or offline.
+2. Run `scripts/buildgit agents` to identify which executor labels are saturated or offline, then `scripts/buildgit agents --nodes` to see which physical nodes overlap those labels.
 3. Run `scripts/buildgit timing --tests` on a recent successful build to find slow stages, parallel bottlenecks, and expensive test suites.
-4. Run `scripts/buildgit pipeline` to understand stage ordering, parallel branches, and agent-label placement, then use [references/build-optimization.md](references/build-optimization.md) for the full workflow and constraints.
+4. Run `scripts/buildgit timing --tests --by-stage` to map those suites back to the stages that published them, or `scripts/buildgit timing --compare <a> <b>` / `scripts/buildgit timing -n <N>` to measure whether a rebalance actually helped.
+5. Run `scripts/buildgit pipeline` to understand stage ordering, parallel branches, agent-label placement, and per-stage test suite summaries, then use [references/build-optimization.md](references/build-optimization.md) for the full workflow and constraints.
 
 ## Dynamic Context
 
