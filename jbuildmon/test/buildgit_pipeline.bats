@@ -112,16 +112,13 @@ jenkins_api_with_status() {
     local endpoint="\$1"
 
     case "\$endpoint" in
-        "/job/ralph1/42/execution/node/20/wfapi/testResults")
-            cat "${FIXTURE_DIR}/pipeline_node_20_tests.json"
-            printf '\n200\n'
-            ;;
-        "/job/ralph1/42/execution/node/21/wfapi/testResults")
-            cat "${FIXTURE_DIR}/pipeline_node_21_tests.json"
-            printf '\n200\n'
-            ;;
-        "/job/ralph1/42/execution/node/"*"/wfapi/testResults")
-            printf '\n404\n'
+        "/job/ralph1/42/testReport/api/json?tree=suites[name,duration,enclosingBlockNames,cases[status]]")
+            if [[ "\${PIPELINE_FIXTURE_SET:-parallel}" == "pipeline" || "\${PIPELINE_FIXTURE_SET:-parallel}" == "parallel_stages" ]]; then
+                cat "${FIXTURE_DIR}/pipeline_test_report_42.json"
+                printf '\n200\n'
+            else
+                printf '\n404\n'
+            fi
             ;;
         *)
             echo "unexpected endpoint: \$endpoint" >&2
@@ -259,7 +256,7 @@ EOF
     echo "$output" | jq -e '
         .. | objects
         | select(.name? == "Integration Tests")
-        | .testSuites[1] == {
+        | .testSuites[0] == {
             "name": "buildgit_timing",
             "tests": 4,
             "durationMs": 79200,

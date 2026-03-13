@@ -140,16 +140,13 @@ jenkins_api_with_status() {
             cat "${FIXTURE_DIR}/timing_test_report_40.json"
             printf '\n200\n'
             ;;
-        "/job/ralph1/42/execution/node/10/wfapi/testResults")
-            cat "${FIXTURE_DIR}/timing_stage_tests_node_10_tests.json"
-            printf '\n200\n'
-            ;;
-        "/job/ralph1/42/execution/node/11/wfapi/testResults")
-            cat "${FIXTURE_DIR}/timing_stage_tests_node_11_tests.json"
-            printf '\n200\n'
-            ;;
-        "/job/ralph1/42/execution/node/1/wfapi/testResults"|"/job/ralph1/42/execution/node/4/wfapi/testResults")
-            printf '\n404\n'
+        "/job/ralph1/42/testReport/api/json?tree=suites[name,duration,enclosingBlockNames,cases[status]]")
+            if [[ "\${TIMING_WFAPI_SET:-}" == "stage_tests" ]]; then
+                cat "${FIXTURE_DIR}/timing_stage_tests_test_report_42.json"
+                printf '\n200\n'
+            else
+                printf '\n404\n'
+            fi
             ;;
         *)
             echo "unexpected endpoint: \$endpoint" >&2
