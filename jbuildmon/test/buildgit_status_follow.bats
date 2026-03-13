@@ -24,6 +24,7 @@ setup() {
     export JENKINS_URL="http://jenkins.example.com"
     export JENKINS_USER_ID="testuser"
     export JENKINS_API_TOKEN="testtoken"
+    unset BUILDGIT_THREADS_FORMAT
 
     # Create a test git repository
     TEST_REPO="${TEST_TEMP_DIR}/repo"
