@@ -1,8 +1,9 @@
 # Specs/ directory: Specifications, Implementation Plans, and Bug fixes workflow
 
 ### Todo directory
-The specs/todo directory contains specs or plans for new features and/or bug fixes.
+The specs/todo directory contains raw ideas for new features and/or bug fixes.
 - files in this directory represent raw ideas that might need to be done in the future, but have not been spec'd, planned or implemented yet.
+- specs (`*-spec.md`) and plans (`*-plan.md`) that are ready to implement belong in `specs/`, not `specs/todo/`
 - see specs/todo/README.md for an index of all the todo items in the folder
 
 

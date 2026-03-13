@@ -17,27 +17,27 @@ Use this format for each chunk in an implementation plan.
 
 ## Chunk Detail
 
-- [ ] **Chunk N: <Chunk N Title>**
+### Chunk N: <Chunk N Title>
 
-### Description
+#### Description
 
 <Brief summary of what this chunk accomplishes>
 
-### Spec Reference
+#### Spec Reference
 
 See spec [<Section Name>](./<spec-filename>.md#<anchor>) sections X.X-X.X.
 
-### Dependencies
+#### Dependencies
 
 - <List chunk dependencies, e.g., "Chunk M (<function or feature name>)">
 - None (if no dependencies)
 
-### Produces
+#### Produces
 
 - `<path/to/source/file>`
 - `<path/to/test/file>.<ext>`
 
-### Implementation Details
+#### Implementation Details
 
 1. <First implementation step>:
    - <Sub-detail>
@@ -47,7 +47,7 @@ See spec [<Section Name>](./<spec-filename>.md#<anchor>) sections X.X-X.X.
    - <Sub-detail>
 3. <Additional steps as needed>
 
-### Test Plan
+#### Test Plan
 
 **Test File:** `test/<feature_name>.<ext>`
 
@@ -60,6 +60,11 @@ See spec [<Section Name>](./<spec-filename>.md#<anchor>) sections X.X-X.X.
 - <External dependencies to mock>
 
 **Dependencies:** <Chunk dependencies needed for test setup>
+
+#### Implementation Log
+
+<!-- Filled in by the implementing agent after completing this chunk.
+     Summarize: files changed, key decisions, anything the finalize step needs to know. -->
 ```
 
 ---
@@ -70,3 +75,5 @@ See spec [<Section Name>](./<spec-filename>.md#<anchor>) sections X.X-X.X.
 - Chunk numbers (N, M) should be sequential within the plan
 - Spec anchors should match markdown heading IDs in the spec document
 - Test case names should use snake_case
+- Checkboxes (`- [ ]`) appear ONLY in the `## Contents` list, never in chunk detail headings — duplicate checkboxes break progress counting tools
+- The `#### Implementation Log` subsection is filled in by the implementing agent, not the plan creator

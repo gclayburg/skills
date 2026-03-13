@@ -3,11 +3,12 @@
 # implement-spec.sh - Implement a DRAFT spec in an isolated worktree using codex docker sandbox
 #
 # Usage:
-#   ./jbuildmon/implement-spec.sh [--model <model>] <spec-file>
-#   ./jbuildmon/implement-spec.sh --merge <spec-file>
+#   ./jbuildmon/implement-spec.sh [--model <model>] [--prompt <file>] <spec-file>
+#   ./jbuildmon/implement-spec.sh --merge [--squash] <spec-file>
 #   ./jbuildmon/implement-spec.sh --delete-all <spec-file>
 #   ./jbuildmon/implement-spec.sh --redo <spec-file>
 #   ./jbuildmon/implement-spec.sh --bugfix "description" <spec-file>
+#   ./jbuildmon/implement-spec.sh --ralph-loop [--max-chunks <N>] [--prompt <file>] <plan-file>
 #
 # Creates a git worktree with a branch named from the spec title,
 # then runs the codex docker sandbox to implement the spec.
@@ -26,17 +27,33 @@
 # instead of the implementation prompt. Requires the sandbox/worktree/branch
 # to already exist (like --redo).
 #
+# With --ralph-loop, implements all chunks in a '*-plan.md' file one at a time.
+# The plan file (not a spec file) is passed as the argument. Codex runs once per
+# chunk in the same sandbox/worktree/branch, with each run implementing one chunk,
+# pushing to Jenkins, and exiting with "REMAINING_CHUNKS=n" on the last line.
+# The loop stops when REMAINING_CHUNKS=0 or codex exits non-zero.
+# Incompatible with --merge, --delete-all, --redo, --bugfix.
+#
 # Requires auth credentials at ~/.cache/codex-sandbox-auth/auth.json
 # (copy from ~/.codex/auth.json after running: codex login --device-auth)
 #
 # Options:
 #   --model <model>   Model to use (default: gpt-5.3-codex)
 #   --merge           Merge the spec branch and clean up artifacts
+#   --squash          With --merge, squash all branch commits into one
 #   --delete-all      Delete sandbox, worktree, and branch without merging
 #   --redo [text]     Re-run codex in an existing sandbox (inject fresh creds)
 #                     Optional text is appended to the prompt
 #   --bugfix <text>   Fix a bug in an already-implemented spec
 #                     Text can be inline or piped from stdin
+#   --ralph-loop      Implement all chunks in a plan file, one per codex run
+#   --max-chunks <N>  Max chunk iterations for --ralph-loop (default: 20)
+#   --branch <name>   Override the branch (and worktree/sandbox) name
+#                     Useful for re-implementing with a fresh setup
+#   --prompt <file>   Use a custom prompt file (replaces hardcoded prompt)
+#                     %SPEC% in the file is replaced with the spec/plan path
+#                     Without --prompt, looks for a companion .prompt file
+#                     next to the spec/plan (e.g. myfeature-plan.prompt)
 #
 # Examples:
 #   ./jbuildmon/implement-spec.sh jbuildmon/specs/2026-03-03_short-buildgit-status-spec.md
@@ -47,6 +64,9 @@
 #   ./jbuildmon/implement-spec.sh --redo "also fix the edge case in parse()" jbuildmon/specs/2026-03-03_short-buildgit-status-spec.md
 #   ./jbuildmon/implement-spec.sh --bugfix "substages not shown for --console-text" jbuildmon/specs/2026-03-03_short-buildgit-status-spec.md
 #   ./jbuildmon/implement-spec.sh --bugfix jbuildmon/specs/2026-03-03_short-buildgit-status-spec.md < /tmp/bugreport.md
+#   ./jbuildmon/implement-spec.sh --ralph-loop jbuildmon/specs/todo/build-optimization-apis-plan.md
+#   ./jbuildmon/implement-spec.sh --ralph-loop --max-chunks 10 jbuildmon/specs/todo/myfeature-plan.md
+#   ./jbuildmon/implement-spec.sh --branch my-retry-v2 --ralph-loop jbuildmon/specs/myfeature-plan.md
 
 set -euo pipefail
 
@@ -56,9 +76,20 @@ MODEL="gpt-5.4"
 SPEC=""
 REDO_EXTRA=""
 BUGFIX_TEXT=""
+SQUASH=false
+RALPH_LOOP=false
+MAX_CHUNKS=20
+PROMPT_FILE=""
+BRANCH_OVERRIDE=""
+FILTER_OUTPUT=false  # filtering removed — use raw codex output
 AUTH_CACHE_DIR="${HOME}/.cache/codex-sandbox-auth"
-# auth file created like this from an alredy authenticated docker sandbox:
-# docker sandbox exec  codex-phandlemono cat /home/agent/.codex/auth.json > ~/.cache/codex-sandbox-auth/auth.json
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FILTER_AWK="$SCRIPT_DIR/codex-filter.awk"  # unused — filtering disabled
+# auth file created like this from an already authenticated docker sandbox:
+# docker sandbox exec codex-phandlemono cat /home/agent/.codex/auth.json > ~/.cache/codex-sandbox-auth/auth.json
+
+# shellcheck source=sandbox-common.sh
+source "$SCRIPT_DIR/sandbox-common.sh"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -69,6 +100,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --merge)
             MODE="merge"
+            shift
+            ;;
+        --squash)
+            SQUASH=true
             shift
             ;;
         --delete-all)
@@ -94,6 +129,30 @@ while [[ $# -gt 0 ]]; do
             else
                 shift
             fi
+            ;;
+        --ralph-loop)
+            if [[ "$MODE" != "run" ]]; then
+                echo "Error: --ralph-loop cannot be combined with --${MODE}" >&2
+                exit 1
+            fi
+            RALPH_LOOP=true
+            shift
+            ;;
+        --max-chunks)
+            MAX_CHUNKS="$2"
+            shift 2
+            ;;
+        --branch)
+            BRANCH_OVERRIDE="$2"
+            shift 2
+            ;;
+        --prompt)
+            PROMPT_FILE="$2"
+            shift 2
+            ;;
+        --no-filter)
+            FILTER_OUTPUT=false
+            shift
             ;;
         -h|--help)
             sed -n '2,/^$/s/^# //p' "$0"
@@ -122,6 +181,12 @@ if [[ "$MODE" == "bugfix" && -z "$BUGFIX_TEXT" ]]; then
     fi
 fi
 
+# --squash only valid with --merge
+if [[ "$SQUASH" == "true" && "$MODE" != "merge" ]]; then
+    echo "Error: --squash can only be used with --merge" >&2
+    exit 1
+fi
+
 if [[ -z "$SPEC" ]]; then
     echo "Usage: $0 [--model <model>] <spec-file>" >&2
     exit 1
@@ -129,6 +194,12 @@ fi
 
 if [[ ! -f "$SPEC" ]]; then
     echo "Error: spec file not found: $SPEC" >&2
+    exit 1
+fi
+
+# --ralph-loop requires a *-plan.md file
+if [[ "$RALPH_LOOP" == "true" && ! "$SPEC" =~ -plan\.md$ ]]; then
+    echo "Error: --ralph-loop requires a '*-plan.md' file, got: $(basename "$SPEC")" >&2
     exit 1
 fi
 
@@ -147,67 +218,89 @@ if [[ "$MODE" != "merge" && "$MODE" != "delete-all" ]]; then
     echo "Using codex credentials from $AUTH_FILE"
 fi
 
-inject_auth() {
-    local sandbox_name="$1"
-    # Codex sandbox runs as 'agent' user with home at /home/agent
-    # stdin redirection doesn't work with docker sandbox exec, so use base64
-    local auth_b64
-    auth_b64=$(base64 < "$AUTH_FILE")
-    docker sandbox exec "$sandbox_name" mkdir -p /home/agent/.codex
-    docker sandbox exec "$sandbox_name" sh -c "echo '$auth_b64' | base64 -d > /home/agent/.codex/auth.json"
-    echo "Credentials injected into sandbox '$sandbox_name'"
-}
-
-inject_env() {
-    local sandbox_name="$1"
-    # Persist Jenkins and git credentials in the sandbox
-    local env_b64
-    env_b64=$(base64 <<EOF
-export JENKINS_URL="${JENKINS_URL:-}"
-export JENKINS_USER_ID="${JENKINS_USER_ID:-}"
-export JENKINS_API_TOKEN="${JENKINS_API_TOKEN:-}"
-export GIT_HTTPS_USER="${GIT_HTTPS_USER:-}"
-export GIT_HTTPS_TOKEN="${GIT_HTTPS_TOKEN:-}"
-EOF
-)
-    docker sandbox exec "$sandbox_name" sh -c "echo '$env_b64' | base64 -d > /etc/sandbox-persistent.sh"
-    # Configure git credential helper for HTTPS push
-    docker sandbox exec "$sandbox_name" git config --global credential.helper \
-        '!f() { echo "username=${GIT_HTTPS_USER}"; echo "password=${GIT_HTTPS_TOKEN}"; }; f'
-    echo "Environment variables injected into sandbox '$sandbox_name'"
-}
-
-configure_network() {
-    local sandbox_name="$1"
-    # SANDBOX_ALLOW_HOSTS is a comma-separated list of hostnames to allow
-    # e.g. SANDBOX_ALLOW_HOSTS="palmer.garyclayburg.com,git.garyclayburg.com"
-    if [[ -z "${SANDBOX_ALLOW_HOSTS:-}" ]]; then
-        echo "Warning: SANDBOX_ALLOW_HOSTS not set — sandbox network will use default policy" >&2
-        return 0
+run_codex() {
+    # run_codex <sandbox> <model> <prompt> [output_file]
+    # Runs codex, optionally filtering output, optionally tee-ing to a file.
+    local sandbox="$1" model="$2" prompt="$3" outfile="${4:-}"
+    if [[ -n "$outfile" ]]; then
+        if [[ "$FILTER_OUTPUT" == "true" && -f "$FILTER_AWK" ]]; then
+            docker sandbox run "$sandbox" -- exec --model "$model" -c model_reasoning_effort="medium" "$prompt" </dev/tty \
+                | awk -f "$FILTER_AWK" | tee "$outfile"
+        else
+            docker sandbox run "$sandbox" -- exec --model "$model" -c model_reasoning_effort="medium" "$prompt" </dev/tty \
+                | tee "$outfile"
+        fi
+        return "${PIPESTATUS[0]}"
+    else
+        if [[ "$FILTER_OUTPUT" == "true" && -f "$FILTER_AWK" ]]; then
+            docker sandbox run "$sandbox" -- exec --model "$model" -c model_reasoning_effort="medium" "$prompt" </dev/tty \
+                | awk -f "$FILTER_AWK"
+        else
+            docker sandbox run "$sandbox" -- exec --model "$model" -c model_reasoning_effort="medium" "$prompt" </dev/tty
+        fi
     fi
-    local allow_args=()
-    IFS=',' read -ra hosts <<< "$SANDBOX_ALLOW_HOSTS"
-    for host in "${hosts[@]}"; do
-        host=$(echo "$host" | xargs)  # trim whitespace
-        allow_args+=(--allow-host "$host")
-    done
-    docker sandbox network proxy "$sandbox_name" --policy allow "${allow_args[@]}"
-    echo "Network proxy configured: ${hosts[*]}"
+}
+
+resolve_prompt() {
+    # resolve_prompt <default-prompt-text>
+    # If --prompt was given, use that file.
+    # Else if a companion .prompt file exists next to the spec/plan, use it.
+    # Else use the default text.
+    # In all cases, replace %SPEC% with $SPEC_REL.
+    local default_text="$1"
+    local raw_prompt=""
+
+    if [[ -n "$PROMPT_FILE" ]]; then
+        if [[ ! -f "$PROMPT_FILE" ]]; then
+            echo "Error: prompt file not found: $PROMPT_FILE" >&2
+            exit 1
+        fi
+        raw_prompt=$(<"$PROMPT_FILE")
+        echo "Using prompt file: $PROMPT_FILE" >&2
+    else
+        # Look for companion .prompt file (e.g. myfeature-plan.prompt)
+        local companion="${SPEC_ABS%.md}.prompt"
+        if [[ -f "$companion" ]]; then
+            raw_prompt=$(<"$companion")
+            echo "Using prompt file: $companion" >&2
+        fi
+    fi
+
+    if [[ -z "$raw_prompt" ]]; then
+        raw_prompt="$default_text"
+    fi
+
+    # Substitute placeholders
+    printf '%s' "${raw_prompt//'%SPEC%'/$SPEC_REL}"
 }
 
 # =============================================================================
 # Worktree setup
 # =============================================================================
 
-# Extract title from spec (first ## heading)
-TITLE=$(grep -m1 '^## ' "$SPEC" | sed 's/^## //')
-if [[ -z "$TITLE" ]]; then
-    echo "Error: could not find ## title in $SPEC" >&2
-    exit 1
+# Derive title and branch name.
+# Plan files (*-plan.md) always use the filename so that --ralph-loop, --merge,
+# --delete-all, and --redo all resolve to the same branch regardless of which
+# flags are present.
+if [[ "$SPEC" =~ -plan\.md$ ]]; then
+    # For plan files, derive branch from filename (strip -plan.md suffix)
+    TITLE=$(basename "$SPEC" -plan.md)
+    BRANCH=$(echo "$TITLE" | cut -c1-30)
+else
+    # Extract title from spec (first ## heading)
+    TITLE=$(grep -m1 '^## ' "$SPEC" | sed 's/^## //')
+    if [[ -z "$TITLE" ]]; then
+        echo "Error: could not find ## title in $SPEC" >&2
+        exit 1
+    fi
+    # Slugify title for branch name (keep short to avoid Docker socket path length limit)
+    BRANCH=$(echo "$TITLE" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//' | cut -c1-30)
 fi
 
-# Slugify title for branch name (keep short to avoid Docker socket path length limit)
-BRANCH=$(echo "$TITLE" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//' | cut -c1-30)
+# Apply --branch override if provided
+if [[ -n "$BRANCH_OVERRIDE" ]]; then
+    BRANCH="$BRANCH_OVERRIDE"
+fi
 
 # Get repo root
 REPO_ROOT=$(git rev-parse --show-toplevel)
@@ -226,8 +319,14 @@ echo "Mode:      $MODE"
 echo "Model:     $MODEL"
 echo "Worktree:  $WORKTREE_DIR"
 echo "Sandbox:   $SANDBOX_NAME"
+if [[ -n "$PROMPT_FILE" ]]; then
+    echo "Prompt:    $PROMPT_FILE"
+fi
 if [[ -n "$BUGFIX_TEXT" ]]; then
     echo "Bugfix:    $BUGFIX_TEXT"
+fi
+if [[ "$RALPH_LOOP" == "true" ]]; then
+    echo "MaxChunks: $MAX_CHUNKS"
 fi
 
 # Collect referenced files from the spec's References: header
@@ -260,12 +359,23 @@ if [[ "$MODE" == "merge" || "$MODE" == "delete-all" ]]; then
             exit 1
         fi
 
-        echo "Merging branch '$BRANCH' into $(git rev-parse --abbrev-ref HEAD)..."
-        if ! git merge "$BRANCH"; then
-            echo "Error: merge failed. Resolve conflicts and try again." >&2
-            exit 1
+        if [[ "$SQUASH" == "true" ]]; then
+            COMMIT_COUNT=$(git rev-list --count HEAD.."$BRANCH")
+            echo "Squash-merging branch '$BRANCH' ($COMMIT_COUNT commits) into $(git rev-parse --abbrev-ref HEAD)..."
+            if ! git merge --squash "$BRANCH"; then
+                echo "Error: squash merge failed. Resolve conflicts and try again." >&2
+                exit 1
+            fi
+            git commit -m "implement: $TITLE (squashed $COMMIT_COUNT commits)"
+            echo "Squash merge successful."
+        else
+            echo "Merging branch '$BRANCH' into $(git rev-parse --abbrev-ref HEAD)..."
+            if ! git merge "$BRANCH"; then
+                echo "Error: merge failed. Resolve conflicts and try again." >&2
+                exit 1
+            fi
+            echo "Merge successful."
         fi
-        echo "Merge successful."
         echo
     fi
 
@@ -285,11 +395,16 @@ if [[ "$MODE" == "merge" || "$MODE" == "delete-all" ]]; then
         CLEANUP_CMDS+=("git worktree remove --force \"$WORKTREE_DIR\"")
     fi
     if git rev-parse --verify "$BRANCH" >/dev/null 2>&1; then
-        if [[ "$MODE" == "delete-all" ]]; then
+        if [[ "$MODE" == "delete-all" || "$SQUASH" == "true" ]]; then
             CLEANUP_CMDS+=("git branch -D \"$BRANCH\"")
         else
             CLEANUP_CMDS+=("git branch -d \"$BRANCH\"")
         fi
+    fi
+    # Delete remote branch if it exists
+    remote_ref=$(git ls-remote --heads origin "$BRANCH" 2>/dev/null || true)
+    if [[ -n "$remote_ref" ]]; then
+        CLEANUP_CMDS+=("git push origin --delete \"$BRANCH\"")
     fi
 
     if [[ ${#CLEANUP_CMDS[@]} -eq 0 ]]; then
@@ -363,6 +478,7 @@ if [[ "$MODE" == "redo" ]]; then
 
     echo "Re-injecting credentials..."
     inject_auth "$SANDBOX_NAME"
+    inject_claude_auth "$SANDBOX_NAME"
 
     echo "Re-injecting environment..."
     inject_env "$SANDBOX_NAME"
@@ -370,11 +486,12 @@ if [[ "$MODE" == "redo" ]]; then
     echo
     echo "Starting codex (redo)..."
     echo
-    PROMPT="implement the DRAFT spec $SPEC . After implementation is complete and all tests pass, run 'buildgit push jenkins' to push your changes and verify the Jenkins CI build succeeds with no test failures. If the build fails, fix the issues and push again."
+    DEFAULT_REDO_PROMPT="implement the DRAFT spec %SPEC% . After implementation is complete and all tests pass, run 'buildgit push jenkins' to push your changes and verify the Jenkins CI build succeeds with no test failures. If the build fails, fix the issues and push again."
+    PROMPT=$(resolve_prompt "$DEFAULT_REDO_PROMPT")
     if [[ -n "$REDO_EXTRA" ]]; then
         PROMPT="$PROMPT $REDO_EXTRA"
     fi
-    docker sandbox run "$SANDBOX_NAME" -- exec --model "$MODEL" -c model_reasoning_effort="medium" "$PROMPT" </dev/tty
+    run_codex "$SANDBOX_NAME" "$MODEL" "$PROMPT"
     exit 0
 fi
 
@@ -419,6 +536,7 @@ if [[ "$MODE" == "bugfix" ]]; then
 
     echo "Re-injecting credentials..."
     inject_auth "$SANDBOX_NAME"
+    inject_claude_auth "$SANDBOX_NAME"
 
     echo "Re-injecting environment..."
     inject_env "$SANDBOX_NAME"
@@ -426,8 +544,10 @@ if [[ "$MODE" == "bugfix" ]]; then
     echo
     echo "Starting codex (bugfix)..."
     echo
-    PROMPT="The spec $SPEC was just implemented. There is an issue you need to fix. Fix the code for this issue. Make sure you test your fix by adding tests where necessary. After the fix is complete and all tests pass, run 'buildgit push jenkins' to push your changes and verify the Jenkins CI build succeeds with no test failures. If the build fails, fix the issues and push again. Bug: $BUGFIX_TEXT"
-    docker sandbox run "$SANDBOX_NAME" -- exec --model "$MODEL" -c model_reasoning_effort="medium" "$PROMPT" </dev/tty </dev/tty
+    DEFAULT_BUGFIX_PROMPT="The spec %SPEC% was just implemented. There is an issue you need to fix. Fix the code for this issue. Make sure you test your fix by adding tests where necessary. After the fix is complete and all tests pass, run 'buildgit push jenkins' to push your changes and verify the Jenkins CI build succeeds with no test failures. If the build fails, fix the issues and push again."
+    PROMPT=$(resolve_prompt "$DEFAULT_BUGFIX_PROMPT")
+    PROMPT="$PROMPT Bug: $BUGFIX_TEXT"
+    run_codex "$SANDBOX_NAME" "$MODEL" "$PROMPT"
     exit 0
 fi
 
@@ -470,23 +590,160 @@ fi
 # Create sandbox, inject auth, then run codex
 # =============================================================================
 echo
-echo "Creating sandbox..."
 # Mount the parent repo's .git dir so worktree git metadata resolves correctly
 GIT_DIR="$REPO_ROOT/.git"
-docker sandbox create --name "$SANDBOX_NAME" codex "$WORKTREE_DIR" "$GIT_DIR"
+if docker sandbox list 2>&1 | grep -q "$SANDBOX_NAME"; then
+    echo "Reusing existing sandbox '$SANDBOX_NAME'"
+else
+    echo "Creating sandbox..."
+    docker sandbox create --name "$SANDBOX_NAME" codex "$WORKTREE_DIR" "$GIT_DIR"
+    echo "Configuring network..."
+    configure_network "$SANDBOX_NAME"
+fi
 
 echo "Injecting credentials..."
 inject_auth "$SANDBOX_NAME"
+inject_claude_auth "$SANDBOX_NAME"
 
 echo "Injecting environment..."
 inject_env "$SANDBOX_NAME"
 
-echo "Configuring network..."
-configure_network "$SANDBOX_NAME"
+echo
+if [[ "$RALPH_LOOP" == "true" ]]; then
+    # =============================================================================
+    # --ralph-loop mode: implement one chunk per codex run until all are done
+    # =============================================================================
+    TEMP_OUTPUT=$(mktemp)
+    trap 'rm -f "$TEMP_OUTPUT"' EXIT
 
-echo
-echo "Starting codex..."
-echo
-PROMPT="implement the DRAFT spec $SPEC . After implementation is complete and all tests pass, run 'buildgit push jenkins' to push your changes and verify the Jenkins CI build succeeds with no test failures. If the build fails, fix the issues and push again."
-#PROMPT="add a blank line to a file named nonsensebuidltrigger.md, commit it, and then push it using 'buildgit push jenkins'.  After the build is complete, verify the build was successful and the test results are displayed."
-docker sandbox run "$SANDBOX_NAME" -- exec --model "$MODEL" -c model_reasoning_effort="medium" "$PROMPT" </dev/tty
+    PROGRESS_DIR="$REPO_ROOT/.claude/ralph-loop"
+    mkdir -p "$PROGRESS_DIR"
+    PROGRESS_FILE="$PROGRESS_DIR/${BRANCH}.log"
+
+    _progress() {
+        local msg="$1"
+        local ts
+        ts=$(date '+%Y-%m-%dT%H:%M:%S%z')
+        echo "${ts} [${BRANCH}] ${msg}" | tee -a "$PROGRESS_FILE"
+    }
+
+    echo "Starting ralph-loop (max $MAX_CHUNKS chunks)..."
+    echo "Progress log: $PROGRESS_FILE"
+    _progress "ralph-loop started — plan: $SPEC_REL  model: $MODEL  max-chunks: $MAX_CHUNKS"
+
+    COMPLETED=false
+    for ((iteration=1; iteration<=MAX_CHUNKS; iteration++)); do
+        echo
+        echo "=== Ralph-loop: chunk $iteration / $MAX_CHUNKS ==="
+        echo
+        _progress "chunk $iteration/$MAX_CHUNKS starting"
+
+        DEFAULT_RALPH_PROMPT="Study the implementation plan at %SPEC%. Read the '## SPEC Workflow' section in the plan and follow the 'Per-Chunk Workflow' steps exactly.
+
+Pick ONE uncompleted chunk to implement — the highest-priority chunk whose dependencies are all already completed. Implement ONLY that single chunk. Do NOT implement any other chunks.
+
+Follow these steps for the chunk:
+1. Run all unit tests FIRST: jbuildmon/test/bats/bin/bats jbuildmon/test/ (do NOT use any bats from \$PATH). Do not proceed if tests are failing.
+2. Implement the chunk as described in its Implementation Details.
+3. Write or update unit tests as described in the chunk's Test Plan.
+4. Run all unit tests again and confirm they pass (both new and existing).
+5. Fill in the '#### Implementation Log' section for this chunk in %SPEC% — summarize files changed, key decisions, and anything notable for the finalize step.
+6. Count the total chunks (T) and determine this chunk's number (N) based on its position in the Contents list.
+7. Commit and push using 'buildgit push jenkins' with a commit message starting with 'chunk N/T: ' followed by a brief description.
+8. Verify the Jenkins CI build succeeds with no test failures. If it fails, fix and push again.
+
+When done:
+1. Mark ONLY the one chunk you implemented as completed in %SPEC% (change '- [ ]' to '- [x]').
+2. Report how many (n) non-completed chunks remain and give a brief one-line summary of each remaining chunk.
+3. The final line of your output MUST be exactly: REMAINING_CHUNKS=n
+
+STOP after completing the single chunk. Do not continue to the next chunk."
+        PROMPT=$(resolve_prompt "$DEFAULT_RALPH_PROMPT")
+
+        run_codex "$SANDBOX_NAME" "$MODEL" "$PROMPT" "$TEMP_OUTPUT"
+        exit_code=${PIPESTATUS[0]}
+
+        if [[ $exit_code -ne 0 ]]; then
+            _progress "chunk $iteration/$MAX_CHUNKS FAILED — codex exit code $exit_code"
+            echo >&2
+            echo "Error: codex exited with code $exit_code on chunk $iteration. Stopping." >&2
+            exit $exit_code
+        fi
+
+        remaining=$(grep -o 'REMAINING_CHUNKS=[0-9]*' "$TEMP_OUTPUT" | tail -1 | cut -d= -f2)
+
+        if [[ -z "$remaining" ]]; then
+            _progress "chunk $iteration/$MAX_CHUNKS FAILED — REMAINING_CHUNKS sentinel not found in output"
+            echo >&2
+            echo "Warning: REMAINING_CHUNKS sentinel not found in output on chunk $iteration. Stopping." >&2
+            exit 1
+        fi
+
+        _progress "chunk $iteration/$MAX_CHUNKS complete — $remaining chunks remaining"
+        echo
+        echo "Chunk $iteration complete. $remaining chunks remaining."
+
+        if [[ "$remaining" == "0" ]]; then
+            COMPLETED=true
+            _progress "ralph-loop finished successfully after $iteration chunks"
+            echo
+            echo "All chunks complete! Starting finalize step..."
+            break
+        fi
+    done
+
+    if [[ "$COMPLETED" != "true" ]]; then
+        _progress "ralph-loop stopped — reached max chunks limit ($MAX_CHUNKS)"
+        echo >&2
+        echo "Error: reached max chunks limit ($MAX_CHUNKS) without completing all chunks." >&2
+        exit 1
+    fi
+
+    # =============================================================================
+    # Finalize step: update docs, metadata, spec state after all chunks are done
+    # =============================================================================
+    echo
+    echo "=== Ralph-loop: finalize step ==="
+    echo
+    _progress "finalize step starting"
+
+    DEFAULT_FINALIZE_PROMPT="All chunks in the implementation plan at %SPEC% have been completed. Read the entire plan file, including all '#### Implementation Log' entries filled in by each chunk.
+
+Now perform the Finalize Workflow from the plan's '## SPEC Workflow' section. Specifically:
+
+1. Update CHANGELOG.md (at the repository root) with all changes from this plan.
+2. Update README.md (at the repository root) if CLI options or usage changed.
+3. Update jbuildmon/skill/buildgit/SKILL.md if the changes affect the buildgit skill.
+4. Update jbuildmon/skill/buildgit/references/reference.md if output format or available options changed.
+5. Update the spec file: change its State: field to IMPLEMENTED and add it to the spec index in specs/README.md.
+6. Handle referenced files: if the spec lists files in its References: header, move those files to specs/done-reports/ and update the reference paths in the spec.
+7. Update CLAUDE.md AND README.md (at the repository root) if the output of 'buildgit --help' changes in any way.
+8. Commit and push using 'buildgit push jenkins' and verify CI passes.
+
+Use the Implementation Log entries from each chunk to write accurate, complete documentation updates."
+    FINALIZE_PROMPT=$(resolve_prompt "$DEFAULT_FINALIZE_PROMPT")
+
+    run_codex "$SANDBOX_NAME" "$MODEL" "$FINALIZE_PROMPT" "$TEMP_OUTPUT"
+    finalize_exit=${PIPESTATUS[0]}
+
+    if [[ $finalize_exit -ne 0 ]]; then
+        _progress "finalize step FAILED — codex exit code $finalize_exit"
+        echo >&2
+        echo "Error: finalize step exited with code $finalize_exit." >&2
+        exit $finalize_exit
+    fi
+
+    _progress "finalize step complete — ralph-loop fully done"
+    echo
+    echo "Finalize step complete. Ralph-loop fully done."
+else
+    # =============================================================================
+    # Normal run mode: implement the full spec in a single codex run
+    # =============================================================================
+    echo "Starting codex..."
+    echo
+    DEFAULT_RUN_PROMPT="implement the DRAFT spec %SPEC% . After implementation is complete and all tests pass, run 'buildgit push jenkins' to push your changes and verify the Jenkins CI build succeeds with no test failures. If the build fails, fix the issues and push again."
+    PROMPT=$(resolve_prompt "$DEFAULT_RUN_PROMPT")
+    #PROMPT="add a blank line to a file named nonsensebuidltrigger.md, commit it, and then push it using 'buildgit push jenkins'.  After the build is complete, verify the build was successful and the test results are displayed."
+    run_codex "$SANDBOX_NAME" "$MODEL" "$PROMPT"
+fi

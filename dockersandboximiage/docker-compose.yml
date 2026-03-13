@@ -1,0 +1,6 @@
+services:
+  codex-sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: registry:5000/docker-sandbox-buildgit:latest

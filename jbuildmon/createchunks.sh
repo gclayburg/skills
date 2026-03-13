@@ -19,8 +19,13 @@ if [ ! -f "$SPEC_PATH" ]; then
 fi
 SPECS_DIR=$(dirname "$SPEC_FILE")
 
-# Replace the '-spec.md' suffix in the SPEC_FILE name with '-plan.md' to generate the corresponding implementation plan file name.
-PLAN_FILE="${SPEC_FILE/-spec.md/-plan.md}"
+# Plan files always go in specs/ directory (not specs/todo/), regardless of where the spec is.
+# Replace the '-spec.md' suffix with '-plan.md' and place in the specs/ directory.
+PLAN_BASENAME="$(basename "${SPEC_FILE/-spec.md/-plan.md}")"
+# Strip trailing /todo or /todo/ from the specs dir path
+PLAN_DIR="${SPECS_DIR%/}"
+PLAN_DIR="${PLAN_DIR%/todo}"
+PLAN_FILE="${PLAN_DIR}/${PLAN_BASENAME}"
 if [ -f "$PLAN_FILE" ]; then
     echo "Error: Plan file '$PLAN_FILE' already exists for '$SPEC_FILE'."
     read -p "A plan file already exists for this spec: '$PLAN_FILE'. Do you want to continue anyway? (y/N): " confirm

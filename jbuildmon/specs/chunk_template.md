@@ -60,6 +60,11 @@ See spec [<Section Name>](./<spec-filename>.md#<anchor>) sections X.X-X.X.
 - <External dependencies to mock>
 
 **Dependencies:** <Chunk dependencies needed for test setup>
+
+#### Implementation Log
+
+<!-- Filled in by the implementing agent after completing this chunk.
+     Summarize: files changed, key decisions, anything the finalize step needs to know. -->
 ```
 
 ---

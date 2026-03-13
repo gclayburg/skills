@@ -4,11 +4,15 @@ Use these instructions for breaking down a large specification.  The main object
 
 ## implementation plan
 - Any file named `*-plan.md` or `*_plan.md` is an implementation plan that have rules for how they are updated
-- us `chunk_template.md` for template of sample chunk of implementation plan
+- Plan files are created in the `specs/` directory (not `specs/todo/`), regardless of where the source spec file is located. Plans are ready-to-implement artifacts.
+- Use `chunk_template.md` for template of sample chunk of implementation plan
 - Each chunk has a brief description, which has backing documentation in the referenced spec section
-- Each chunk starts as an un marked checkbox, meaning the task has not been completed.
-- When a task or 'chunk' in the plan has been implemented, it is marked as completed.
+- Each chunk starts as an unmarked checkbox in the `## Contents` list at the top of the plan. This is the **only** place checkboxes appear.
+- When a chunk has been implemented, its checkbox in the `## Contents` list is marked complete: `- [ ]` becomes `- [x]`.
+- Chunk detail sections (`## Chunk Detail`) use plain `### Chunk N: Title` headings with **no checkbox prefix**. Never put `- [ ]` in the detail section — it creates duplicate checkboxes that break progress counting tools.
+- Each chunk detail must include an `#### Implementation Log` subsection, initially empty. The implementing agent fills this in after completing the chunk (see chunk_template.md).
 - Once all chunks in a plan have been implemented, the corresponding plan.md file is not useful and can be considered archival status
+- The plan must explicitly reference the parent spec file path in its header
 
 ## Goals
 - Break down a large spec into smaller, independently runnable chunks or tasks of work.  Chunk and task terms are used interchangeably.
@@ -55,9 +59,53 @@ Use these instructions for breaking down a large specification.  The main object
 - Define explicit interfaces/contracts between packages (APIs, types, schemas, events), so packages can be implemented independently.
 
 ## Output format.
-- The name of this file will be based on the name of the spec being analyzed.  e.g. if we start with  a spec named majorfeature47-spec.md we will generate the file majorfeature47-plan.md
+- The name of this file will be based on the name of the spec being analyzed.  e.g. if we start with  a spec named majorfeature47-spec.md we will generate the file `specs/majorfeature47-plan.md` (always in `specs/`, not `specs/todo/`)
 - checklist items should have a title.  sub-items of the checklist would have references to the spec
 - see chunk_template.md for a format example
+
+## SPEC Workflow section (mandatory in every plan)
+
+Every generated plan must include a `## SPEC Workflow` section after the `## Chunk Detail` section. This section tells the implementing agent exactly what workflow to follow for each chunk and for the finalize step. Include it verbatim (adjusting the spec file path and test runner command for your project):
+
+```markdown
+## SPEC Workflow
+
+**Parent spec:** `<path-to-parent-spec-file.md>`
+
+Read `specs/CLAUDE.md` for full workflow rules. The workflow below applies to multi-chunk plan implementation.
+
+### Per-Chunk Workflow (every chunk must follow these steps)
+
+1. **Run all unit tests** before starting. Do not proceed if tests are failing.
+   - <!-- Replace with your project's test runner command -->
+2. **Implement the chunk** as described in its Implementation Details section.
+3. **Write or update unit tests** as described in the chunk's Test Plan section.
+4. **Run all unit tests** and confirm they pass (both new and existing).
+5. **Fill in the `#### Implementation Log`** for the chunk you implemented — summarize files changed, key decisions, and anything notable.
+6. **Commit and push** with a commit message that includes the chunk number (e.g., `"chunk 3/5: implement stage-level test fetching"`).
+7. **Verify** the CI build succeeds with no test failures. If it fails, fix and push again.
+
+### Finalize Workflow (after ALL chunks are complete)
+
+After all chunks have been implemented, a finalize step runs automatically to complete the remaining SPEC workflow tasks. The finalize agent reads the entire plan file (including all Implementation Log entries) and performs:
+
+1. **Update `CHANGELOG.md`** (at the repository root).
+2. **Update `README.md`** (at the repository root) if CLI options or usage changed.
+3. **Update the spec file:** Change its `State:` field to `IMPLEMENTED` and add it to the spec index in `specs/README.md`.
+4. **Handle referenced files:** If the spec lists files in its `References:` header, move those files to `specs/done-reports/` and update the reference paths in the spec.
+5. **Update `CLAUDE.md`** (at the repository root) if any user-facing interface changes.
+6. **Commit and push** and verify CI passes.
+```
+
+## Update the spec's Plan header
+
+After the plan file has been written, update the parent spec's `Plan:` header field to reference the generated plan file. Change `none` to the plan file path:
+
+```
+- **Plan:** `specs/majorfeature47-plan.md`
+```
+
+If the spec does not yet have a `Plan:` header line, insert one after the `Supersedes:` line.
 
 ## Ordering and dependence
 - The plan will not specify an order as to which chunks should be built first.

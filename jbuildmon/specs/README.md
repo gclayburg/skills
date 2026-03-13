@@ -1,8 +1,9 @@
 # Specs/ directory: Specifications, Implementation Plans, and Bug fixes workflow
 
 ### Todo directory
-The specs/todo directory contains specs or plans for new features and/or bug fixes.  
+The specs/todo directory contains raw ideas for new features and/or bug fixes.
 - files in this directory represent raw ideas that might need to be done in the future, but have not been spec'd, planned or implemented yet.
+- specs (`*-spec.md`) and plans (`*-plan.md`) that are ready to implement belong in `specs/`, not `specs/todo/`
 - see specs/todo/README.md for an index of all the todo items in the folder
 
 
@@ -69,3 +70,4 @@ These files represent completed specifications in the specs/ directory.  This li
 - 2026-03-09_threads-parallel-substage-visibility-spec.md  make `--threads` show active nested substages inside parallel branches, reuse substage duration estimates, and cover the behavior with redraw/unit/integration tests
 - 2026-03-06_format-stage-display-spec.md  add customizable format strings, width/alignment controls, and env/default precedence for `--threads` live per-stage TTY rows
 - 2026-03-08_agent-failure-diagnostics-spec.md  add `status --console-text [stage]`, `status --list-stages`, and verbose failed-test stdout/untruncated diagnostics for agent workflows
+- 2026-03-12_ralph-loop-workflow-spec.md  integrate SPEC workflow into ralph-loop multi-chunk plan execution with per-chunk workflow steps, implementation logs, and automated finalize step

@@ -19,6 +19,7 @@ Individual `*-spec.md` files are treated as the specification for each featureâ€
 - **Date:** `<ISO 8601 format with seconds, America/Denver timezone>`
 - **References:** list of `<other-raw-report-path.md>` or `<none>`
 - **Supersedes:** list of `<other-spec-file.md>`
+- **Plan:** `<path-to-plan.md>` or `none`
 - **State:** one of these valid values: `DRAFT`, `IMPLEMENTED`, `VALIDATED`
 ```
 
@@ -60,5 +61,28 @@ If user asks to implement a DRAFT spec:
 - mark the State: of the spec to `VALIDATED`
 
 ## Implementation plan files `*-plan.md`
-- implementation plan files are optional and only used do break down large specs into manageable chunks for independent execution
+- implementation plan files are optional and only used to break down large specs into manageable chunks for independent execution
+- plan files are created in `specs/`, not `specs/todo/` â€” they are ready-to-implement artifacts
 - see `taskcreator.md` for details on how plans and chunks are created and implemented
+
+### Multi-chunk plan workflow tiers
+
+When implementing a spec via a multi-chunk plan, the Implementation Workflow is split into
+two tiers:
+
+**Per-chunk workflow** (each chunk does these):
+- Run all unit tests before starting
+- Implement the chunk
+- Write/update unit tests
+- Run all unit tests
+- Fill in the chunk's `#### Implementation Log`
+- Commit (with chunk number in message, e.g. `"chunk 3/5: implement feature X"`) and push
+
+**Finalize workflow** (runs once after all chunks complete):
+- Update CHANGELOG.md, README.md, and any other project documentation
+- Update the spec file state to IMPLEMENTED
+- Move reference files to `specs/done-reports/`
+- Update CLAUDE.md if any user-facing interface changes
+- Push and verify CI
+
+Single-spec implementation (without a plan) continues to do everything in one pass as described above.
