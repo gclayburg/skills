@@ -11,6 +11,7 @@ All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are do
 - **`buildgit timing --compare <a> <b>`** — Compares two builds side-by-side with signed per-stage timing deltas and JSON `builds[]` plus `deltas`.
 - **Compact multi-build timing table** — `buildgit timing -n <count>` now renders a stage timing table across recent builds; `-n <count> --tests` prepends the table and keeps detailed suite timing for only the newest build.
 - **Pipeline test-suite enrichment** — `buildgit pipeline` now annotates stages that published JUnit results with per-stage test summaries in human output and `testSuites` arrays in JSON.
+- **`status -f --probe-all`** — Multibranch follow mode can now watch the top-level job and latch onto the first branch build that starts, including newly discovered branches, with support for `--once`, `--line`, `--json`, and continuous re-baselining between builds.
 
 ### Fixed
 - **stdout/stderr routing for monitoring output** — Normal `status`, `push`, and `build` output now goes to stdout, so redirects like `buildgit build > out.log` capture queue updates, stage progress, failure details, and verbose diagnostics. stderr is reserved for invalid input, Jenkins communication failures, and TTY redraw artifacts.

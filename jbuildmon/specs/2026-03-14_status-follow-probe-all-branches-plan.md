@@ -4,9 +4,9 @@
 
 ## Contents
 
-- [ ] **Chunk 1: Option parsing, validation, and multibranch branch listing API**
-- [ ] **Chunk 2: Probe-all polling loop and build detection**
-- [ ] **Chunk 3: Integration with follow mode and end-to-end tests**
+- [x] **Chunk 1: Option parsing, validation, and multibranch branch listing API**
+- [x] **Chunk 2: Probe-all polling loop and build detection**
+- [x] **Chunk 3: Integration with follow mode and end-to-end tests**
 
 
 ## Chunk Detail
@@ -114,8 +114,11 @@ Each test case must include a comment documenting the spec section it validates 
 
 #### Implementation Log
 
-<!-- Filled in by the implementing agent after completing this chunk.
-     Summarize: files changed, key decisions, anything the finalize step needs to know. -->
+- Files changed: `jbuildmon/skill/buildgit/scripts/lib/buildgit/status_parsing_and_format.sh`, `jbuildmon/skill/buildgit/scripts/lib/buildgit/job_helpers.sh`, `jbuildmon/skill/buildgit/scripts/buildgit`, `jbuildmon/test/buildgit_probe_all.bats`, and `jbuildmon/test/fixtures/multibranch_jobs_baseline.json`.
+- Added `STATUS_PROBE_ALL` parsing plus follow-only and explicit-branch validation, and threaded the flag through `_cmd_status_follow` as an extra argument for later chunks.
+- Added `_fetch_multibranch_baselines` to return a `{branch: build_number}` JSON map, with `null` `lastBuild` coerced to `0`.
+- For non-multibranch jobs, `status -f --probe-all` now warns and falls back to normal follow mode instead of failing hard.
+- Added focused Bats coverage for validation and baseline fetching; full suite passed locally at `865` tests before commit.
 
 ---
 
@@ -229,8 +232,10 @@ Each test case must include a comment documenting the spec section it validates.
 
 #### Implementation Log
 
-<!-- Filled in by the implementing agent after completing this chunk.
-     Summarize: files changed, key decisions, anything the finalize step needs to know. -->
+- Files changed: `jbuildmon/skill/buildgit/scripts/lib/buildgit/monitor_helpers.sh`, `jbuildmon/test/buildgit_probe_all.bats`, `jbuildmon/test/fixtures/multibranch_jobs_new_build.json`, and `jbuildmon/test/fixtures/multibranch_jobs_new_branch.json`.
+- Added `_follow_wait_probe_all` and `_follow_wait_probe_all_timeout`, with shared jq-based comparison logic that sorts branch keys before selecting the first branch whose latest build exceeds the baseline.
+- Probe-all wait helpers now log the spec-required waiting/detection messages and return `"branch build_number"` so Chunk 3 can wire branch selection into `_cmd_status_follow` without re-querying.
+- Extended probe-all Bats coverage for existing-branch detection, newly appeared branch detection, output messages, and timeout behavior; full suite passed locally at `870` tests before commit.
 
 ---
 
@@ -323,8 +328,11 @@ Each test case must include a comment documenting the spec section it validates.
 
 #### Implementation Log
 
-<!-- Filled in by the implementing agent after completing this chunk.
-     Summarize: files changed, key decisions, anything the finalize step needs to know. -->
+- Files changed: `jbuildmon/skill/buildgit/scripts/buildgit`, `jbuildmon/skill/buildgit/scripts/lib/buildgit/job_helpers.sh`, and `jbuildmon/test/buildgit_probe_all.bats`.
+- `_cmd_status_follow` now keeps `--probe-all` on the top-level multibranch job until a branch build is detected, then switches to the concrete branch job for monitoring, supports `--once`, and resets back to the top-level job between builds for continuous follow.
+- `_resolve_effective_job_name` now bypasses branch inference for `status -f --probe-all` on multibranch jobs so follow mode can probe all branches without requiring the current branch to exist in Jenkins first.
+- Added end-to-end probe-all tests for `--once`, timeout exit code `2`, continuous re-baselining, `--line`, `--json`, and the fact that push parsing remains unaffected.
+- Full local Bats suite passed after implementation: `876` tests.
 
 ---
 

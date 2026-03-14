@@ -26,7 +26,7 @@ Global Options:
   --version                      Show version number and exit
 
 Commands:
-  status [build#] [-f|--follow] [--once[=N]] [-n <count>] [--json] [--line] [--all] [--no-tests] [--format <fmt>] [--prior-jobs <N>] [--console-text [stage]] [--list-stages]
+  status [build#] [-f|--follow] [--once[=N]] [--probe-all] [-n <count>] [--json] [--line] [--all] [--no-tests] [--format <fmt>] [--prior-jobs <N>] [--console-text [stage]] [--list-stages]
                       Display Jenkins build status (latest or specific build)
                       build# can be absolute (31) or relative (0=latest, -1=previous, -2=two ago)
                       Default: one-line output (TTY adds color)
@@ -65,6 +65,8 @@ Monitor ongoing Jenkins build jobs:
   buildgit status -f               # Follow builds indefinitely
   buildgit status -f --once        # Follow current/next build, exit when done (10s timeout)
   buildgit status -f --once=20     # Same, but wait up to 20 seconds for build to start
+  buildgit status -f --probe-all   # Follow next build on any branch
+  buildgit status -f --probe-all --once   # Follow one build on any branch, then exit
   buildgit status -n 3 -f          # Show 3 prior builds, then follow indefinitely
   buildgit status -n 3 -f --once   # Show 3 prior builds, then follow once with timeout
   buildgit status -f --line        # Follow builds with one-line output + progress bar (TTY only)

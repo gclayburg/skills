@@ -1,11 +1,11 @@
 ## Add `--probe-all` flag to follow builds on any multibranch pipeline branch
 
 - **Date:** `2026-03-14T12:05:14-06:00`
-- **References:** `specs/todo/status-follow-new-all-branches.md`
+- **References:** `specs/done-reports/status-follow-new-all-branches.md`
 - **Supersedes:** none
 - **Plan:** `2026-03-14_status-follow-probe-all-branches-plan.md`
 - **Chunked:** `true`
-- **State:** `DRAFT`
+- **State:** `IMPLEMENTED`
 
 ## Problem Statement
 

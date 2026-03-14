@@ -108,6 +108,11 @@ _resolve_effective_job_name() {
     fi
 
     if [[ "$job_type" == "multibranch" ]]; then
+        if [[ "${STATUS_PROBE_ALL:-false}" == "true" && "$command_mode" == "status" ]]; then
+            echo "$top_job_name"
+            return 0
+        fi
+
         local inferred_branch=""
         case "$command_mode" in
             push)
@@ -134,6 +139,16 @@ _resolve_effective_job_name() {
     fi
 
     echo "$top_job_name"
+}
+
+_fetch_multibranch_baselines() {
+    local top_job_name="$1"
+    local job_path response
+
+    job_path=$(jenkins_job_path "$top_job_name")
+    response=$(jenkins_api "${job_path}/api/json?tree=jobs[name,lastBuild[number]]")
+
+    echo "$response" | jq '[.jobs[]? | {key: .name, value: (.lastBuild.number // 0)}] | from_entries'
 }
 
 # Validate Jenkins environment, resolve job name, verify connectivity
@@ -217,6 +232,12 @@ cmd_status() {
     if [[ "$STATUS_ONCE_MODE" == "true" && "$STATUS_FOLLOW_MODE" != "true" ]]; then
         _usage_error "Error: --once requires --follow (-f)"
     fi
+    if [[ "${STATUS_PROBE_ALL:-false}" == "true" && "$STATUS_FOLLOW_MODE" != "true" ]]; then
+        _usage_error "Error: --probe-all requires --follow (-f)"
+    fi
+    if [[ "${STATUS_PROBE_ALL:-false}" == "true" && -n "${JOB_NAME:-}" && "$JOB_NAME" == */* ]]; then
+        _usage_error "Error: --probe-all requires a top-level multibranch job name, not an explicit branch job"
+    fi
     if [[ "${STATUS_N_SET:-false}" == "true" && -n "$STATUS_BUILD_NUMBER" ]]; then
         _usage_error "Cannot combine a build number with -n"
     fi
@@ -237,13 +258,23 @@ cmd_status() {
             return 1
         fi
 
+        if [[ "${STATUS_PROBE_ALL:-false}" == "true" ]]; then
+            local probe_job_name="${_VALIDATED_JOB_NAME%%/*}"
+            local probe_job_type
+            probe_job_type=$(get_jenkins_job_type "$probe_job_name")
+            if [[ "$probe_job_type" != "multibranch" ]]; then
+                bg_log_warning "--probe-all is only supported for multibranch pipeline jobs; falling back to normal follow mode for '${_VALIDATED_JOB_NAME}'"
+                STATUS_PROBE_ALL=false
+            fi
+        fi
+
         # Display N prior completed builds before entering follow mode (if -n specified)
         if [[ "${STATUS_N_SET:-false}" == "true" ]]; then
             _display_n_prior_builds "$_VALIDATED_JOB_NAME" "$STATUS_LINE_COUNT" "$STATUS_LINE_MODE" "$STATUS_NO_TESTS"
         fi
 
         # Enter follow mode loop (never returns normally)
-        _cmd_status_follow "$_VALIDATED_JOB_NAME" "$STATUS_JSON_MODE" "$STATUS_ONCE_MODE" "$STATUS_ONCE_TIMEOUT" "$STATUS_LINE_MODE" "$STATUS_NO_TESTS" "$STATUS_PRIOR_JOBS"
+        _cmd_status_follow "$_VALIDATED_JOB_NAME" "$STATUS_JSON_MODE" "$STATUS_ONCE_MODE" "$STATUS_ONCE_TIMEOUT" "$STATUS_LINE_MODE" "$STATUS_NO_TESTS" "$STATUS_PRIOR_JOBS" "$STATUS_PROBE_ALL"
         # Should not reach here
         return 0
     fi

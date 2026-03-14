@@ -1,5 +1,5 @@
 # Parse status command options
-# Sets: STATUS_JSON_MODE, STATUS_FOLLOW_MODE, STATUS_ONCE_MODE, STATUS_LINE_MODE, STATUS_LINE_COUNT, STATUS_ALL_MODE, STATUS_NO_TESTS
+# Sets: STATUS_JSON_MODE, STATUS_FOLLOW_MODE, STATUS_ONCE_MODE, STATUS_LINE_MODE, STATUS_LINE_COUNT, STATUS_ALL_MODE, STATUS_NO_TESTS, STATUS_PROBE_ALL
 _parse_status_options() {
     STATUS_JSON_MODE=false
     STATUS_FOLLOW_MODE=false
@@ -17,6 +17,7 @@ _parse_status_options() {
     STATUS_CONSOLE_TEXT_MODE=false
     STATUS_CONSOLE_TEXT_STAGE=""
     STATUS_LIST_STAGES_MODE=false
+    STATUS_PROBE_ALL=false
     _LINE_FORMAT_STRING="$_DEFAULT_LINE_FORMAT"
 
     while [[ $# -gt 0 ]]; do
@@ -31,6 +32,10 @@ _parse_status_options() {
                 ;;
             -f|--follow)
                 STATUS_FOLLOW_MODE=true
+                shift
+                ;;
+            --probe-all)
+                STATUS_PROBE_ALL=true
                 shift
                 ;;
             --once)

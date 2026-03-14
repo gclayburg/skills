@@ -73,3 +73,4 @@ These files represent completed specifications in the specs/ directory.  This li
 - 2026-03-11_build-optimization-diagnostics-spec.md  add node-centric agent overlap diagnostics, stage-correlated timing views/comparisons, and pipeline test-suite enrichment for build optimization work
 - 2026-03-12_ralph-loop-workflow-spec.md  integrate SPEC workflow into ralph-loop multi-chunk plan execution with per-chunk workflow steps, implementation logs, and automated finalize step
 - 2026-03-14_standardize-stdout-stderr-spec.md  route normal status/monitoring output to stdout, keep only actual command or Jenkins communication failures on stderr, and preserve clean redirected logs for `status`, `push`, and `build`
+- 2026-03-14_status-follow-probe-all-branches-spec.md  add `status -f --probe-all` so multibranch follow mode can latch onto the next build from any branch and then monitor that detected branch job

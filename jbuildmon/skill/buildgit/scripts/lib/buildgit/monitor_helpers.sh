@@ -439,6 +439,86 @@ _follow_wait_for_new_build_timeout() {
     done
 }
 
+_detect_probe_all_candidate() {
+    local baselines_json="$1"
+    local current_json="$2"
+
+    jq -rn --argjson base "$baselines_json" --argjson curr "$current_json" '
+        $curr
+        | to_entries
+        | sort_by(.key)
+        | map(select((.value > 0) and (($base[.key] // 0) < .value)))
+        | first // empty
+        | "\(.key) \(.value)"
+    '
+}
+
+# Wait for a new multibranch build to start on any branch.
+# Arguments: top_job_name
+# Prints "branch build_number" on stdout and returns 0 on success.
+_follow_wait_probe_all() {
+    local top_job_name="$1"
+    local baselines
+    baselines=$(_fetch_multibranch_baselines "$top_job_name")
+
+    log_info "Waiting for Jenkins build ${top_job_name} (any branch) to start..."
+
+    while true; do
+        sleep "$POLL_INTERVAL"
+
+        local current detected
+        current=$(_fetch_multibranch_baselines "$top_job_name")
+        detected=$(_detect_probe_all_candidate "$baselines" "$current")
+
+        if [[ -n "$detected" ]]; then
+            local branch build_number
+            branch="${detected%% *}"
+            build_number="${detected##* }"
+            log_info "Build detected on branch '${branch}' — following ${top_job_name}/${branch} #${build_number}"
+            echo "${branch} ${build_number}"
+            return 0
+        fi
+    done
+}
+
+# Wait for a new multibranch build to start on any branch, with a timeout.
+# Arguments: top_job_name, timeout_secs
+# Prints "branch build_number" on stdout and returns 0 on success.
+# Returns 1 if timeout expires before a new build appears.
+_follow_wait_probe_all_timeout() {
+    local top_job_name="$1"
+    local timeout_secs="$2"
+    local baselines
+    baselines=$(_fetch_multibranch_baselines "$top_job_name")
+
+    log_info "Waiting for Jenkins build ${top_job_name} (any branch) to start..."
+
+    local deadline=$(( $(date +%s) + timeout_secs ))
+
+    while true; do
+        sleep "$POLL_INTERVAL"
+
+        local current detected
+        current=$(_fetch_multibranch_baselines "$top_job_name")
+        detected=$(_detect_probe_all_candidate "$baselines" "$current")
+
+        if [[ -n "$detected" ]]; then
+            local branch build_number
+            branch="${detected%% *}"
+            build_number="${detected##* }"
+            log_info "Build detected on branch '${branch}' — following ${top_job_name}/${branch} #${build_number}"
+            echo "${branch} ${build_number}"
+            return 0
+        fi
+
+        local now
+        now=$(date +%s)
+        if [[ $now -ge $deadline ]]; then
+            return 1
+        fi
+    done
+}
+
 # Collect N most recently completed build numbers.
 # Arguments: job_name, count, [max_build_number]
 # Sets global array: _PRIOR_COMPLETED_BUILD_NUMS (newest first)

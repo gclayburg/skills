@@ -50,6 +50,8 @@ push the staged changes and monitor the build.  fix any errors you find.
 | `scripts/buildgit status --list-stages [--json]` | List stage names or emit the raw stage array |
 | `scripts/buildgit status -f --once` | Follow current/next build to completion, then exit (10s timeout) |
 | `scripts/buildgit status -f --once=N` | Same, but wait up to N seconds for a build to start |
+| `scripts/buildgit status -f --probe-all` | Follow the next build that starts on any multibranch branch |
+| `scripts/buildgit status -f --probe-all --once` | Follow one multibranch branch build, then exit |
 | `scripts/buildgit status -n <N> -f --once` | Show N prior builds then follow once with timeout |
 | `scripts/buildgit status -f --line --once` | Follow builds with compact one-line output (TTY shows progress bar) |
 | `scripts/buildgit status -f --prior-jobs <N>` | Follow with N prior one-line builds + estimate preamble |
@@ -124,6 +126,7 @@ Normal build/status output goes to stdout, including queue updates, stage progre
 
 For snapshot mode defaults, `scripts/buildgit status` prints one-line output by default on both TTY and non-TTY stdout (TTY adds color).
 - Monitoring commands (`push`, `build`, `status -f`) print prior-jobs + estimated build time before monitoring starts
+- `scripts/buildgit status -f --probe-all` only applies to multibranch jobs, waits on the top-level job, then switches to the detected `job/branch` build once Jenkins starts it
 - Parallel branches with local `stages {}` blocks print as `Branch->Substage` rows under the branch, reuse the branch `║` marker and agent, expose `parallel_path` plus `parent_branch_stage` in `--json`, and `--threads` now shows the active `Branch->Substage` row live while follow-mode monitoring is running.
 
 Build reference rules:
@@ -138,6 +141,7 @@ On failed builds, buildgit shows a curated error summary by default.
 
 For agent-safe follow mode, prefer:
 - `scripts/buildgit status -f --once` to follow exactly one build and exit
+- `scripts/buildgit status -f --probe-all --once` when the next multibranch build may start on a different branch than the current checkout
 
 ## Build Optimization
 

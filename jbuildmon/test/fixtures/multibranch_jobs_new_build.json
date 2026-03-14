@@ -1,0 +1,7 @@
+{
+  "jobs": [
+    { "name": "main", "lastBuild": { "number": 85 } },
+    { "name": "feature-x", "lastBuild": { "number": 13 } },
+    { "name": "new-empty-branch", "lastBuild": null }
+  ]
+}

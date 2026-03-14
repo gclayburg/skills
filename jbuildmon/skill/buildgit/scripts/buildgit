@@ -54,7 +54,7 @@ Global Options:
   --version                      Show version number and exit
 
 Commands:
-  status [build#] [-f|--follow] [--once[=N]] [-n <count>] [--json] [--line] [--all] [--no-tests] [--format <fmt>] [--prior-jobs <N>] [--console-text [stage]] [--list-stages]
+  status [build#] [-f|--follow] [--once[=N]] [--probe-all] [-n <count>] [--json] [--line] [--all] [--no-tests] [--format <fmt>] [--prior-jobs <N>] [--console-text [stage]] [--list-stages]
                       Display Jenkins build status (latest or specific build)
                       build# can be absolute (31) or relative (0=latest, -1=previous, -2=two ago)
                       Default: one-line output (TTY adds color)
@@ -93,6 +93,8 @@ Monitor ongoing Jenkins build jobs:
   buildgit status -f               # Follow builds indefinitely
   buildgit status -f --once        # Follow current/next build, exit when done (10s timeout)
   buildgit status -f --once=20     # Same, but wait up to 20 seconds for build to start
+  buildgit status -f --probe-all   # Follow next build on any branch
+  buildgit status -f --probe-all --once   # Follow one build on any branch, then exit
   buildgit status -n 3 -f          # Show 3 prior builds, then follow indefinitely
   buildgit status -n 3 -f --once   # Show 3 prior builds, then follow once with timeout
   buildgit status -f --line        # Follow builds with one-line output + progress bar (TTY only)
@@ -256,18 +258,37 @@ _cmd_status_follow() {
     local line_mode="${5:-false}"
     local no_tests="${6:-false}"
     local prior_jobs_count="${7:-3}"
+    local probe_all="${8:-false}"
+    local top_job_name="${job_name%%/*}"
+    local preamble_job_name="$job_name"
 
     # Store job name for cleanup handler
     _FOLLOW_JOB_NAME="$job_name"
+
+    if [[ "$probe_all" == "true" ]]; then
+        local inferred_branch=""
+        inferred_branch=$(_get_current_git_branch 2>/dev/null) || true
+        if [[ -n "$inferred_branch" ]]; then
+            preamble_job_name="${top_job_name}/${inferred_branch}"
+        fi
+    fi
 
     # Set up interrupt handler for follow mode
     trap _follow_mode_cleanup SIGINT SIGTERM
 
     if [[ "$line_mode" != "true" ]]; then
         if [[ "$once_mode" == "true" ]]; then
-            log_info "Follow mode enabled (once, timeout=${once_timeout}s) - monitoring builds for job '$job_name'"
+            if [[ "$probe_all" == "true" ]]; then
+                log_info "Follow mode enabled (once, timeout=${once_timeout}s) - monitoring builds for job '$job_name' across all branches"
+            else
+                log_info "Follow mode enabled (once, timeout=${once_timeout}s) - monitoring builds for job '$job_name'"
+            fi
         else
-            bg_log_info "Follow mode enabled - monitoring builds for job '$job_name'"
+            if [[ "$probe_all" == "true" ]]; then
+                bg_log_info "Follow mode enabled - monitoring builds for job '$job_name' across all branches"
+            else
+                bg_log_info "Follow mode enabled - monitoring builds for job '$job_name'"
+            fi
             bg_log_info "Press Ctrl+C to stop monitoring"
         fi
     fi
@@ -279,6 +300,37 @@ _cmd_status_follow() {
     local starting_notified=false
 
     while true; do
+        if [[ "$probe_all" == "true" && "$job_name" == "$top_job_name" ]]; then
+            if [[ "$json_mode" != "true" && "$preamble_printed" != "true" ]]; then
+                _display_monitoring_preamble "$preamble_job_name" "$prior_jobs_count" "$no_tests"
+                preamble_printed=true
+            fi
+
+            local probe_output detected_line detected_branch detected_build_number
+            if [[ "$once_mode" == "true" ]]; then
+                if [[ "$once_timeout" == "0" ]]; then
+                    bg_log_error "no new build detected for 0 seconds"
+                    return 2
+                fi
+                if ! probe_output=$(_follow_wait_probe_all_timeout "$top_job_name" "$once_timeout"); then
+                    bg_log_error "no new build detected for ${once_timeout} seconds"
+                    return 2
+                fi
+            else
+                if [[ "$line_mode" != "true" ]]; then
+                    bg_log_essential "Waiting for first build of $top_job_name..."
+                fi
+                probe_output=$(_follow_wait_probe_all "$top_job_name")
+            fi
+
+            printf '%s\n' "$probe_output"
+            detected_line="${probe_output##*$'\n'}"
+            detected_build_number="${detected_line##* }"
+            detected_branch="${detected_line%% *}"
+            job_name="${top_job_name}/${detected_branch}"
+            first_check=false
+        fi
+
         # Get current build number and info
         local build_number
         build_number=$(get_last_build_number "$job_name")
@@ -462,6 +514,12 @@ _cmd_status_follow() {
         fi
 
         # Show waiting message in regular follow mode; line mode stays quiet between builds.
+        if [[ "$probe_all" == "true" ]]; then
+            starting_notified=false
+            job_name="$top_job_name"
+            continue
+        fi
+
         if [[ "$line_mode" != "true" ]]; then
             echo ""
             log_info "Waiting for next build of $job_name..."
@@ -588,6 +646,11 @@ _resolve_effective_job_name() {
     fi
 
     if [[ "$job_type" == "multibranch" ]]; then
+        if [[ "${STATUS_PROBE_ALL:-false}" == "true" && "$command_mode" == "status" ]]; then
+            echo "$top_job_name"
+            return 0
+        fi
+
         local inferred_branch=""
         case "$command_mode" in
             push)
@@ -747,6 +810,12 @@ cmd_status() {
     if [[ "$STATUS_ONCE_MODE" == "true" && "$STATUS_FOLLOW_MODE" != "true" ]]; then
         _usage_error "Error: --once requires --follow (-f)"
     fi
+    if [[ "${STATUS_PROBE_ALL:-false}" == "true" && "$STATUS_FOLLOW_MODE" != "true" ]]; then
+        _usage_error "Error: --probe-all requires --follow (-f)"
+    fi
+    if [[ "${STATUS_PROBE_ALL:-false}" == "true" && -n "${JOB_NAME:-}" && "$JOB_NAME" == */* ]]; then
+        _usage_error "Error: --probe-all requires a top-level multibranch job name, not an explicit branch job"
+    fi
     if [[ "${STATUS_N_SET:-false}" == "true" && -n "$STATUS_BUILD_NUMBER" ]]; then
         _usage_error "Cannot combine a build number with -n"
     fi
@@ -787,13 +856,23 @@ cmd_status() {
             return 1
         fi
 
+        if [[ "${STATUS_PROBE_ALL:-false}" == "true" ]]; then
+            local probe_job_name="${_VALIDATED_JOB_NAME%%/*}"
+            local probe_job_type
+            probe_job_type=$(get_jenkins_job_type "$probe_job_name")
+            if [[ "$probe_job_type" != "multibranch" ]]; then
+                bg_log_warning "--probe-all is only supported for multibranch pipeline jobs; falling back to normal follow mode for '${_VALIDATED_JOB_NAME}'"
+                STATUS_PROBE_ALL=false
+            fi
+        fi
+
         # Display N prior completed builds before entering follow mode (if -n specified)
         if [[ "${STATUS_N_SET:-false}" == "true" ]]; then
             _display_n_prior_builds "$_VALIDATED_JOB_NAME" "$STATUS_LINE_COUNT" "$STATUS_LINE_MODE" "$STATUS_NO_TESTS"
         fi
 
         # Enter follow mode loop (never returns normally)
-        _cmd_status_follow "$_VALIDATED_JOB_NAME" "$STATUS_JSON_MODE" "$STATUS_ONCE_MODE" "$STATUS_ONCE_TIMEOUT" "$STATUS_LINE_MODE" "$STATUS_NO_TESTS" "$STATUS_PRIOR_JOBS"
+        _cmd_status_follow "$_VALIDATED_JOB_NAME" "$STATUS_JSON_MODE" "$STATUS_ONCE_MODE" "$STATUS_ONCE_TIMEOUT" "$STATUS_LINE_MODE" "$STATUS_NO_TESTS" "$STATUS_PRIOR_JOBS" "$STATUS_PROBE_ALL"
         # Should not reach here
         return 0
     fi

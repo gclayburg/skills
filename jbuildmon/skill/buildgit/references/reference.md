@@ -29,6 +29,17 @@ SUCCESS     #56 id=0046c54 Tests=19/0/0 Took 6m 39s on 2026-02-24T10:14:10-0700 
 
 Use `--prior-jobs 0` to suppress the prior-jobs block.
 
+For multibranch jobs where you do not know which branch Jenkins will build next, use `--probe-all` with follow mode:
+
+```bash
+$ buildgit status -f --probe-all --once --job ralph1
+[10:23:48] ℹ Waiting for Jenkins build ralph1 (any branch) to start...
+[10:23:58] ℹ Build detected on branch 'feature-x' - following ralph1/feature-x #13
+SUCCESS     #13 id=39ab12c Tests=19/0/0 Took 5m 02s on 2026-03-14T10:23:58-0700 (just now)
+```
+
+`--probe-all` requires `-f`, rejects explicit branch jobs like `--job ralph1/main`, and falls back to normal single-job follow with a warning when the target job is not multibranch.
+
 On TTY monitoring commands, use the global flag `--threads` before the subcommand to show active pipeline stages above the overall build bar:
 
 ```bash
