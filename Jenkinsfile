@@ -44,6 +44,7 @@ pipeline {
                                     test/console_option.bats \
                                     test/buildgit_queue.bats \
                                     test/buildgit_pipeline.bats \
+                                    test/buildgit_timing.bats \
                                     test/test_helper.bats || true
                             '''
                         }
@@ -100,7 +101,7 @@ pipeline {
                         sh 'git submodule update --init --recursive --depth 1'
                         dir('jbuildmon') {
                             sh '''
-                                ./test/bats/bin/bats --formatter tap --report-formatter junit --output . --jobs 6 \
+                                ./test/bats/bin/bats --formatter tap --report-formatter junit --output . --jobs 8 \
                                     test/buildgit_build.bats \
                                     test/buildgit_status.bats \
                                     test/test_results_display.bats \
@@ -135,7 +136,7 @@ pipeline {
                         sh 'git submodule update --init --recursive --depth 1'
                         dir('jbuildmon') {
                             sh '''
-                                ./test/bats/bin/bats --formatter tap --report-formatter junit --output . --jobs 6 \
+                                ./test/bats/bin/bats --formatter tap --report-formatter junit --output . --jobs 8 \
                                     test/monitor_consolidation.bats \
                                     test/bug_show_all_stages.bats \
                                     test/monitoring_stages.bats \
@@ -166,7 +167,7 @@ pipeline {
                         docker {
                             image 'registry:5000/shell-jenkins-agent:latest'
                             alwaysPull true
-                            label 'slownode'
+                            label 'fastnode'
                         }
                     }
                     steps {
@@ -215,6 +216,7 @@ pipeline {
                                     header_integration.bats
                                     correlate_commit.bats
                                     bug_status_json.bats
+                                    buildgit_timing.bats
                                 "
 
                                 REMAINING=""
@@ -263,7 +265,7 @@ pipeline {
                                     : "${JENKINS_USER_ID:?JENKINS_USER_ID is not set}"
                                     : "${JENKINS_API_TOKEN:?JENKINS_API_TOKEN is not set}"
                                     export JENKINS_URL JENKINS_USER_ID JENKINS_API_TOKEN
-                                    ./test/bats/bin/bats --formatter tap --report-formatter junit --output . \
+                                    ./test/bats/bin/bats --formatter tap --report-formatter junit --output . --jobs 9 \
                                         test/integration/integration_tests.bats
                                 '''
                             }

@@ -292,11 +292,11 @@ _duration_to_seconds() {
     echo "$total"
 }
 
-_ensure_build_complete() {
-    local cache_dir
-    local failure_file
+_ensure_all_cached() {
+    local cache_dir failure_file lock_dir
     cache_dir="$(_cache_dir)"
     failure_file="$(_cache_file failure.txt)"
+    lock_dir="$(_cache_file lock.lck)"
     mkdir -p "$cache_dir"
 
     if [[ -f "$(_cache_file ready)" ]]; then
@@ -307,94 +307,44 @@ _ensure_build_complete() {
         return 1
     fi
 
-    _record_failure() {
-        printf '%s\n' "$1" > "$failure_file"
-        echo "$1" >&2
+    # mkdir-based mutex: only one parallel test runner does the real work
+    if ! mkdir "$lock_dir" 2>/dev/null; then
+        local deadline=$((SECONDS + 300))
+        while (( SECONDS < deadline )); do
+            if [[ -f "$(_cache_file ready)" ]]; then
+                return 0
+            fi
+            if [[ -f "$failure_file" ]]; then
+                cat "$failure_file" >&2
+                return 1
+            fi
+            sleep 1
+        done
+        echo "_ensure_all_cached: timed out waiting for cache to become ready" >&2
         return 1
-    }
-
-    if ! _wait_for_integration_job_indexed "$INTEGRATION_JOB" 180; then
-        _record_failure "Integration job branch was not indexed within 180s: ${INTEGRATION_JOB}"
     fi
 
-    local trigger_output trigger_rc queue_url build_number
-    set +e
-    trigger_output=$("${BUILDGIT}" --verbose --job "$INTEGRATION_JOB" build --no-follow 2>&1)
-    trigger_rc=$?
-    set -e
-    printf '%s\n' "$trigger_output" > "$(_cache_file trigger_output.txt)"
-
-    if [[ $trigger_rc -ne 0 ]]; then
-        echo "$trigger_output" >&2
-        _record_failure "Failed to trigger integration pipeline job ${INTEGRATION_JOB}"
-    fi
-
-    queue_url=$(printf '%s\n' "$trigger_output" | sed -n 's/^.*Queue item: //p' | tail -1)
-    if [[ -z "$queue_url" ]]; then
-        echo "$trigger_output" >&2
-        _record_failure "buildgit did not report a Jenkins queue URL for ${INTEGRATION_JOB}"
-    fi
-    printf '%s\n' "$queue_url" > "$(_cache_file queue_url.txt)"
-
-    if ! build_number=$(_wait_for_queue_build_number "$queue_url" 180); then
-        _record_failure "Could not resolve Jenkins build number for ${INTEGRATION_JOB}"
-    fi
-    printf '%s\n' "$build_number" > "$(_cache_file build_number.txt)"
-
-    if ! _wait_for_specific_build_completion "$INTEGRATION_JOB" "$build_number" 180; then
-        _record_failure "Integration pipeline build #${build_number} did not complete in time"
-    fi
-
-    local json_output json_rc snapshot_output snapshot_rc
-    set +e
-    json_output=$("${BUILDGIT}" --job "$INTEGRATION_JOB" status "$build_number" --json 2>&1)
-    json_rc=$?
-    set -e
-    printf '%s\n' "$json_output" > "$(_cache_file status.json)"
-    printf '%s\n' "$json_rc" > "$(_cache_file status_json_exit_code.txt)"
-    if [[ $json_rc -ne 0 || -z "$json_output" ]]; then
-        echo "$json_output" >&2
-        _record_failure "Failed to capture JSON status for ${INTEGRATION_JOB} #${build_number}"
-    fi
-
-    set +e
-    snapshot_output=$("${BUILDGIT}" --job "$INTEGRATION_JOB" status "$build_number" --all 2>&1)
-    snapshot_rc=$?
-    set -e
-    printf '%s\n' "$snapshot_output" > "$(_cache_file status_all.txt)"
-    printf '%s\n' "$snapshot_rc" > "$(_cache_file status_all_exit_code.txt)"
-    if [[ $snapshot_rc -ne 0 || -z "$snapshot_output" ]]; then
-        echo "$snapshot_output" >&2
-        _record_failure "Failed to capture full status output for ${INTEGRATION_JOB} #${build_number}"
-    fi
-
-    touch "$(_cache_file ready)"
-}
-
-_ensure_build_command_monitor_complete() {
-    local cache_dir
-    local failure_file
-    cache_dir="$(_cache_dir)"
-    failure_file="$(_cache_file build_monitor_failure.txt)"
-    mkdir -p "$cache_dir"
-
-    if [[ -f "$(_cache_file build_monitor_ready)" ]]; then
+    # Check again after acquiring lock (another process may have just finished)
+    if [[ -f "$(_cache_file ready)" ]]; then
+        rmdir "$lock_dir" 2>/dev/null || true
         return 0
     fi
-    if [[ -f "$failure_file" ]]; then
-        cat "$failure_file" >&2
+
+    if ! _wait_for_integration_job_indexed "$INTEGRATION_JOB" 180; then
+        printf '%s\n' "Integration job branch was not indexed within 180s: ${INTEGRATION_JOB}" > "$failure_file"
+        echo "Integration job branch was not indexed within 180s: ${INTEGRATION_JOB}" >&2
+        rmdir "$lock_dir" 2>/dev/null || true
         return 1
     fi
 
-    _record_build_monitor_failure() {
-        printf '%s\n' "$1" > "$failure_file"
-        echo "$1" >&2
-        return 1
-    }
-
+    # Trigger ONE build and capture live monitoring output.
+    # MONITOR_SETTLE_MAX_SECONDS: after the sub-job completes (19s), the default
+    # settle period polls for 45 iterations; each iteration also runs API calls
+    # (~3-4s), so wall-clock settle time is 45×4≈180s. Capping at 10 reduces
+    # settle to ~40s while still allowing 10 stable-state checks for stage data.
     local build_output build_rc
     set +e
-    build_output=$("${BUILDGIT}" --job "$INTEGRATION_JOB" build 2>&1)
+    build_output=$(MONITOR_SETTLE_MAX_SECONDS=10 MONITOR_SETTLE_STABLE_POLLS=1 "${BUILDGIT}" --job "$INTEGRATION_JOB" build --prior-jobs 0 3>&- 2>&1)
     build_rc=$?
     set -e
     printf '%s\n' "$build_output" > "$(_cache_file build_monitor_output.txt)"
@@ -402,10 +352,67 @@ _ensure_build_command_monitor_complete() {
 
     if [[ $build_rc -ne 0 ]]; then
         echo "$build_output" >&2
-        _record_build_monitor_failure "buildgit build monitoring failed for ${INTEGRATION_JOB}"
+        printf '%s\n' "buildgit build failed for ${INTEGRATION_JOB}" > "$failure_file"
+        rmdir "$lock_dir" 2>/dev/null || true
+        return 1
     fi
 
+    # Extract build number from monitoring output to enable parallel status fetches
+    local build_number
+    build_number=$(printf '%s\n' "$build_output" | grep -E '^Build:[[:space:]]+#[0-9]+' | head -1 | sed 's/.*#//')
+    if [[ -z "$build_number" ]]; then
+        printf '%s\n' "Could not extract build number from buildgit build output for ${INTEGRATION_JOB}" > "$failure_file"
+        rmdir "$lock_dir" 2>/dev/null || true
+        return 1
+    fi
+    printf '%s\n' "$build_number" > "$(_cache_file build_number.txt)"
+
+    # Fetch status --json and status --all in parallel (3>&- avoids bats fd 3 inheritance)
+    local json_tmp all_tmp
+    json_tmp="$(_cache_dir)/json_out.tmp"
+    all_tmp="$(_cache_dir)/all_out.tmp"
+    local json_rc=0 all_rc=0
+
+    set +e
+    "${BUILDGIT}" --job "$INTEGRATION_JOB" status --json > "$json_tmp" 2>&1 3>&- &
+    local json_pid=$!
+    "${BUILDGIT}" --job "$INTEGRATION_JOB" status "$build_number" --all > "$all_tmp" 2>&1 3>&- &
+    local all_pid=$!
+
+    wait $json_pid; json_rc=$?
+    wait $all_pid; all_rc=$?
+    set -e
+
+    mv "$json_tmp" "$(_cache_file status.json)"
+    printf '%s\n' "$json_rc" > "$(_cache_file status_json_exit_code.txt)"
+    mv "$all_tmp" "$(_cache_file status_all.txt)"
+    printf '%s\n' "$all_rc" > "$(_cache_file status_all_exit_code.txt)"
+
+    if [[ $json_rc -ne 0 || ! -s "$(_cache_file status.json)" ]]; then
+        cat "$(_cache_file status.json)" >&2
+        printf '%s\n' "Failed to capture JSON status for ${INTEGRATION_JOB}" > "$failure_file"
+        rmdir "$lock_dir" 2>/dev/null || true
+        return 1
+    fi
+
+    if [[ $all_rc -ne 0 || ! -s "$(_cache_file status_all.txt)" ]]; then
+        cat "$(_cache_file status_all.txt)" >&2
+        printf '%s\n' "Failed to capture full status output for ${INTEGRATION_JOB} #${build_number}" > "$failure_file"
+        rmdir "$lock_dir" 2>/dev/null || true
+        return 1
+    fi
+
+    touch "$(_cache_file ready)"
     touch "$(_cache_file build_monitor_ready)"
+    rmdir "$lock_dir" 2>/dev/null || true
+}
+
+_ensure_build_complete() {
+    _ensure_all_cached
+}
+
+_ensure_build_command_monitor_complete() {
+    _ensure_all_cached
 }
 
 @test "parallel-substages: build completes successfully" {

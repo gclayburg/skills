@@ -3,7 +3,7 @@ pipeline {
         docker {
             image 'registry:5000/shell-jenkins-agent:latest'
             alwaysPull true
-            label 'fastnode'
+            label 'slownode'
         }
     }
     options {
