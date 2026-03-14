@@ -89,19 +89,17 @@ _timestamp() {
 
 # INFO level - Only output if VERBOSE_MODE=true
 # Use for: "Verifying Jenkins connectivity...", "Found job name", etc.
-# Note: Output to stderr to avoid corrupting command substitution return values
 bg_log_info() {
     if [[ "$VERBOSE_MODE" == "true" ]]; then
-        log_info "$@" >&2
+        log_info "$@"
     fi
 }
 
 # SUCCESS level - Only output if VERBOSE_MODE=true
 # Use for: "Connected to Jenkins", "Job found", etc.
-# Note: Output to stderr to avoid corrupting command substitution return values
 bg_log_success() {
     if [[ "$VERBOSE_MODE" == "true" ]]; then
-        log_success "$@" >&2
+        log_success "$@"
     fi
 }
 
@@ -123,18 +121,14 @@ bg_log_essential() {
 
 # PROGRESS level - Always output for real-time monitoring feedback
 # Use for: stage completions, elapsed time updates during monitoring
-# Note: Uses stderr to avoid corrupting any command substitution
-# Spec reference: bug2026-02-01-buildgit-monitoring-spec.md, Issue 3
 bg_log_progress() {
-    log_info "$@" >&2
+    log_info "$@"
 }
 
 # PROGRESS_SUCCESS level - Always output for stage completion messages
 # Use for: stage completion messages with checkmark formatting
-# Note: Uses stderr to avoid corrupting any command substitution
-# Spec reference: bug2026-02-01-buildgit-monitoring-spec.md, Issue 3
 bg_log_progress_success() {
-    log_success "$@" >&2
+    log_success "$@"
 }
 
 # INFO level - General status updates (blue indicator)

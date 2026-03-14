@@ -1,10 +1,10 @@
 ## Standardize stdout/stderr output streams for buildgit
 
 - **Date:** `2026-03-14T11:04:28-06:00`
-- **References:** `specs/todo/standardize-stdout-stderr.md`
+- **References:** `specs/done-reports/standardize-stdout-stderr.md`
 - **Supersedes:** none
 - **Plan:** `none`
-- **State:** `DRAFT`
+- **State:** `IMPLEMENTED`
 
 ## Problem Statement
 

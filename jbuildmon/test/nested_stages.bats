@@ -32,6 +32,15 @@ teardown() {
     fi
 }
 
+capture_nested_stage_changes() {
+    local state_file="${TEST_TEMP_DIR}/nested_stage_state"
+    local stage_file="${TEST_TEMP_DIR}/nested_stage_output"
+
+    BUILDGIT_SIDE_EFFECT_FD=3 _track_nested_stage_changes "$@" 3>"$stage_file" >"$state_file"
+    CAPTURED_STAGE_OUTPUT="$(cat "$stage_file")"
+    CAPTURED_STATE="$(cat "$state_file")"
+}
+
 # =============================================================================
 # Test Cases: _extract_agent_name
 # =============================================================================
@@ -1166,9 +1175,10 @@ Reporting on default agent...
 
     local previous='[]'
     local stderr_output
-    stderr_output=$(_track_nested_stage_changes "test-job" "42" "$previous" "false" 2>&1 >/dev/null)
     local output
-    output=$(_track_nested_stage_changes "test-job" "42" "$previous" "false" 2>/dev/null)
+    capture_nested_stage_changes "test-job" "42" "$previous" "false"
+    output="$CAPTURED_STATE"
+    stderr_output="$CAPTURED_STAGE_OUTPUT"
 
     # Should print the completed stage
     [[ "$stderr_output" == *"Stage: Build (15s)"* ]]
@@ -1214,7 +1224,8 @@ Running on buildagent9 in /ws'
 
     local previous='[]'
     local stderr_output
-    stderr_output=$(_track_nested_stage_changes "parent-job" "1" "$previous" "false" 2>&1 >/dev/null)
+    capture_nested_stage_changes "parent-job" "1" "$previous" "false"
+    stderr_output="$CAPTURED_STAGE_OUTPUT"
 
     # Should print the downstream stage completion
     [[ "$stderr_output" == *"Build Handle->Compile"* ]]
@@ -1230,7 +1241,8 @@ Running on buildagent9 in /ws'
     get_console_output() { echo "Running on agent1 in /ws"; }
 
     local first_state
-    first_state=$(_track_nested_stage_changes "test-job" "42" "[]" "false" 2>/dev/null)
+    capture_nested_stage_changes "test-job" "42" "[]" "false"
+    first_state="$CAPTURED_STATE"
 
     # Verify composite structure
     [[ $(echo "$first_state" | jq 'has("parent")') == "true" ]]
@@ -1249,7 +1261,8 @@ Running on buildagent9 in /ws'
 
     local previous='[{"name":"Build","status":"IN_PROGRESS","startTimeMillis":0,"durationMillis":0}]'
     local stderr_output
-    stderr_output=$(_track_nested_stage_changes "test-job" "42" "$previous" "false" 2>&1 >/dev/null)
+    capture_nested_stage_changes "test-job" "42" "$previous" "false"
+    stderr_output="$CAPTURED_STAGE_OUTPUT"
 
     # Should print the completed stage (transition from IN_PROGRESS to SUCCESS)
     [[ "$stderr_output" == *"Stage: Build (5s)"* ]]

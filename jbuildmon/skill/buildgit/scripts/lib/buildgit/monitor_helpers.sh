@@ -78,7 +78,9 @@ __buildgit_monitor_build_impl() {
     local estimate_ms=""
     local render_progress=false
     local stage_log_file=""
+    local stage_state_file=""
     local deferred_log_file=""
+    stage_state_file="$(mktemp "${TMPDIR:-/tmp}/buildgit-stage-state.XXXXXX")"
     if [[ "$show_progress_footer" == "true" ]]; then
         if _status_stdout_is_tty; then
             render_progress=true
@@ -109,6 +111,7 @@ __buildgit_monitor_build_impl() {
             fi
             if [[ $consecutive_failures -ge 5 ]]; then
                 rm -f "$stage_log_file" 2>/dev/null || true
+                rm -f "$stage_state_file" 2>/dev/null || true
                 rm -f "$deferred_log_file" 2>/dev/null || true
                 bg_log_error "Too many consecutive API failures ($consecutive_failures)"
                 return 1
@@ -142,11 +145,13 @@ __buildgit_monitor_build_impl() {
         # Spec: bug-show-all-stages.md - all stages must be shown
         # Spec: nested-jobs-display-spec.md - track downstream builds in real-time
         if [[ "$render_progress" == "true" && -n "$stage_log_file" ]]; then
-            stage_state=$(_track_nested_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE" 2>"$stage_log_file")
+            BUILDGIT_SIDE_EFFECT_FD=3 _track_nested_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE" 3>"$stage_log_file" >"$stage_state_file"
+            stage_state=$(cat "$stage_state_file")
             stage_output=$(cat "$stage_log_file")
             : > "$stage_log_file"
         else
-            stage_state=$(_track_nested_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE")
+            BUILDGIT_SIDE_EFFECT_FD=3 _track_nested_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE" 3>&1 >"$stage_state_file"
+            stage_state=$(cat "$stage_state_file")
         fi
 
         local building result
@@ -164,7 +169,7 @@ __buildgit_monitor_build_impl() {
                 deferred_output=""
             fi
             if [[ -n "$stage_output" ]]; then
-                printf '%s\n' "$stage_output" >&2
+                printf '%s\n' "$stage_output"
                 stage_output=""
             fi
             # Reconcile late-arriving nested stage metadata before exiting monitor.
@@ -183,14 +188,16 @@ __buildgit_monitor_build_impl() {
                 settle_iteration_start=$(date +%s)
                 local settle_stage_output=""
                 if [[ "$render_progress" == "true" && -n "$stage_log_file" ]]; then
-                    stage_state=$(_track_nested_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE" 2>"$stage_log_file")
+                    BUILDGIT_SIDE_EFFECT_FD=3 _track_nested_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE" 3>"$stage_log_file" >"$stage_state_file"
+                    stage_state=$(cat "$stage_state_file")
                     settle_stage_output=$(cat "$stage_log_file")
                     : > "$stage_log_file"
                     if [[ -n "$settle_stage_output" ]]; then
-                        printf '%s\n' "$settle_stage_output" >&2
+                        printf '%s\n' "$settle_stage_output"
                     fi
                 else
-                    stage_state=$(_track_nested_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE")
+                    BUILDGIT_SIDE_EFFECT_FD=3 _track_nested_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE" 3>&1 >"$stage_state_file"
+                    stage_state=$(cat "$stage_state_file")
                 fi
                 settle_iteration_end=$(date +%s)
                 settle_iteration_cost=$((settle_iteration_end - settle_iteration_start + 1))
@@ -209,14 +216,16 @@ __buildgit_monitor_build_impl() {
                 settle_elapsed=$((settle_elapsed + settle_iteration_cost))
             done
             if [[ "$render_progress" == "true" && -n "$stage_log_file" ]]; then
-                stage_state=$(_track_nested_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE" 2>"$stage_log_file")
+                BUILDGIT_SIDE_EFFECT_FD=3 _track_nested_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE" 3>"$stage_log_file" >"$stage_state_file"
+                stage_state=$(cat "$stage_state_file")
                 stage_output=$(cat "$stage_log_file")
                 : > "$stage_log_file"
                 if [[ -n "$stage_output" ]]; then
-                    printf '%s\n' "$stage_output" >&2
+                    printf '%s\n' "$stage_output"
                 fi
             else
-                stage_state=$(_track_nested_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE")
+                BUILDGIT_SIDE_EFFECT_FD=3 _track_nested_stage_changes "$job_name" "$build_number" "$stage_state" "$VERBOSE_MODE" 3>&1 >"$stage_state_file"
+                stage_state=$(cat "$stage_state_file")
             fi
             tracking_complete=$(echo "$stage_state" | jq -r '.tracking_complete // false' 2>/dev/null || echo false)
             if [[ "$tracking_complete" != "true" ]]; then
@@ -226,14 +235,16 @@ __buildgit_monitor_build_impl() {
                     local flush_iteration_start flush_iteration_end flush_iteration_cost
                     flush_iteration_start=$(date +%s)
                     if [[ "$render_progress" == "true" && -n "$stage_log_file" ]]; then
-                        stage_state=$(_force_flush_completion_stages "$job_name" "$build_number" "$stage_state" 2>"$stage_log_file")
+                        BUILDGIT_SIDE_EFFECT_FD=3 _force_flush_completion_stages "$job_name" "$build_number" "$stage_state" 3>"$stage_log_file" >"$stage_state_file"
+                        stage_state=$(cat "$stage_state_file")
                         stage_output=$(cat "$stage_log_file")
                         : > "$stage_log_file"
                         if [[ -n "$stage_output" ]]; then
-                            printf '%s\n' "$stage_output" >&2
+                            printf '%s\n' "$stage_output"
                         fi
                     else
-                        stage_state=$(_force_flush_completion_stages "$job_name" "$build_number" "$stage_state")
+                        BUILDGIT_SIDE_EFFECT_FD=3 _force_flush_completion_stages "$job_name" "$build_number" "$stage_state" 3>&1 >"$stage_state_file"
+                        stage_state=$(cat "$stage_state_file")
                     fi
                     flush_iteration_end=$(date +%s)
                     flush_iteration_cost=$((flush_iteration_end - flush_iteration_start + 1))
@@ -245,6 +256,7 @@ __buildgit_monitor_build_impl() {
                 done
             fi
             rm -f "$stage_log_file" 2>/dev/null || true
+            rm -f "$stage_state_file" 2>/dev/null || true
             rm -f "$deferred_log_file" 2>/dev/null || true
             return 0
         fi
@@ -267,7 +279,7 @@ __buildgit_monitor_build_impl() {
             printf '%s\n' "$deferred_output"
         fi
         if [[ -n "$stage_output" ]]; then
-            printf '%s\n' "$stage_output" >&2
+            printf '%s\n' "$stage_output"
         fi
         if [[ "$emit_verbose_progress" == "true" ]]; then
             bg_log_progress "Build in progress... (${elapsed}s elapsed)"
@@ -292,9 +304,10 @@ __buildgit_monitor_build_impl() {
         echo ""
     fi
     rm -f "$stage_log_file" 2>/dev/null || true
+    rm -f "$stage_state_file" 2>/dev/null || true
     rm -f "$deferred_log_file" 2>/dev/null || true
     bg_log_error "Build timeout: exceeded ${MAX_BUILD_TIME} seconds"
-    bg_log_info "Build may still be running - check Jenkins console" >&2
+    bg_log_info "Build may still be running - check Jenkins console"
     return 1
 }
 

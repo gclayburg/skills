@@ -82,6 +82,7 @@ print_stage_line() {
     local indent="${4:-}"
     local agent_prefix="${5:-}"
     local parallel_marker="${6:-}"
+    local output_fd="${BUILDGIT_SIDE_EFFECT_FD:-1}"
 
     local timestamp
     timestamp=$(_timestamp)
@@ -127,7 +128,7 @@ print_stage_line() {
 
     # Build and output the stage line
     # Format: [HH:MM:SS] ℹ   Stage: <indent><parallel_marker>[agent] <name> (<suffix>)
-    echo "${color}[${timestamp}] ℹ   Stage: ${indent}${parallel_marker}${formatted_agent_prefix}${stage_name} (${suffix})${COLOR_RESET}${marker}"
+    echo "${color}[${timestamp}] ℹ   Stage: ${indent}${parallel_marker}${formatted_agent_prefix}${stage_name} (${suffix})${COLOR_RESET}${marker}" >&"${output_fd}"
 }
 
 # Display stages from a build (with nested downstream stage expansion)
@@ -151,11 +152,16 @@ _display_stages() {
         current_building=$(echo "$build_info_json" | jq -r '.building // false' 2>/dev/null) || current_building="false"
         [[ -z "$current_building" || "$current_building" == "null" ]] && current_building="false"
         if [[ "$current_building" == "true" ]]; then
-            local tracking_state tracking_log_file
+            local tracking_state tracking_log_file tracking_state_file
             tracking_log_file="$(mktemp "${TMPDIR:-/tmp}/buildgit-banner-stage-log.XXXXXX")"
-            tracking_state=$(_track_nested_stage_changes "$job_name" "$build_number" "[]" "false" 2>"$tracking_log_file") || tracking_state="[]"
-            cat "$tracking_log_file"
+            tracking_state_file="$(mktemp "${TMPDIR:-/tmp}/buildgit-banner-stage-state.XXXXXX")"
+            BUILDGIT_SIDE_EFFECT_FD=3 _track_nested_stage_changes "$job_name" "$build_number" "[]" "false" 3>"$tracking_log_file" >"$tracking_state_file" || true
+            tracking_state=$(cat "$tracking_state_file" 2>/dev/null) || tracking_state="[]"
+            if [[ -s "$tracking_log_file" ]]; then
+                cat "$tracking_log_file"
+            fi
             rm -f "$tracking_log_file" 2>/dev/null || true
+            rm -f "$tracking_state_file" 2>/dev/null || true
             _BANNER_STAGES_JSON="${tracking_state:-[]}"
             return 0
         fi
@@ -349,14 +355,14 @@ track_stage_changes() {
                 # The NOT_EXECUTED case catches fast stages that complete between polls
                 # Spec: bug-show-all-stages.md - all stages must be shown
                 if [[ "$previous_status" == "IN_PROGRESS" || "$previous_status" == "NOT_EXECUTED" ]]; then
-                    print_stage_line "$stage_name" "$current_status" "$duration_ms" >&2
+                    print_stage_line "$stage_name" "$current_status" "$duration_ms"
                 fi
                 ;;
             IN_PROGRESS)
                 # Only print running stage in verbose mode, and only once when it first starts
                 # Non-verbose mode: no "(running)" output - only print when stages complete
                 if [[ "$verbose" == "true" && "$previous_status" == "NOT_EXECUTED" ]]; then
-                    print_stage_line "$stage_name" "IN_PROGRESS" >&2
+                    print_stage_line "$stage_name" "IN_PROGRESS"
                 fi
                 ;;
         esac
@@ -780,7 +786,7 @@ _force_flush_completion_stages() {
         if _stage_status_is_terminal "$stage_status" \
             && [[ "$printed_terminal" != "true" ]] \
             && [[ -n "$duration_ms" && "$duration_ms" != "null" && "$duration_ms" =~ ^[0-9]+$ ]]; then
-            _print_nested_stage_entry "$stage_entry" >&2
+            _print_nested_stage_entry "$stage_entry"
             printed_state=$(echo "$printed_state" | jq --arg s "$stage_name" '.[$s] = ((.[$s] // {}) + {terminal: true})')
         fi
         i=$((i + 1))
@@ -804,9 +810,9 @@ _force_flush_completion_stages() {
             && [[ -n "$duration_ms" && "$duration_ms" != "null" && "$duration_ms" =~ ^[0-9]+$ ]]; then
             nested_match=$(echo "$current_nested" | jq -c --arg n "$stage_name" '.[] | select(.name == $n)' 2>/dev/null | head -1)
             if [[ -n "$nested_match" && "$nested_match" != "null" ]]; then
-                _print_nested_stage_entry "$nested_match" >&2
+                _print_nested_stage_entry "$nested_match"
             else
-                print_stage_line "$stage_name" "$stage_status" "$duration_ms" >&2
+                print_stage_line "$stage_name" "$stage_status" "$duration_ms"
             fi
             printed_state=$(echo "$printed_state" | jq --arg s "$stage_name" '.[$s] = ((.[$s] // {}) + {terminal: true})')
         fi
@@ -927,14 +933,14 @@ _track_nested_stage_changes() {
                         if [[ "$is_wrapper" == "true" ]]; then
                             ready_wrapper=$(_parallel_wrapper_ready_to_print "$parallel_state" "$parallel_wrapper")
                             if [[ "$ready_wrapper" == "true" ]]; then
-                                _print_nested_stage_entry "$stage_entry" >&2
+                                _print_nested_stage_entry "$stage_entry"
                                 printed_state=$(echo "$printed_state" | jq --arg s "$stage_name" '.[$s] = ((.[$s] // {}) + {terminal: true})')
                             fi
                         else
                             ready_branch=$(_parallel_branch_ready_to_print "$parallel_state" "$parallel_wrapper" "$stage_name")
                             if [[ "$ready_branch" == "true" ]]; then
                                 resolved_branch_entry=$(_parallel_branch_entry_with_path "$parallel_state" "$parallel_wrapper" "$stage_name") || resolved_branch_entry="$stage_entry"
-                                _print_nested_stage_entry "$resolved_branch_entry" >&2
+                                _print_nested_stage_entry "$resolved_branch_entry"
                                 printed_state=$(echo "$printed_state" | jq --arg s "$stage_name" '.[$s] = ((.[$s] // {}) + {terminal: true})')
                             fi
                         fi
@@ -958,14 +964,14 @@ _track_nested_stage_changes() {
                         fi
                     fi
                     if [[ "$allow_print" == "true" ]]; then
-                        _print_nested_stage_entry "$stage_entry" >&2
+                        _print_nested_stage_entry "$stage_entry"
                         printed_state=$(echo "$printed_state" | jq --arg s "$stage_name" '.[$s] = ((.[$s] // {}) + {terminal: true})')
                     fi
                 fi
                 ;;
             IN_PROGRESS)
                 if [[ "$verbose" == "true" && "$printed_running" != "true" && "$previous_status" == "NOT_EXECUTED" ]]; then
-                    _print_nested_stage_entry "$stage_entry" >&2
+                    _print_nested_stage_entry "$stage_entry"
                     printed_state=$(echo "$printed_state" | jq --arg s "$stage_name" '.[$s] = ((.[$s] // {}) + {running: true})')
                 fi
                 ;;

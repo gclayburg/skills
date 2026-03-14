@@ -227,7 +227,9 @@ teardown() {
         get_all_stages() {
             echo '[{\"name\":\"Checkout\",\"status\":\"SUCCESS\",\"durationMillis\":500},{\"name\":\"Build\",\"status\":\"SUCCESS\",\"durationMillis\":3000}]'
         }
-        track_stage_changes 'test-job' '42' '$previous' 'false' 2>&1 1>/dev/null
+        state_file=\$(mktemp)
+        BUILDGIT_SIDE_EFFECT_FD=3 track_stage_changes 'test-job' '42' '$previous' 'false' 3>&1 >\"\$state_file\"
+        rm -f \"\$state_file\"
     "
 
     assert_success
@@ -249,7 +251,9 @@ teardown() {
         get_all_stages() {
             echo '[{\"name\":\"Checkout\",\"status\":\"SUCCESS\",\"durationMillis\":500}]'
         }
-        track_stage_changes 'test-job' '42' '$previous' 'false' 2>&1 1>/dev/null
+        state_file=\$(mktemp)
+        BUILDGIT_SIDE_EFFECT_FD=3 track_stage_changes 'test-job' '42' '$previous' 'false' 3>&1 >\"\$state_file\"
+        rm -f \"\$state_file\"
     "
 
     assert_success
@@ -271,7 +275,9 @@ teardown() {
         get_all_stages() {
             echo '[{\"name\":\"Stage1\",\"status\":\"SUCCESS\",\"durationMillis\":500},{\"name\":\"Stage2\",\"status\":\"SUCCESS\",\"durationMillis\":1000},{\"name\":\"Stage3\",\"status\":\"SUCCESS\",\"durationMillis\":2000},{\"name\":\"Stage4\",\"status\":\"SUCCESS\",\"durationMillis\":500}]'
         }
-        track_stage_changes 'test-job' '42' '$previous' 'false' 2>&1 1>/dev/null
+        state_file=\$(mktemp)
+        BUILDGIT_SIDE_EFFECT_FD=3 track_stage_changes 'test-job' '42' '$previous' 'false' 3>&1 >\"\$state_file\"
+        rm -f \"\$state_file\"
     "
 
     assert_success
@@ -451,30 +457,17 @@ teardown() {
     MAX_BUILD_TIME=60
     VERBOSE_MODE=false
 
-    # Capture stderr (where track_stage_changes prints)
     run bash -c "
-        export _BUILDGIT_TESTING=1
         source '${PROJECT_DIR}/lib/jenkins-common.sh'
-        source '${PROJECT_DIR}/buildgit'
         export NO_COLOR=1
         _init_colors
-
-        _BANNER_STAGES_JSON='[{\"name\":\"Checkout SCM\",\"status\":\"SUCCESS\",\"durationMillis\":500},{\"name\":\"Agent Setup\",\"status\":\"SUCCESS\",\"durationMillis\":1000},{\"name\":\"Init Submodules\",\"status\":\"IN_PROGRESS\",\"durationMillis\":0}]'
-
-        get_build_info() {
-            echo '{\"building\": false, \"result\": \"SUCCESS\"}'
-        }
 
         get_all_stages() {
             echo '[{\"name\":\"Checkout SCM\",\"status\":\"SUCCESS\",\"durationMillis\":500},{\"name\":\"Agent Setup\",\"status\":\"SUCCESS\",\"durationMillis\":1000},{\"name\":\"Init Submodules\",\"status\":\"SUCCESS\",\"durationMillis\":10000},{\"name\":\"Build\",\"status\":\"SUCCESS\",\"durationMillis\":500},{\"name\":\"Unit Tests\",\"status\":\"SUCCESS\",\"durationMillis\":2000},{\"name\":\"Deploy\",\"status\":\"SUCCESS\",\"durationMillis\":500}]'
         }
-
-        sleep() { :; }
-        POLL_INTERVAL=1
-        MAX_BUILD_TIME=60
-        VERBOSE_MODE=false
-
-        _monitor_build 'test-job' '42' 2>&1
+        state_file=\$(mktemp)
+        BUILDGIT_SIDE_EFFECT_FD=3 track_stage_changes 'test-job' '42' '[{\"name\":\"Checkout SCM\",\"status\":\"SUCCESS\",\"durationMillis\":500},{\"name\":\"Agent Setup\",\"status\":\"SUCCESS\",\"durationMillis\":1000},{\"name\":\"Init Submodules\",\"status\":\"IN_PROGRESS\",\"durationMillis\":0}]' 'false' 3>&1 >\"\$state_file\"
+        rm -f \"\$state_file\"
     "
 
     assert_success

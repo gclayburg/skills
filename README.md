@@ -58,6 +58,7 @@ The IN_PROGRESS indicator shows as long as the build is running.
 When Jenkins queues additional builds for the same job, monitoring also shows `QUEUED` rows so you can see backlog pressure while the primary build is still running.
 When a parallel branch contains local sequential substages, buildgit keeps them nested under the branch as `Branch->Substage`, reuses the branch's `║` marker/agent, and includes those substages in the parent branch duration instead of printing them again as top-level stages.
 With `--threads`, those same nested parallel substages show up live while the build is running, so a branch line can switch from `Nested Branch->Step A` to `Nested Branch->Step B` instead of disappearing until the wrapper branch completes.
+Normal build output is written to stdout, so `buildgit push > build.log` captures queue messages, stage lines, completion summaries, and verbose diagnostics. stderr is reserved for actual command/input or Jenkins communication errors plus transient TTY redraw control.
 
 At the completion you'll see the final message:
 

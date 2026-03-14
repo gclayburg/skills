@@ -799,7 +799,7 @@ _note_test_results_comm_failure() {
         return 0
     fi
     _TEST_RESULTS_WARNED_BUILDS="${_TEST_RESULTS_WARNED_BUILDS},${key}"
-    log_warning "Could not retrieve test results (communication error)" >&2
+    log_error "Could not retrieve test results (communication error)"
 }
 
 display_test_results_comm_error() {

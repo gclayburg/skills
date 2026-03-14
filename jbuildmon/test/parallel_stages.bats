@@ -43,6 +43,15 @@ teardown() {
     fi
 }
 
+capture_nested_stage_changes() {
+    local state_file="${TEST_TEMP_DIR}/parallel_stage_state"
+    local stage_file="${TEST_TEMP_DIR}/parallel_stage_output"
+
+    BUILDGIT_SIDE_EFFECT_FD=3 _track_nested_stage_changes "$@" 3>"$stage_file" >"$state_file"
+    CAPTURED_STAGE_OUTPUT="$(cat "$stage_file")"
+    CAPTURED_STATE="$(cat "$state_file")"
+}
+
 # =============================================================================
 # _detect_parallel_branches tests
 # =============================================================================
@@ -564,31 +573,27 @@ echo two
         fi
     }
 
-    # Poll 1 — capture stdout (state) and stderr (printed output) in one call
-    local state1 stderr1_file="${TEST_TEMP_DIR}/stderr1"
-    state1=$(_track_nested_stage_changes "test-job" "42" "[]" "false" 2>"$stderr1_file")
-    local stderr1
-    stderr1=$(cat "$stderr1_file")
+    local state1 stderr1
+    capture_nested_stage_changes "test-job" "42" "[]" "false"
+    state1="$CAPTURED_STATE"
+    stderr1="$CAPTURED_STAGE_OUTPUT"
 
     # The wrapper must not print before all branches have stabilized.
     [[ "$stderr1" != *"parallel build test"* ]]
     [[ "$stderr1" != *"branch2"* ]]
 
-    # Poll 2: branch1 may appear, but branch2 and the wrapper are still waiting.
-    local stderr2_file="${TEST_TEMP_DIR}/stderr2"
-    state2=$(_track_nested_stage_changes "test-job" "42" "$state1" "false" 2>"$stderr2_file")
     local stderr2
-    stderr2=$(cat "$stderr2_file")
+    capture_nested_stage_changes "test-job" "42" "$state1" "false"
+    state2="$CAPTURED_STATE"
+    stderr2="$CAPTURED_STAGE_OUTPUT"
     local combined12="${stderr1}"$'\n'"${stderr2}"
     [[ "$combined12" == *"branch1"* ]]
     [[ "$combined12" != *"branch2"* ]]
     [[ "$combined12" != *"parallel build test"* ]]
 
-    # Poll 3: branch2 stabilizes and the wrapper can now print.
-    local stderr3_file="${TEST_TEMP_DIR}/stderr3"
-    _track_nested_stage_changes "test-job" "42" "$state2" "false" 2>"$stderr3_file" >/dev/null
     local stderr3
-    stderr3=$(cat "$stderr3_file")
+    capture_nested_stage_changes "test-job" "42" "$state2" "false"
+    stderr3="$CAPTURED_STAGE_OUTPUT"
 
     [[ "$stderr3" == *"branch2"* ]]
     [[ "$stderr3" == *"parallel build test"* ]]
@@ -623,21 +628,19 @@ echo two
         fi
     }
 
-    # Poll 1 — capture stdout (state) and stderr (printed output) in one call
-    local state1 stderr1_file="${TEST_TEMP_DIR}/stderr1"
-    state1=$(_track_nested_stage_changes "test-job" "42" "[]" "false" 2>"$stderr1_file")
-    local stderr1
-    stderr1=$(cat "$stderr1_file")
+    local state1 stderr1
+    capture_nested_stage_changes "test-job" "42" "[]" "false"
+    state1="$CAPTURED_STATE"
+    stderr1="$CAPTURED_STAGE_OUTPUT"
 
     # Build Handle should NOT print (no children yet)
     [[ "$stderr1" != *"Build Handle"* ]]
 
-    # Poll 2
-    local stderr2_file="${TEST_TEMP_DIR}/stderr2"
-    local state2
-    state2=$(_track_nested_stage_changes "test-job" "42" "$state1" "false" 2>"$stderr2_file")
     local stderr2
-    stderr2=$(cat "$stderr2_file")
+    local state2
+    capture_nested_stage_changes "test-job" "42" "$state1" "false"
+    state2="$CAPTURED_STATE"
+    stderr2="$CAPTURED_STAGE_OUTPUT"
 
     # Now Build Handle should print, along with its child
     [[ "$stderr2" == *"Build Handle->Compile"* ]]
@@ -662,7 +665,8 @@ echo two
     }
 
     local stderr_output
-    stderr_output=$(_track_nested_stage_changes "test-job" "42" "[]" "false" 2>&1 >/dev/null)
+    capture_nested_stage_changes "test-job" "42" "[]" "false"
+    stderr_output="$CAPTURED_STAGE_OUTPUT"
 
     # Both stages should print immediately
     [[ "$stderr_output" == *"Checkout (3s)"* ]]
@@ -697,17 +701,16 @@ echo two
         ]'
     }
 
-    local state1 stderr1_file="${TEST_TEMP_DIR}/stderr1"
-    state1=$(_track_nested_stage_changes "test-job" "42" "[]" "false" 2>"$stderr1_file")
-    local stderr1
-    stderr1=$(cat "$stderr1_file")
+    local state1 stderr1
+    capture_nested_stage_changes "test-job" "42" "[]" "false"
+    state1="$CAPTURED_STATE"
+    stderr1="$CAPTURED_STAGE_OUTPUT"
     [[ "$stderr1" == *"Build (3s)"* ]]
     [[ "$stderr1" != *"Deploy (3s)"* ]]
 
-    local stderr2_file="${TEST_TEMP_DIR}/stderr2"
-    _track_nested_stage_changes "test-job" "42" "$state1" "false" 2>"$stderr2_file" >/dev/null
     local stderr2
-    stderr2=$(cat "$stderr2_file")
+    capture_nested_stage_changes "test-job" "42" "$state1" "false"
+    stderr2="$CAPTURED_STAGE_OUTPUT"
     local combined_output="${stderr1}"$'\n'"${stderr2}"
     [[ "$combined_output" == *"Unit Tests D (2m 16s)"* ]]
     [[ "$combined_output" == *"Unit Tests (2m 16s)"* ]]
@@ -735,12 +738,15 @@ echo two
         ]'
     }
 
-    local state1 stderr1_file="${TEST_TEMP_DIR}/stderr1"
-    state1=$(_track_nested_stage_changes "test-job" "42" "[]" "false" 2>"$stderr1_file")
-    local stderr2_file="${TEST_TEMP_DIR}/stderr2"
-    _track_nested_stage_changes "test-job" "42" "$state1" "false" 2>"$stderr2_file" >/dev/null
+    local state1 stderr1
+    capture_nested_stage_changes "test-job" "42" "[]" "false"
+    state1="$CAPTURED_STATE"
+    stderr1="$CAPTURED_STAGE_OUTPUT"
+    local stderr2
+    capture_nested_stage_changes "test-job" "42" "$state1" "false"
+    stderr2="$CAPTURED_STAGE_OUTPUT"
     local stderr_output
-    stderr_output="$(cat "$stderr1_file")"$'\n'"$(cat "$stderr2_file")"
+    stderr_output="${stderr1}"$'\n'"${stderr2}"
 
     # Wrapper should show the aggregate duration (245s = 4m 5s), not 2s
     [[ "$stderr_output" == *"parallel build test (4m 5s)"* ]]
@@ -811,45 +817,47 @@ echo two
         esac
     }
 
-    local state1 stderr1_file="${TEST_TEMP_DIR}/stderr1"
-    state1=$(_track_nested_stage_changes "test-job" "42" "[]" "false" 2>"$stderr1_file")
-    [[ ! -s "$stderr1_file" ]]
+    local state1 stderr1
+    capture_nested_stage_changes "test-job" "42" "[]" "false"
+    state1="$CAPTURED_STATE"
+    stderr1="$CAPTURED_STAGE_OUTPUT"
+    [[ -z "$stderr1" ]]
     [[ "$(echo "$state1" | jq -r '.tracking_complete')" == "false" ]]
 
-    local state2 stderr2_file="${TEST_TEMP_DIR}/stderr2"
-    state2=$(_track_nested_stage_changes "test-job" "42" "$state1" "false" 2>"$stderr2_file")
-    local stderr2
-    stderr2=$(cat "$stderr2_file")
-    local combined12="${stderr1_file:+$(cat "$stderr1_file")}"$'\n'"${stderr2}"
+    local state2 stderr2
+    capture_nested_stage_changes "test-job" "42" "$state1" "false"
+    state2="$CAPTURED_STATE"
+    stderr2="$CAPTURED_STAGE_OUTPUT"
+    local combined12="${stderr1}"$'\n'"${stderr2}"
     [[ "$combined12" == *"Unit Tests C (2m 6s)"* ]]
     [[ "$combined12" != *"Unit Tests B"* ]]
 
-    local state3 stderr3_file="${TEST_TEMP_DIR}/stderr3"
-    state3=$(_track_nested_stage_changes "test-job" "42" "$state2" "false" 2>"$stderr3_file")
-    local stderr3
-    stderr3=$(cat "$stderr3_file")
+    local state3 stderr3
+    capture_nested_stage_changes "test-job" "42" "$state2" "false"
+    state3="$CAPTURED_STATE"
+    stderr3="$CAPTURED_STAGE_OUTPUT"
     local combined123="${combined12}"$'\n'"${stderr3}"
     [[ "$combined123" == *"Unit Tests B (1m 29s)"* ]]
     [[ "$combined123" != *"Unit Tests D"* ]]
 
-    local state4 stderr4_file="${TEST_TEMP_DIR}/stderr4"
-    state4=$(_track_nested_stage_changes "test-job" "42" "$state3" "false" 2>"$stderr4_file")
-    local stderr4
-    stderr4=$(cat "$stderr4_file")
+    local state4 stderr4
+    capture_nested_stage_changes "test-job" "42" "$state3" "false"
+    state4="$CAPTURED_STATE"
+    stderr4="$CAPTURED_STAGE_OUTPUT"
     local combined1234="${combined123}"$'\n'"${stderr4}"
     [[ "$combined1234" == *"Unit Tests D (2m 25s)"* ]]
     [[ "$combined1234" != *"Unit Tests A"* ]]
 
-    local state5 stderr5_file="${TEST_TEMP_DIR}/stderr5"
-    state5=$(_track_nested_stage_changes "test-job" "42" "$state4" "false" 2>"$stderr5_file")
-    local stderr5
-    stderr5=$(cat "$stderr5_file")
+    local state5 stderr5
+    capture_nested_stage_changes "test-job" "42" "$state4" "false"
+    state5="$CAPTURED_STATE"
+    stderr5="$CAPTURED_STAGE_OUTPUT"
     [[ -z "$stderr5" ]]
 
-    local state6 stderr6_file="${TEST_TEMP_DIR}/stderr6"
-    state6=$(_track_nested_stage_changes "test-job" "42" "$state5" "false" 2>"$stderr6_file")
-    local stderr6
-    stderr6=$(cat "$stderr6_file")
+    local state6 stderr6
+    capture_nested_stage_changes "test-job" "42" "$state5" "false"
+    state6="$CAPTURED_STATE"
+    stderr6="$CAPTURED_STAGE_OUTPUT"
     local combined_all="${combined1234}"$'\n'"${stderr5}"$'\n'"${stderr6}"
     [[ "$combined_all" == *"Unit Tests A (2m 18s)"* ]]
     [[ "$combined_all" == *"Unit Tests (2m 25s)"* ]]
@@ -891,22 +899,25 @@ echo two
         fi
     }
 
-    local state1 stderr1_file="${TEST_TEMP_DIR}/stderr1"
-    state1=$(_track_nested_stage_changes "test-job" "42" "[]" "false" 2>"$stderr1_file")
-    [[ ! -s "$stderr1_file" ]]
+    local state1 stderr1
+    capture_nested_stage_changes "test-job" "42" "[]" "false"
+    state1="$CAPTURED_STATE"
+    stderr1="$CAPTURED_STAGE_OUTPUT"
+    [[ -z "$stderr1" ]]
 
-    local state2 stderr2_file="${TEST_TEMP_DIR}/stderr2"
-    state2=$(_track_nested_stage_changes "test-job" "42" "$state1" "false" 2>"$stderr2_file")
-    local stderr2
-    stderr2=$(cat "$stderr2_file")
-    local combined12="${stderr1_file:+$(cat "$stderr1_file")}"$'\n'"${stderr2}"
+    local state2 stderr2
+    capture_nested_stage_changes "test-job" "42" "$state1" "false"
+    state2="$CAPTURED_STATE"
+    stderr2="$CAPTURED_STAGE_OUTPUT"
+    local combined12="${stderr1}"$'\n'"${stderr2}"
     [[ "$combined12" == *"Unit Tests C (2m 6s)"* ]]
     [[ "$combined12" == *"Unit Tests D (2m 25s)"* ]]
     [[ "$combined12" == *"Unit Tests (2m 25s)"* ]]
 
-    local stderr3_file="${TEST_TEMP_DIR}/stderr3"
-    _track_nested_stage_changes "test-job" "42" "$state2" "false" 2>"$stderr3_file" >/dev/null
-    [[ ! -s "$stderr3_file" ]]
+    local stderr3
+    capture_nested_stage_changes "test-job" "42" "$state2" "false"
+    stderr3="$CAPTURED_STAGE_OUTPUT"
+    [[ -z "$stderr3" ]]
 }
 
 @test "parallel_branch_waits_for_its_duration_to_stabilize" {
@@ -949,22 +960,23 @@ echo two
         fi
     }
 
-    local state1 stderr1_file="${TEST_TEMP_DIR}/stderr1"
-    state1=$(_track_nested_stage_changes "test-job" "42" "[]" "false" 2>"$stderr1_file")
-    [[ ! -s "$stderr1_file" ]]
+    local state1 stderr1
+    capture_nested_stage_changes "test-job" "42" "[]" "false"
+    state1="$CAPTURED_STATE"
+    stderr1="$CAPTURED_STAGE_OUTPUT"
+    [[ -z "$stderr1" ]]
 
-    local state2 stderr2_file="${TEST_TEMP_DIR}/stderr2"
-    state2=$(_track_nested_stage_changes "test-job" "42" "$state1" "false" 2>"$stderr2_file")
-    local stderr2
-    stderr2=$(cat "$stderr2_file")
-    local combined12="${stderr1_file:+$(cat "$stderr1_file")}"$'\n'"${stderr2}"
+    local state2 stderr2
+    capture_nested_stage_changes "test-job" "42" "$state1" "false"
+    state2="$CAPTURED_STATE"
+    stderr2="$CAPTURED_STAGE_OUTPUT"
+    local combined12="${stderr1}"$'\n'"${stderr2}"
     [[ "$combined12" == *"Unit Tests B (1m 29s)"* ]]
     [[ "$combined12" != *"Unit Tests A"* ]]
 
-    local stderr3_file="${TEST_TEMP_DIR}/stderr3"
-    _track_nested_stage_changes "test-job" "42" "$state2" "false" 2>"$stderr3_file" >/dev/null
     local stderr3
-    stderr3=$(cat "$stderr3_file")
+    capture_nested_stage_changes "test-job" "42" "$state2" "false"
+    stderr3="$CAPTURED_STAGE_OUTPUT"
     [[ "$stderr3" == *"Unit Tests A (2m 18s)"* ]]
     [[ "$stderr3" == *"Unit Tests (2m 18s)"* ]]
 }

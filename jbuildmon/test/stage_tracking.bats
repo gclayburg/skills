@@ -32,6 +32,15 @@ teardown() {
     fi
 }
 
+capture_track_stage_changes() {
+    local state_file="${TEST_TEMP_DIR}/track_stage_state"
+    local stage_file="${TEST_TEMP_DIR}/track_stage_output"
+
+    BUILDGIT_SIDE_EFFECT_FD=3 track_stage_changes "$@" 3>"$stage_file" >"$state_file"
+    CAPTURED_STAGE_OUTPUT="$(cat "$stage_file")"
+    CAPTURED_STATE="$(cat "$state_file")"
+}
+
 # -----------------------------------------------------------------------------
 # Test Case: First call returns current state, no prints
 # Spec: full-stage-print-spec.md, Section: Stage Tracking
@@ -46,8 +55,9 @@ teardown() {
 
     # First call with empty previous state
     local output stderr_output
-    stderr_output=$(track_stage_changes "test-job" "42" "[]" "false" 2>&1 >/dev/null)
-    output=$(track_stage_changes "test-job" "42" "[]" "false" 2>/dev/null)
+    capture_track_stage_changes "test-job" "42" "[]" "false"
+    output="$CAPTURED_STATE"
+    stderr_output="$CAPTURED_STAGE_OUTPUT"
 
     # Verify we get current state back
     [[ $(echo "$output" | jq 'length') -eq 1 ]]
@@ -77,8 +87,9 @@ teardown() {
 
     # Capture both stdout and stderr
     local output stderr_output
-    stderr_output=$(track_stage_changes "test-job" "42" "$previous_state" "false" 2>&1 >/dev/null)
-    output=$(track_stage_changes "test-job" "42" "$previous_state" "false" 2>/dev/null)
+    capture_track_stage_changes "test-job" "42" "$previous_state" "false"
+    output="$CAPTURED_STATE"
+    stderr_output="$CAPTURED_STAGE_OUTPUT"
 
     # Verify stage completion line was printed to stderr
     [[ "$stderr_output" == *"Stage: Build (15s)"* ]]
@@ -104,8 +115,10 @@ teardown() {
         ]'
     }
 
-    local stderr_output
-    stderr_output=$(track_stage_changes "test-job" "42" "$previous_state" "false" 2>&1 >/dev/null)
+    local output stderr_output
+    capture_track_stage_changes "test-job" "42" "$previous_state" "false"
+    output="$CAPTURED_STATE"
+    stderr_output="$CAPTURED_STAGE_OUTPUT"
 
     # Verify FAILED stage line was printed with marker
     [[ "$stderr_output" == *"Stage: Build (2m 0s)"* ]]
@@ -129,8 +142,10 @@ teardown() {
         ]'
     }
 
-    local stderr_output
-    stderr_output=$(track_stage_changes "test-job" "42" "$previous_state" "false" 2>&1 >/dev/null)
+    local output stderr_output
+    capture_track_stage_changes "test-job" "42" "$previous_state" "false"
+    output="$CAPTURED_STATE"
+    stderr_output="$CAPTURED_STAGE_OUTPUT"
 
     # Verify UNSTABLE stage line was printed
     [[ "$stderr_output" == *"Stage: Tests (1m 5s)"* ]]
@@ -157,11 +172,13 @@ teardown() {
 
     # Non-verbose mode: running stage should NOT be shown
     local stderr_output
-    stderr_output=$(track_stage_changes "test-job" "42" "$previous_state" "false" 2>&1 >/dev/null)
+    capture_track_stage_changes "test-job" "42" "$previous_state" "false"
+    stderr_output="$CAPTURED_STAGE_OUTPUT"
     [[ -z "$stderr_output" ]]
 
     # Verbose mode: running stage SHOULD be shown
-    stderr_output=$(track_stage_changes "test-job" "42" "$previous_state" "true" 2>&1 >/dev/null)
+    capture_track_stage_changes "test-job" "42" "$previous_state" "true"
+    stderr_output="$CAPTURED_STAGE_OUTPUT"
     [[ "$stderr_output" == *"Stage: Tests (running)"* ]]
 }
 
@@ -185,8 +202,10 @@ teardown() {
         ]'
     }
 
-    local stderr_output
-    stderr_output=$(track_stage_changes "test-job" "42" "$previous_state" "false" 2>&1 >/dev/null)
+    local output stderr_output
+    capture_track_stage_changes "test-job" "42" "$previous_state" "false"
+    output="$CAPTURED_STATE"
+    stderr_output="$CAPTURED_STAGE_OUTPUT"
 
     # Verify both completed stages were printed
     [[ "$stderr_output" == *"Stage: Build (15s)"* ]]
@@ -208,8 +227,10 @@ teardown() {
     }
 
     # First call with verbose mode enabled
-    local stderr_output
-    stderr_output=$(track_stage_changes "test-job" "42" "[]" "true" 2>&1 >/dev/null)
+    local output stderr_output
+    capture_track_stage_changes "test-job" "42" "[]" "true"
+    output="$CAPTURED_STATE"
+    stderr_output="$CAPTURED_STAGE_OUTPUT"
 
     # Verify running stage is shown even on first call in verbose mode
     [[ "$stderr_output" == *"Stage: Build (running)"* ]]
@@ -229,7 +250,8 @@ teardown() {
 
     # First call with non-verbose mode (default)
     local stderr_output
-    stderr_output=$(track_stage_changes "test-job" "42" "[]" "false" 2>&1 >/dev/null)
+    capture_track_stage_changes "test-job" "42" "[]" "false"
+    stderr_output="$CAPTURED_STAGE_OUTPUT"
 
     # Verify running stage is NOT shown on first call in non-verbose mode
     [[ -z "$stderr_output" ]]
@@ -251,7 +273,8 @@ teardown() {
     }
 
     local output
-    output=$(track_stage_changes "test-job" "42" "$previous_state" "false" 2>/dev/null)
+    capture_track_stage_changes "test-job" "42" "$previous_state" "false"
+    output="$CAPTURED_STATE"
 
     # Verify previous state is returned unchanged
     [[ $(echo "$output" | jq 'length') -eq 1 ]]
@@ -272,7 +295,8 @@ teardown() {
 
     # Call with null previous state
     local output
-    output=$(track_stage_changes "test-job" "42" "null" "false" 2>/dev/null)
+    capture_track_stage_changes "test-job" "42" "null" "false"
+    output="$CAPTURED_STATE"
 
     # Verify we get current state back
     [[ $(echo "$output" | jq 'length') -eq 1 ]]
@@ -297,7 +321,8 @@ teardown() {
     }
 
     local stderr_output
-    stderr_output=$(track_stage_changes "test-job" "42" "$previous_state" "false" 2>&1 >/dev/null)
+    capture_track_stage_changes "test-job" "42" "$previous_state" "false"
+    stderr_output="$CAPTURED_STAGE_OUTPUT"
 
     # Verify Build is NOT reprinted (it was already completed in previous state)
     [[ "$stderr_output" != *"Stage: Build (15s)"* ]]
@@ -324,8 +349,10 @@ teardown() {
         ]'
     }
 
-    local stderr_output
-    stderr_output=$(track_stage_changes "test-job" "42" "$previous_state" "false" 2>&1 >/dev/null)
+    local output stderr_output
+    capture_track_stage_changes "test-job" "42" "$previous_state" "false"
+    output="$CAPTURED_STATE"
+    stderr_output="$CAPTURED_STAGE_OUTPUT"
 
     # Verify ABORTED stage line was printed
     [[ "$stderr_output" == *"Stage: Build (aborted)"* ]]

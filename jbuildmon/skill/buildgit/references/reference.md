@@ -149,6 +149,8 @@ If test-report retrieval fails due to communication issues (for example network/
 [HH:MM:SS] ⚠ Could not retrieve test results (communication error)
 ```
 
+Normal build output, including queue updates, stage progress, completion summaries, and verbose diagnostics, is written to stdout. stderr is reserved for invalid input, Jenkins communication failures, and transient TTY redraw artifacts.
+
 ## Agent failure diagnostics
 
 List the available stages for a build:

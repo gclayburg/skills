@@ -15,8 +15,10 @@ pipeline {
                 }
             }
             steps {
-                sh 'mkdir -p /home/jenkins/.ssh && ssh-keyscan -p 2233 scranton2 > /home/jenkins/.ssh/known_hosts 2>/dev/null || true'
-                checkout scm
+                retry(3) {
+                    sh 'mkdir -p /home/jenkins/.ssh && ssh-keyscan -p 2233 scranton2 > /home/jenkins/.ssh/known_hosts 2>/dev/null || true'
+                    checkout scm
+                }
                 echo 'Building...'
             }
         }
@@ -32,8 +34,10 @@ pipeline {
                         }
                     }
                     steps {
-                        sh 'mkdir -p /home/jenkins/.ssh && ssh-keyscan -p 2233 scranton2 > /home/jenkins/.ssh/known_hosts 2>/dev/null || true'
-                        checkout scm
+                        retry(3) {
+                            sh 'mkdir -p /home/jenkins/.ssh && ssh-keyscan -p 2233 scranton2 > /home/jenkins/.ssh/known_hosts 2>/dev/null || true'
+                            checkout scm
+                        }
                         sh 'git submodule update --init --recursive --depth 1'
                         dir('jbuildmon') {
                             sh '''
@@ -65,8 +69,10 @@ pipeline {
                         }
                     }
                     steps {
-                        sh 'mkdir -p /home/jenkins/.ssh && ssh-keyscan -p 2233 scranton2 > /home/jenkins/.ssh/known_hosts 2>/dev/null || true'
-                        checkout scm
+                        retry(3) {
+                            sh 'mkdir -p /home/jenkins/.ssh && ssh-keyscan -p 2233 scranton2 > /home/jenkins/.ssh/known_hosts 2>/dev/null || true'
+                            checkout scm
+                        }
                         sh 'git submodule update --init --recursive --depth 1'
                         dir('jbuildmon') {
                             sh '''
@@ -96,8 +102,10 @@ pipeline {
                         }
                     }
                     steps {
-                        sh 'mkdir -p /home/jenkins/.ssh && ssh-keyscan -p 2233 scranton2 > /home/jenkins/.ssh/known_hosts 2>/dev/null || true'
-                        checkout scm
+                        retry(3) {
+                            sh 'mkdir -p /home/jenkins/.ssh && ssh-keyscan -p 2233 scranton2 > /home/jenkins/.ssh/known_hosts 2>/dev/null || true'
+                            checkout scm
+                        }
                         sh 'git submodule update --init --recursive --depth 1'
                         dir('jbuildmon') {
                             sh '''
@@ -131,8 +139,10 @@ pipeline {
                         }
                     }
                     steps {
-                        sh 'mkdir -p /home/jenkins/.ssh && ssh-keyscan -p 2233 scranton2 > /home/jenkins/.ssh/known_hosts 2>/dev/null || true'
-                        checkout scm
+                        retry(3) {
+                            sh 'mkdir -p /home/jenkins/.ssh && ssh-keyscan -p 2233 scranton2 > /home/jenkins/.ssh/known_hosts 2>/dev/null || true'
+                            checkout scm
+                        }
                         sh 'git submodule update --init --recursive --depth 1'
                         dir('jbuildmon') {
                             sh '''
@@ -171,8 +181,10 @@ pipeline {
                         }
                     }
                     steps {
-                        sh 'mkdir -p /home/jenkins/.ssh && ssh-keyscan -p 2233 scranton2 > /home/jenkins/.ssh/known_hosts 2>/dev/null || true'
-                        checkout scm
+                        retry(3) {
+                            sh 'mkdir -p /home/jenkins/.ssh && ssh-keyscan -p 2233 scranton2 > /home/jenkins/.ssh/known_hosts 2>/dev/null || true'
+                            checkout scm
+                        }
                         sh 'git submodule update --init --recursive --depth 1'
                         dir('jbuildmon') {
                             sh '''
@@ -251,8 +263,10 @@ pipeline {
                         }
                     }
                     steps {
-                        sh 'mkdir -p /home/jenkins/.ssh && ssh-keyscan -p 2233 scranton2 > /home/jenkins/.ssh/known_hosts 2>/dev/null || true'
-                        checkout scm
+                        retry(3) {
+                            sh 'mkdir -p /home/jenkins/.ssh && ssh-keyscan -p 2233 scranton2 > /home/jenkins/.ssh/known_hosts 2>/dev/null || true'
+                            checkout scm
+                        }
                         sh 'git submodule update --init --recursive --depth 1'
                         dir('jbuildmon') {
                             withCredentials([usernamePassword(
@@ -289,8 +303,10 @@ pipeline {
                 }
             }
             steps {
-                sh 'mkdir -p /home/jenkins/.ssh && ssh-keyscan -p 2233 scranton2 > /home/jenkins/.ssh/known_hosts 2>/dev/null || true'
-                checkout scm
+                retry(3) {
+                    sh 'mkdir -p /home/jenkins/.ssh && ssh-keyscan -p 2233 scranton2 > /home/jenkins/.ssh/known_hosts 2>/dev/null || true'
+                    checkout scm
+                }
                 echo 'Deploying...'
             }
         }

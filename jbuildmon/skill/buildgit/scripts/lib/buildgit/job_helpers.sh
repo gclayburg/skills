@@ -556,10 +556,10 @@ _wait_for_build_start() {
             if _status_stdout_is_tty; then
                 if [[ "$queue_detected" != "true" ]]; then
                     _clear_queue_wait_status
-                    log_info "Build #${pending_build_number} is QUEUED" >&2
+                    log_info "Build #${pending_build_number} is QUEUED"
                 elif [[ "$is_transition" == "true" && -n "$queue_why" ]]; then
                     _clear_queue_wait_status
-                    log_info "Build #${pending_build_number} is QUEUED — ${queue_why}" >&2
+                    log_info "Build #${pending_build_number} is QUEUED — ${queue_why}"
                 fi
 
                 local sticky_lines=()
@@ -586,7 +586,7 @@ _wait_for_build_start() {
                 local now_epoch
                 now_epoch=$(date +%s)
                 if [[ "$is_transition" == "true" || $((now_epoch - last_non_tty_log_epoch)) -ge 30 ]]; then
-                    log_info "$queue_msg" >&2
+                    log_info "$queue_msg"
                     last_non_tty_log_epoch="$now_epoch"
                 fi
             fi
