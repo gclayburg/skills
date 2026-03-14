@@ -81,10 +81,8 @@ RALPH_LOOP=false
 MAX_CHUNKS=20
 PROMPT_FILE=""
 BRANCH_OVERRIDE=""
-FILTER_OUTPUT=false  # filtering removed — use raw codex output
 AUTH_CACHE_DIR="${HOME}/.cache/codex-sandbox-auth"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FILTER_AWK="$SCRIPT_DIR/codex-filter.awk"  # unused — filtering disabled
 # auth file created like this from an already authenticated docker sandbox:
 # docker sandbox exec codex-phandlemono cat /home/agent/.codex/auth.json > ~/.cache/codex-sandbox-auth/auth.json
 
@@ -149,10 +147,6 @@ while [[ $# -gt 0 ]]; do
         --prompt)
             PROMPT_FILE="$2"
             shift 2
-            ;;
-        --no-filter)
-            FILTER_OUTPUT=false
-            shift
             ;;
         -h|--help)
             sed -n '2,/^$/s/^# //p' "$0"
@@ -220,24 +214,14 @@ fi
 
 run_codex() {
     # run_codex <sandbox> <model> <prompt> [output_file]
-    # Runs codex, optionally filtering output, optionally tee-ing to a file.
+    # Runs codex, optionally tee-ing to a file.
     local sandbox="$1" model="$2" prompt="$3" outfile="${4:-}"
     if [[ -n "$outfile" ]]; then
-        if [[ "$FILTER_OUTPUT" == "true" && -f "$FILTER_AWK" ]]; then
-            docker sandbox run "$sandbox" -- exec --model "$model" -c model_reasoning_effort="medium" "$prompt" </dev/tty \
-                | awk -f "$FILTER_AWK" | tee "$outfile"
-        else
-            docker sandbox run "$sandbox" -- exec --model "$model" -c model_reasoning_effort="medium" "$prompt" </dev/tty \
-                | tee "$outfile"
-        fi
+        docker sandbox run "$sandbox" -- exec --model "$model" -c model_reasoning_effort="medium" "$prompt" </dev/tty \
+            | tee "$outfile"
         return "${PIPESTATUS[0]}"
     else
-        if [[ "$FILTER_OUTPUT" == "true" && -f "$FILTER_AWK" ]]; then
-            docker sandbox run "$sandbox" -- exec --model "$model" -c model_reasoning_effort="medium" "$prompt" </dev/tty \
-                | awk -f "$FILTER_AWK"
-        else
-            docker sandbox run "$sandbox" -- exec --model "$model" -c model_reasoning_effort="medium" "$prompt" </dev/tty
-        fi
+        docker sandbox run "$sandbox" -- exec --model "$model" -c model_reasoning_effort="medium" "$prompt" </dev/tty
     fi
 }
 

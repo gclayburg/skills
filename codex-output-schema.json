@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Codex Execution Summary",
+  "type": "object",
+  "properties": {
+    "thinking_steps": {
+      "type": "array",
+      "description": "High-level reasoning steps summarized by the agent without revealing hidden chain-of-thought.",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "tool_calls": {
+      "type": "array",
+      "description": "Tool calls the agent says it executed, without command or script contents.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "tool": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["attempted", "completed", "failed"]
+          }
+        },
+        "required": ["tool", "purpose", "status"],
+        "additionalProperties": false
+      },
+      "default": []
+    },
+    "files_read": {
+      "type": "array",
+      "description": "Absolute or repo-relative file paths that were read.",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "files_edited": {
+      "type": "array",
+      "description": "Absolute or repo-relative file paths that were created or modified.",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "final_answer": {
+      "type": "string",
+      "description": "The final user-facing answer."
+    }
+  },
+  "required": [
+    "thinking_steps",
+    "tool_calls",
+    "files_read",
+    "files_edited",
+    "final_answer"
+  ],
+  "additionalProperties": false
+}
