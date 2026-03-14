@@ -191,6 +191,41 @@ if [[ ! -f "$SPEC" ]]; then
     exit 1
 fi
 
+# =============================================================================
+# Chunked spec auto-detection: if a spec has Chunked: true, verify plan exists
+# and auto-switch to ralph-loop mode
+# =============================================================================
+PLAN_FILE=""
+if [[ ! "$SPEC" =~ -plan\.md$ ]]; then
+    chunked_val=$(grep -m1 '^\- \*\*Chunked:\*\*' "$SPEC" | sed 's/.*`\(.*\)`.*/\1/' || true)
+    if [[ "$chunked_val" == "true" ]]; then
+        # Extract plan path from the Plan: header
+        plan_val=$(grep -m1 '^\- \*\*Plan:\*\*' "$SPEC" | sed 's/.*`\(.*\)`.*/\1/' || true)
+        if [[ -z "$plan_val" || "$plan_val" == "none" ]]; then
+            echo "Error: spec is marked Chunked: true but has no plan file (Plan: none)" >&2
+            echo "Create an implementation plan and update the Plan: header before implementing." >&2
+            exit 1
+        fi
+        # Resolve plan path relative to the spec file's directory
+        spec_dir=$(dirname "$SPEC")
+        if [[ -f "$plan_val" ]]; then
+            PLAN_FILE="$plan_val"
+        elif [[ -f "$spec_dir/$plan_val" ]]; then
+            PLAN_FILE="$spec_dir/$plan_val"
+        else
+            echo "Error: spec is marked Chunked: true but plan file not found: $plan_val" >&2
+            exit 1
+        fi
+        echo "Plan detected: $PLAN_FILE"
+        echo "Spec is marked Chunked — switching to ralph-loop mode"
+        echo
+        # Save the original spec path for committing, then switch SPEC to the plan file
+        CHUNKED_SPEC="$SPEC"
+        SPEC="$PLAN_FILE"
+        RALPH_LOOP=true
+    fi
+fi
+
 # --ralph-loop requires a *-plan.md file
 if [[ "$RALPH_LOOP" == "true" && ! "$SPEC" =~ -plan\.md$ ]]; then
     echo "Error: --ralph-loop requires a '*-plan.md' file, got: $(basename "$SPEC")" >&2
@@ -296,10 +331,18 @@ SPEC_ABS=$(realpath "$SPEC")
 SPEC_REL="${SPEC_ABS#$REPO_ROOT/}"
 
 echo
-echo "Spec:      $SPEC_REL"
+if [[ -n "${CHUNKED_SPEC:-}" ]]; then
+    chunked_spec_display=$(realpath "$CHUNKED_SPEC")
+    chunked_spec_display="${chunked_spec_display#$REPO_ROOT/}"
+    echo "Spec:      $chunked_spec_display"
+    echo "Plan:      $SPEC_REL"
+    echo "Mode:      $MODE (chunked → ralph-loop)"
+else
+    echo "Spec:      $SPEC_REL"
+    echo "Mode:      $MODE"
+fi
 echo "Title:     $TITLE"
 echo "Branch:    $BRANCH"
-echo "Mode:      $MODE"
 echo "Model:     $MODEL"
 echo "Worktree:  $WORKTREE_DIR"
 echo "Sandbox:   $SANDBOX_NAME"
@@ -467,16 +510,23 @@ if [[ "$MODE" == "redo" ]]; then
     echo "Re-injecting environment..."
     inject_env "$SANDBOX_NAME"
 
-    echo
-    echo "Starting codex (redo)..."
-    echo
-    DEFAULT_REDO_PROMPT="implement the DRAFT spec %SPEC% . After implementation is complete and all tests pass, run 'buildgit push jenkins' to push your changes and verify the Jenkins CI build succeeds with no test failures. If the build fails, fix the issues and push again."
-    PROMPT=$(resolve_prompt "$DEFAULT_REDO_PROMPT")
-    if [[ -n "$REDO_EXTRA" ]]; then
-        PROMPT="$PROMPT $REDO_EXTRA"
+    # If chunked auto-detection set RALPH_LOOP, fall through to the ralph-loop
+    # section below instead of running the single-spec redo prompt.
+    if [[ "$RALPH_LOOP" == "true" ]]; then
+        echo
+        echo "Redo with ralph-loop mode — falling through to chunk loop..."
+    else
+        echo
+        echo "Starting codex (redo)..."
+        echo
+        DEFAULT_REDO_PROMPT="implement the DRAFT spec %SPEC% . After implementation is complete and all tests pass, run 'buildgit push jenkins' to push your changes and verify the Jenkins CI build succeeds with no test failures. If the build fails, fix the issues and push again."
+        PROMPT=$(resolve_prompt "$DEFAULT_REDO_PROMPT")
+        if [[ -n "$REDO_EXTRA" ]]; then
+            PROMPT="$PROMPT $REDO_EXTRA"
+        fi
+        run_codex "$SANDBOX_NAME" "$MODEL" "$PROMPT"
+        exit 0
     fi
-    run_codex "$SANDBOX_NAME" "$MODEL" "$PROMPT"
-    exit 0
 fi
 
 # =============================================================================
@@ -536,61 +586,73 @@ if [[ "$MODE" == "bugfix" ]]; then
 fi
 
 # =============================================================================
-# Commit spec and referenced files on the current branch
+# Commit, worktree, sandbox setup — skip if --redo (already validated above)
 # =============================================================================
-echo
-echo "Committing spec to current branch..."
+if [[ "$MODE" != "redo" ]]; then
+    # =========================================================================
+    # Commit spec and referenced files on the current branch
+    # =========================================================================
+    echo
+    echo "Committing spec to current branch..."
 
-# Stage spec file
-git -C "$REPO_ROOT" add "$SPEC_REL"
+    # Stage spec file
+    git -C "$REPO_ROOT" add "$SPEC_REL"
 
-# Stage referenced files
-for ref in "${REF_FILES[@]+"${REF_FILES[@]}"}"; do
-    git -C "$REPO_ROOT" add "$ref"
-done
+    # Stage the original spec file if we auto-switched from a chunked spec to its plan
+    if [[ -n "${CHUNKED_SPEC:-}" ]]; then
+        chunked_spec_abs=$(realpath "$CHUNKED_SPEC")
+        chunked_spec_rel="${chunked_spec_abs#$REPO_ROOT/}"
+        git -C "$REPO_ROOT" add "$chunked_spec_rel"
+    fi
 
-# Only commit if there are staged changes
-if ! git -C "$REPO_ROOT" diff --cached --quiet; then
-    git -C "$REPO_ROOT" commit -m "add DRAFT spec: $TITLE"
-    echo "Committed spec and references on current branch"
-else
-    echo "Spec already committed on current branch"
+    # Stage referenced files
+    for ref in "${REF_FILES[@]+"${REF_FILES[@]}"}"; do
+        git -C "$REPO_ROOT" add "$ref"
+    done
+
+    # Only commit if there are staged changes
+    if ! git -C "$REPO_ROOT" diff --cached --quiet; then
+        git -C "$REPO_ROOT" commit -m "add DRAFT spec: $TITLE"
+        echo "Committed spec and references on current branch"
+    else
+        echo "Spec already committed on current branch"
+    fi
+
+    # =========================================================================
+    # Create worktree (branching from the commit that includes the spec)
+    # =========================================================================
+    if [[ -d "$WORKTREE_DIR" ]]; then
+        echo "Worktree already exists at $WORKTREE_DIR"
+    else
+        echo "Creating worktree..."
+        git worktree add -b "$BRANCH" "$WORKTREE_DIR" HEAD
+        echo "Initializing submodules in worktree..."
+        # Use main repo's submodules as reference to avoid network clones
+        git -C "$WORKTREE_DIR" submodule update --init --recursive --reference "$REPO_ROOT"
+    fi
+
+    # =========================================================================
+    # Create sandbox, inject auth, then run codex
+    # =========================================================================
+    echo
+    # Mount the parent repo's .git dir so worktree git metadata resolves correctly
+    GIT_DIR="$REPO_ROOT/.git"
+    if docker sandbox list 2>&1 | grep -q "$SANDBOX_NAME"; then
+        echo "Reusing existing sandbox '$SANDBOX_NAME'"
+    else
+        echo "Creating sandbox..."
+        docker sandbox create --name "$SANDBOX_NAME" codex "$WORKTREE_DIR" "$GIT_DIR"
+        echo "Configuring network..."
+        configure_network "$SANDBOX_NAME"
+    fi
+
+    echo "Injecting credentials..."
+    inject_auth "$SANDBOX_NAME"
+    inject_claude_auth "$SANDBOX_NAME"
+
+    echo "Injecting environment..."
+    inject_env "$SANDBOX_NAME"
 fi
-
-# =============================================================================
-# Create worktree (branching from the commit that includes the spec)
-# =============================================================================
-if [[ -d "$WORKTREE_DIR" ]]; then
-    echo "Worktree already exists at $WORKTREE_DIR"
-else
-    echo "Creating worktree..."
-    git worktree add -b "$BRANCH" "$WORKTREE_DIR" HEAD
-    echo "Initializing submodules in worktree..."
-    # Use main repo's submodules as reference to avoid network clones
-    git -C "$WORKTREE_DIR" submodule update --init --recursive --reference "$REPO_ROOT"
-fi
-
-# =============================================================================
-# Create sandbox, inject auth, then run codex
-# =============================================================================
-echo
-# Mount the parent repo's .git dir so worktree git metadata resolves correctly
-GIT_DIR="$REPO_ROOT/.git"
-if docker sandbox list 2>&1 | grep -q "$SANDBOX_NAME"; then
-    echo "Reusing existing sandbox '$SANDBOX_NAME'"
-else
-    echo "Creating sandbox..."
-    docker sandbox create --name "$SANDBOX_NAME" codex "$WORKTREE_DIR" "$GIT_DIR"
-    echo "Configuring network..."
-    configure_network "$SANDBOX_NAME"
-fi
-
-echo "Injecting credentials..."
-inject_auth "$SANDBOX_NAME"
-inject_claude_auth "$SANDBOX_NAME"
-
-echo "Injecting environment..."
-inject_env "$SANDBOX_NAME"
 
 echo
 if [[ "$RALPH_LOOP" == "true" ]]; then
