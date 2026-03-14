@@ -1,8 +1,18 @@
-# status-follow-new-all-branches
 
-Traceability note for [2026-03-14_status-follow-probe-all-branches-spec.md](../2026-03-14_status-follow-probe-all-branches-spec.md).
+Now, when I run 'status -f' to follow a build without any --job option, buildgit will assume I want $JOB/main.  This works, but it is too limiting.
 
-The spec referenced a raw report path under `specs/todo/`, but that source file was not present in this repository or in `HEAD` during finalize. This note preserves the referenced filename and the original request intent captured by the spec:
+```
+$ ./buildgit  status -f
+[11:24:09] ℹ Waiting for Jenkins build ralph1/main to start...
+```
 
-- `buildgit status -f` should be able to follow the next Jenkins build even when the build starts on a different multibranch branch than the current checkout.
-- The resulting feature became `buildgit status -f --probe-all`, which watches the top-level multibranch job, detects the first branch build that starts, and then follows that branch build with the normal monitoring flow.
+What we need instead is for the 'status -f' to wait for a build on ANY remote branch.  This also includes new remote branches that have not even been seen yet on the remote server.  The first one that starts to build will be shown on the screen. Any others that may exist in any state are ignored for this scenario.
+
+What happens now, is that we implement a spec with a command like:
+
+```
+./jbuildmon/implement-spec.sh jbuildmon/specs/2026-03-14_standardize-stdout-stderr-spec.md 
+```
+
+This script will create a new local branch, and eventually will push it to the remote jenkins server.  This will take a while.  I want to be able to run 'buildgit status -f' in another terminal to show the build status when it starts.  
+

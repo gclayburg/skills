@@ -356,18 +356,28 @@ if [[ "$RALPH_LOOP" == "true" ]]; then
     echo "MaxChunks: $MAX_CHUNKS"
 fi
 
-# Collect referenced files from the spec's References: header
+# Collect referenced files from the spec's References: header.
+# When chunked auto-detection swapped SPEC to the plan file, also collect
+# references from the original spec (CHUNKED_SPEC) since the plan file
+# typically has no References: header.
 REF_FILES=()
-ref_line=$(grep -m1 '^\- \*\*References:\*\*' "$SPEC" | sed 's/^- \*\*References:\*\* //' || true)
-if [[ -n "$ref_line" ]] && [[ "$ref_line" != "none" ]]; then
-    # Extract backtick-quoted paths
-    while IFS= read -r ref_path; do
-        # References are relative to specs dir; resolve to repo root
-        full_path="$REPO_ROOT/jbuildmon/$ref_path"
-        if [[ -f "$full_path" ]]; then
-            REF_FILES+=("${full_path#$REPO_ROOT/}")
-        fi
-    done < <(echo "$ref_line" | grep -oE '`[^`]+`' | tr -d '`')
+_collect_refs_from() {
+    local file="$1"
+    local line
+    line=$(grep -m1 '^\- \*\*References:\*\*' "$file" | sed 's/^- \*\*References:\*\* //' || true)
+    if [[ -n "$line" ]] && [[ "$line" != "none" ]]; then
+        while IFS= read -r ref_path; do
+            # References are relative to specs dir; resolve to repo root
+            local full_path="$REPO_ROOT/jbuildmon/$ref_path"
+            if [[ -f "$full_path" ]]; then
+                REF_FILES+=("${full_path#$REPO_ROOT/}")
+            fi
+        done < <(echo "$line" | grep -oE '`[^`]+`' | tr -d '`')
+    fi
+}
+_collect_refs_from "$SPEC"
+if [[ -n "${CHUNKED_SPEC:-}" ]]; then
+    _collect_refs_from "$CHUNKED_SPEC"
 fi
 
 if [[ ${#REF_FILES[@]} -gt 0 ]]; then
