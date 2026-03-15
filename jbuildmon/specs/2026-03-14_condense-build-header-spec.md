@@ -190,6 +190,18 @@ Update tests that assert on the old header format:
 2. **`test/buildgit_status_follow.bats`:**
    - `follow_monitoring_header_condensed`: Verify monitoring mode uses the condensed header format.
 
+## Manual Test Plan
+
+See [`2026-03-14_condense-build-header-test-plan.md`](2026-03-14_condense-build-header-test-plan.md) for a CLI-driven test plan that verifies the implementation by running `buildgit` against a real Jenkins server. This plan covers:
+
+1. **Header layout** — no Build Info box, no blank lines, correct field order
+2. **Trigger display** — unified format for manual/SCM/timer/upstream/unknown triggers, empty-name guard
+3. **Commit message** — shown after SHA, cross-checked against `git log`
+4. **Agent field** — promoted to top-level with correct alignment
+5. **JSON output** — `triggerUser` and `commitMessage` fields present and consistent with `--all` output
+6. **Monitoring mode** — follow mode uses the condensed header
+7. **API verification** — trigger cause class from Jenkins API matches displayed trigger type
+
 ## SPEC workflow
 
 1. read `specs/CLAUDE.md` and follow all rules there to implement this DRAFT spec (DRAFT->IMPLEMENTED)
