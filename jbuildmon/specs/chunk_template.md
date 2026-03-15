@@ -75,3 +75,5 @@ See spec [<Section Name>](./<spec-filename>.md#<anchor>) sections X.X-X.X.
 - Chunk numbers (N, M) should be sequential within the plan
 - Spec anchors should match markdown heading IDs in the spec document
 - Test case names should use snake_case
+- Checkboxes (`- [ ]`) appear ONLY in the `## Contents` list, never in chunk detail headings — duplicate checkboxes break progress counting tools
+- The `#### Implementation Log` subsection is filled in by the implementing agent, not the plan creator

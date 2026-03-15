@@ -603,21 +603,59 @@ if [[ "$MODE" != "redo" ]]; then
     # Commit spec and referenced files on the current branch
     # =========================================================================
     echo
-    echo "Committing spec to current branch..."
+    echo "Discovering uncommitted files referenced by spec..."
 
-    # Stage spec file
-    git -C "$REPO_ROOT" add "$SPEC_REL"
+    # Use haiku to find all valid files referenced from the spec that aren't committed yet
+    HAIKU_FILES=()
+    haiku_output=$(claude --model haiku -p \
+        "give me a report on all valid files referenced from this document ${SPEC_REL}. Include only files that have not yet been commited to git HEAD. Your output should be one filename per line, nothing more" \
+        --dangerously-skip-permissions 2>&1)
+    haiku_exit=$?
+    if [[ $haiku_exit -ne 0 ]]; then
+        echo "Error: claude haiku failed (exit $haiku_exit) while discovering referenced files:" >&2
+        echo "$haiku_output" >&2
+        exit 1
+    fi
 
-    # Stage the original spec file if we auto-switched from a chunked spec to its plan
+    # Collect valid file paths from haiku output
+    while IFS= read -r line; do
+        line=$(echo "$line" | xargs)  # trim whitespace
+        if [[ -n "$line" && -f "$REPO_ROOT/$line" ]]; then
+            HAIKU_FILES+=("$line")
+        fi
+    done <<< "$haiku_output"
+
+    # Always include the spec file itself
+    COMMIT_FILES=("$SPEC_REL")
+
+    # Include the original spec file if we auto-switched from a chunked spec to its plan
     if [[ -n "${CHUNKED_SPEC:-}" ]]; then
         chunked_spec_abs=$(realpath "$CHUNKED_SPEC")
         chunked_spec_rel="${chunked_spec_abs#$REPO_ROOT/}"
-        git -C "$REPO_ROOT" add "$chunked_spec_rel"
+        COMMIT_FILES+=("$chunked_spec_rel")
     fi
 
-    # Stage referenced files
+    # Add haiku-discovered files
+    for f in "${HAIKU_FILES[@]+"${HAIKU_FILES[@]}"}"; do
+        COMMIT_FILES+=("$f")
+    done
+
+    # Add REF_FILES from header parsing (belt and suspenders)
     for ref in "${REF_FILES[@]+"${REF_FILES[@]}"}"; do
-        git -C "$REPO_ROOT" add "$ref"
+        COMMIT_FILES+=("$ref")
+    done
+
+    # Deduplicate
+    readarray -t COMMIT_FILES < <(printf '%s\n' "${COMMIT_FILES[@]}" | sort -u)
+
+    echo "Files to commit:"
+    for f in "${COMMIT_FILES[@]}"; do
+        echo "  $f"
+    done
+
+    # Stage all files
+    for f in "${COMMIT_FILES[@]}"; do
+        git -C "$REPO_ROOT" add "$f"
     done
 
     # Only commit if there are staged changes

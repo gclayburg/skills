@@ -39,6 +39,7 @@ Individual `*-spec.md` files are treated as the specification for each feature�
 
 - before creating a DRAFT spec, you must read all the relevant background material and then ask questions about anything that needs clarification
 - if the raw issue is a bug or something broken, perform a root cause analysis and include that in the spec
+- **Always create a companion manual test plan** file alongside the spec: `<spec-basename>-test-plan.md` (e.g., `2026-03-14_condense-build-header-spec.md` → `2026-03-14_condense-build-header-test-plan.md`). The test plan must contain concrete CLI commands that an agent can execute to verify the implementation works end-to-end against the real tool and environment. Link the test plan from a `## Manual Test Plan` section at the end of the spec (before the `## SPEC workflow` section). See `2026-03-14_condense-build-header-test-plan.md` for a reference example.
 
 ## Implementation Workflow for DRAFT->IMPLEMENTED
 ## Mandatory trigger: "implement DRAFT spec"
@@ -54,6 +55,9 @@ If user asks to implement a DRAFT spec:
 - [ ] **Write the code** as described in the spec's Specification section.
 - [ ] **Write or update unit tests** as described in the spec's Test Strategy section.
 - [ ] **Run all unit tests** and confirm they pass (both new and existing).
+
+### Run manual test plan (if present)
+- [ ] **Check if the spec references a manual test plan** (look for a `## Manual Test Plan` section or a companion `*-test-plan.md` file). If one exists, execute every test command in the plan against the real CLI tool and verify the results match the expected output. If any test fails, fix the code and re-run until all tests pass. Do not skip this step — unit tests alone are not sufficient to prove the implementation works end-to-end.
 
 ### Update documentation and metadata
 - [ ] **Update `CHANGELOG.md`** (at the repository root): document new features, changed behavior, deprecations, removals, bug fixes, or security fixes.
@@ -84,6 +88,7 @@ Implementation Workflow is split into two tiers:
 - Implement the chunk
 - Write/update unit tests
 - Run all unit tests
+- Run manual test plan if the spec references one (execute CLI commands and verify output)
 - Fill in the chunk's `#### Implementation Log`
 - Commit (with chunk number in message) and push via `buildgit push jenkins`
 
