@@ -355,32 +355,18 @@ display_failure_output() {
     timestamp=$(echo "$build_json" | jq -r '.timestamp // 0')
     url=$(echo "$build_json" | jq -r '.url // empty')
 
-    # Format display components
-    local trigger_display commit_display
-    trigger_display=$(_format_trigger_display "$trigger_type" "$trigger_user")
-    commit_display=$(_format_commit_display "$commit_sha" "$commit_msg")
-    _format_correlation_display "$correlation_status"
+    local agent=""
+    if [[ -n "$console_output" ]]; then
+        _parse_build_metadata "$console_output"
+        agent="${_META_AGENT:-}"
+    fi
 
     # Display banner
     log_banner "failure"
 
-    # Display build details (header fields first, matching monitored output)
-    # Spec: bug-build-monitoring-header-spec.md
-    echo "Job:        ${job_name}"
-    echo "Build:      #${build_number}"
-    echo "Status:     ${COLOR_RED}${result}${COLOR_RESET}"
-    echo "Trigger:    ${trigger_display}"
-    echo "Commit:     ${commit_display}"
-    echo "            ${_CORRELATION_COLOR}${_CORRELATION_SYMBOL} ${_CORRELATION_DESC}${COLOR_RESET}"
-    echo "Started:    $(format_timestamp "$timestamp")"
-
-    # Display build metadata (user, agent, pipeline)
-    if [[ -n "$console_output" ]]; then
-        display_build_metadata "$console_output"
-    fi
-
-    echo ""
-    echo "Console:    ${url}console"
+    _print_build_header "$job_name" "$build_number" "${COLOR_RED}${result}${COLOR_RESET}" \
+        "$trigger_type" "$trigger_user" "$commit_sha" "$commit_msg" "$correlation_status" \
+        "$timestamp" "$agent" "$url"
 
     # Display all stages (includes not-executed stages for failed builds)
     # Spec: full-stage-print-spec.md, Section: Display Functions

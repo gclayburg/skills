@@ -145,6 +145,7 @@ fetch_test_results() {
 
 get_console_output() {
     echo "Started by user testuser"
+    echo "Running on agent6 guthrie in /var/jenkins/workspace/test-repo"
     echo "Checking out Revision abc1234567890"
 }
 
@@ -1102,6 +1103,23 @@ WRAPPER
 
     # Should show console URL
     [[ "$output" == *"Console:"*"console"* ]]
+}
+
+@test "follow_monitoring_header_condensed" {
+    cd "${TEST_REPO}"
+
+    export PROJECT_DIR
+    export TEST_TEMP_DIR
+    create_follow_test_wrapper "true" "SUCCESS" "2"
+
+    run bash -c "bash \"${TEST_TEMP_DIR}/buildgit_wrapper.sh\" --once 3>&- 2>&1"
+    assert_success
+
+    refute_output --partial "=== Build Info ==="
+    refute_output --partial "Started by:"
+    assert_output --partial "Trigger:"
+    assert_output --partial "Agent:"
+    assert_output --partial "Console:"
 }
 
 # -----------------------------------------------------------------------------

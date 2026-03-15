@@ -21,7 +21,7 @@ _print_deferred_header_fields() {
     fi
 
     # Re-extract build context with console output
-    _extract_build_context "$job_name" "$build_number" "$console_output"
+    _extract_build_context "$job_name" "$build_number" "$build_json" "$console_output"
     _DEFERRED_HEADER_ATTEMPTS=$(( ${_DEFERRED_HEADER_ATTEMPTS:-0} + 1 ))
 
     # Print Commit line if it was deferred and now available
@@ -35,24 +35,25 @@ _print_deferred_header_fields() {
         printed_something=true
     fi
 
-    # Print Build Info section if it was deferred
-    if [[ "$_DEFERRED_BUILD_INFO" == "true" ]]; then
-        display_build_metadata "$console_output"
-        _DEFERRED_BUILD_INFO=false
-        printed_something=true
+    # Print Agent line if it was deferred
+    if [[ "${_DEFERRED_AGENT:-false}" == "true" ]]; then
+        _parse_build_metadata "$console_output"
+        if [[ -n "${_META_AGENT:-}" ]]; then
+            echo "Agent:      ${_META_AGENT}"
+            _DEFERRED_AGENT=false
+            printed_something=true
+        fi
     fi
 
-    # Print Console URL last, after deferred Commit/Build Info.
-    # If Commit never resolves, print Console after a small retry window.
+    # Print Console URL last, after deferred Commit/Agent.
     if [[ "${_DEFERRED_CONSOLE:-false}" == "true" ]]; then
-        if [[ "${_DEFERRED_COMMIT:-false}" != "true" && "${_DEFERRED_BUILD_INFO:-false}" != "true" ]] || \
+        if [[ "${_DEFERRED_COMMIT:-false}" != "true" && "${_DEFERRED_AGENT:-false}" != "true" ]] || \
            [[ "${_DEFERRED_HEADER_ATTEMPTS:-0}" -ge "$max_attempts" ]]; then
-        local url
-        url=$(echo "$build_json" | jq -r '.url // empty')
-        if [[ -n "$url" ]]; then
-            echo ""
-            echo "Console:    ${url}console"
-        fi
+            local url
+            url=$(echo "$build_json" | jq -r '.url // empty')
+            if [[ -n "$url" ]]; then
+                echo "Console:    ${url}console"
+            fi
             _DEFERRED_CONSOLE=false
         fi
     fi
@@ -130,7 +131,7 @@ __buildgit_monitor_build_impl() {
         local emit_verbose_progress=false
 
         # Collect deferred-header output first so API calls complete before clear+redraw.
-        if [[ "${_DEFERRED_COMMIT:-false}" == "true" || "${_DEFERRED_BUILD_INFO:-false}" == "true" || "${_DEFERRED_CONSOLE:-false}" == "true" ]]; then
+        if [[ "${_DEFERRED_COMMIT:-false}" == "true" || "${_DEFERRED_AGENT:-false}" == "true" || "${_DEFERRED_CONSOLE:-false}" == "true" ]]; then
             if [[ "$render_progress" == "true" && -n "$deferred_log_file" ]]; then
                 _print_deferred_header_fields "$job_name" "$build_number" "${_DEFERRED_BUILD_JSON:-$build_info}" >"$deferred_log_file" 2>&1 || true
                 deferred_output=$(cat "$deferred_log_file")
@@ -332,12 +333,12 @@ __buildgit_display_build_in_progress_banner_impl() {
         return 0
     fi
 
-    # Get console output for trigger detection, commit extraction, and Build Info section
+    # Get console output for trigger detection, commit extraction, and agent extraction
     local console_output
     console_output=$(get_console_output "$job_name" "$build_number" 2>/dev/null) || true
 
     # Extract trigger, commit, and correlation context
-    _extract_build_context "$job_name" "$build_number" "$console_output"
+    _extract_build_context "$job_name" "$build_number" "$build_json" "$console_output"
     if [[ -n "$preferred_commit_sha" && "$preferred_commit_sha" != "unknown" ]]; then
         _BC_COMMIT_SHA="$preferred_commit_sha"
         _BC_COMMIT_MSG="$preferred_commit_msg"
@@ -352,7 +353,7 @@ __buildgit_display_build_in_progress_banner_impl() {
     local current_stage
     current_stage=$(get_current_stage "$job_name" "$build_number" 2>/dev/null) || true
 
-    # Display the unified header (banner + metadata + Build Info + Console URL)
+    # Display the unified header (banner + metadata + Console URL)
     # Spec: unify-follow-log-spec.md, Section 2
     display_building_output "$job_name" "$build_number" "$build_json" \
         "$_BC_TRIGGER_TYPE" "$_BC_TRIGGER_USER" \
@@ -363,22 +364,23 @@ __buildgit_display_build_in_progress_banner_impl() {
     # Track which header fields need deferred printing by _monitor_build
     # Spec: bug-build-monitoring-header-spec.md - deferred header fields
     _DEFERRED_COMMIT=false
-    _DEFERRED_BUILD_INFO=false
+    _DEFERRED_AGENT=false
     _DEFERRED_CONSOLE=false
     _DEFERRED_BUILD_JSON=""
     _DEFERRED_HEADER_ATTEMPTS=0
     if [[ -z "$_BC_COMMIT_SHA" || "$_BC_COMMIT_SHA" == "unknown" ]]; then
         _DEFERRED_COMMIT=true
     fi
-    if [[ -z "$console_output" ]]; then
-        _DEFERRED_BUILD_INFO=true
+    _parse_build_metadata "$console_output"
+    if [[ -z "${_META_AGENT:-}" ]]; then
+        _DEFERRED_AGENT=true
     fi
     local banner_url
     banner_url=$(echo "$build_json" | jq -r '.url // empty')
-    if [[ -n "$banner_url" ]] && [[ "$_DEFERRED_COMMIT" == "true" || "$_DEFERRED_BUILD_INFO" == "true" ]]; then
+    if [[ -n "$banner_url" ]] && [[ "$_DEFERRED_COMMIT" == "true" || "$_DEFERRED_AGENT" == "true" ]]; then
         _DEFERRED_CONSOLE=true
     fi
-    if [[ "$_DEFERRED_COMMIT" == "true" || "$_DEFERRED_BUILD_INFO" == "true" || "$_DEFERRED_CONSOLE" == "true" ]]; then
+    if [[ "$_DEFERRED_COMMIT" == "true" || "$_DEFERRED_AGENT" == "true" || "$_DEFERRED_CONSOLE" == "true" ]]; then
         _DEFERRED_BUILD_JSON="$build_json"
     fi
 
@@ -653,12 +655,12 @@ _display_completed_build() {
     local result
     result=$(echo "$build_json" | jq -r '.result // "UNKNOWN"')
 
-    # Get console output for trigger detection, commit extraction, and Build Info
+    # Get console output for trigger detection, commit extraction, and agent extraction
     local console_output
     console_output=$(get_console_output "$job_name" "$build_number" 2>/dev/null) || true
 
     # Extract trigger, commit, and correlation context
-    _extract_build_context "$job_name" "$build_number" "$console_output"
+    _extract_build_context "$job_name" "$build_number" "$build_json" "$console_output"
 
     # Display using the same output path as snapshot mode
     # Finished line and Duration are now included in display_*_output functions

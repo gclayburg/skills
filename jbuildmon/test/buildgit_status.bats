@@ -2163,3 +2163,94 @@ WRAPPER_START
     assert_failure
     assert_output --partial "--prior-jobs requires a value"
 }
+
+create_status_condensed_header_wrapper() {
+    sed -e '/^main "\$@"$/d' \
+        -e 's|source "\${SCRIPT_DIR}/lib/jenkins-common.sh"|source "'"${PROJECT_DIR}"'/lib/jenkins-common.sh"|g' \
+        "${PROJECT_DIR}/buildgit" > "${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+    cat > "${TEST_TEMP_DIR}/buildgit_wrapper.sh" << WRAPPER_START
+#!/usr/bin/env bash
+set -euo pipefail
+trap '' PIPE
+
+export PROJECT_DIR="${PROJECT_DIR}"
+export TEST_TEMP_DIR="${TEST_TEMP_DIR}"
+
+_BUILDGIT_TESTING=1
+source "\${TEST_TEMP_DIR}/buildgit_no_main.sh"
+
+verify_jenkins_connection() { return 0; }
+verify_job_exists() {
+    JOB_URL="\${JENKINS_URL}/job/\$1"
+    return 0
+}
+get_last_build_number() { echo "42"; }
+get_build_info() {
+    local head_sha
+    head_sha=\$(git rev-parse HEAD)
+    cat <<JSON
+{"number":42,"result":"SUCCESS","building":false,"timestamp":1706700000000,"duration":120000,"url":"http://jenkins.example.com/job/test-repo/42/","actions":[{"_class":"hudson.model.CauseAction","causes":[{"_class":"hudson.model.UserIdCause","userName":"Ralph AI Read Only"}]},{"_class":"hudson.plugins.git.util.BuildData","lastBuiltRevision":{"SHA1":"\${head_sha}"}}],"changeSets":[{"items":[{"commitId":"\${head_sha}","msg":"Initial commit"}]}]}
+JSON
+}
+get_console_output() {
+    echo "Running on agent6 guthrie in /var/jenkins/workspace/test-repo"
+}
+fetch_test_results() { echo '{"passCount":120,"failCount":0,"skipCount":0}'; }
+get_all_stages() { echo "[]"; }
+get_failed_stage() { echo ""; }
+
+cmd_status --prior-jobs 0 --all "\$@"
+WRAPPER_START
+
+    chmod +x "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+}
+
+@test "status_trigger_manual_with_user" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR TEST_TEMP_DIR
+    create_status_condensed_header_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+
+    assert_success
+    assert_output --partial "Trigger:    Manual by Ralph AI Read Only"
+}
+
+@test "status_commit_message_shown" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR TEST_TEMP_DIR
+    create_status_condensed_header_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+
+    assert_success
+    assert_output --partial "Commit:     "
+    assert_output --partial "Initial commit"
+    [[ "$output" == *"Your commit (HEAD)"* || "$output" == *"In your history (reachable from HEAD)"* ]]
+}
+
+@test "status_header_no_build_info_box" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR TEST_TEMP_DIR
+    create_status_condensed_header_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh"
+
+    assert_success
+    refute_output --partial "=== Build Info ==="
+    refute_output --partial "Started by:"
+    assert_output --partial "Agent:      agent6 guthrie"
+}
+
+@test "status_json_includes_trigger_user_and_commit_message" {
+    cd "${TEST_REPO}"
+    export PROJECT_DIR TEST_TEMP_DIR
+    create_status_condensed_header_wrapper
+
+    run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" --json
+
+    assert_success
+    echo "$output" | jq -e '.triggerUser == "Ralph AI Read Only"' >/dev/null
+    echo "$output" | jq -e '.commitMessage == "Initial commit"' >/dev/null
+}

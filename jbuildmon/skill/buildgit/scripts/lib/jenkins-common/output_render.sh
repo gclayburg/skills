@@ -41,31 +41,61 @@ format_timestamp_iso() {
 
 # Format trigger type into display string
 # Usage: _format_trigger_display "automated" "username"
-# Returns: "Automated (git push)" or "Manual (started by username)" or "Unknown"
+# Returns: "SCM change", "Manual by username", "Timer", "Upstream", or "Unknown"
 _format_trigger_display() {
     local trigger_type="$1"
     local trigger_user="$2"
 
-    if [[ "$trigger_type" == "automated" ]]; then
-        echo "Automated (git push)"
-    elif [[ "$trigger_type" == "manual" ]]; then
-        echo "Manual (started by ${trigger_user})"
-    else
-        echo "Unknown"
-    fi
+    case "$trigger_type" in
+        manual)
+            if [[ -n "$trigger_user" && "$trigger_user" != "unknown" ]]; then
+                echo "Manual by ${trigger_user}"
+            else
+                echo "Manual"
+            fi
+            ;;
+        scm)
+            echo "SCM change"
+            ;;
+        timer)
+            echo "Timer"
+            ;;
+        upstream)
+            echo "Upstream"
+            ;;
+        *)
+            echo "Unknown"
+            ;;
+    esac
 }
 
 # Format commit SHA and message into display string
 # Usage: _format_commit_display "abc1234..." "commit message"
-# Returns: "abc1234 - \"commit message\"" or "abc1234" or "unknown"
+# Returns: "abc1234  commit message" or "abc1234" or "unknown"
 _format_commit_display() {
     local commit_sha="$1"
     local commit_msg="$2"
+    local max_value_width=100
 
     if [[ -n "$commit_sha" && "$commit_sha" != "unknown" ]]; then
         local short_sha="${commit_sha:0:7}"
         if [[ -n "$commit_msg" && "$commit_msg" != "unknown" ]]; then
-            echo "${short_sha} - \"${commit_msg}\""
+            local subject
+            local max_msg_len
+            subject=$(printf '%s\n' "$commit_msg" | sed -n '1{s/\r$//;p;}')
+            max_msg_len=$((max_value_width - ${#short_sha} - 2))
+            if [[ "$max_msg_len" -lt 1 ]]; then
+                echo "${short_sha}"
+                return
+            fi
+            if [[ ${#subject} -gt $max_msg_len ]]; then
+                if [[ "$max_msg_len" -gt 3 ]]; then
+                    subject="${subject:0:$((max_msg_len - 3))}..."
+                else
+                    subject="${subject:0:$max_msg_len}"
+                fi
+            fi
+            echo "${short_sha}  ${subject}"
         else
             echo "${short_sha}"
         fi
@@ -89,6 +119,43 @@ _format_correlation_display() {
     fi
 }
 
+_print_build_header() {
+    local job_name="$1"
+    local build_number="$2"
+    local status_display="$3"
+    local trigger_type="$4"
+    local trigger_user="$5"
+    local commit_sha="$6"
+    local commit_msg="$7"
+    local correlation_status="$8"
+    local timestamp="$9"
+    local agent="${10:-}"
+    local url="${11:-}"
+    local trigger_display commit_display
+
+    trigger_display=$(_format_trigger_display "$trigger_type" "$trigger_user")
+
+    echo "Job:        ${job_name}"
+    echo "Build:      #${build_number}"
+    echo "Status:     ${status_display}"
+    echo "Trigger:    ${trigger_display}"
+
+    if [[ -n "$commit_sha" && "$commit_sha" != "unknown" ]]; then
+        commit_display=$(_format_commit_display "$commit_sha" "$commit_msg")
+        _format_correlation_display "$correlation_status"
+        echo "Commit:     ${commit_display}"
+        echo "            ${_CORRELATION_COLOR}${_CORRELATION_SYMBOL} ${_CORRELATION_DESC}${COLOR_RESET}"
+    fi
+
+    echo "Started:    $(format_timestamp "$timestamp")"
+    if [[ -n "$agent" ]]; then
+        echo "Agent:      ${agent}"
+    fi
+    if [[ -n "$url" ]]; then
+        echo "Console:    ${url}console"
+    fi
+}
+
 # Display successful build output
 # Usage: display_success_output "job_name" "build_number" "build_json" "trigger_type" "trigger_user" "commit_sha" "commit_msg" "correlation_status"
 display_success_output() {
@@ -109,31 +176,18 @@ display_success_output() {
     url=$(echo "$build_json" | jq -r '.url // empty')
 
     # Format display components
-    local trigger_display commit_display
-    trigger_display=$(_format_trigger_display "$trigger_type" "$trigger_user")
-    commit_display=$(_format_commit_display "$commit_sha" "$commit_msg")
-    _format_correlation_display "$correlation_status"
+    local agent=""
+    if [[ -n "$console_output" ]]; then
+        _parse_build_metadata "$console_output"
+        agent="${_META_AGENT:-}"
+    fi
 
     # Display banner
     log_banner "success"
 
-    # Display build details (header fields first, matching monitored output)
-    # Spec: bug-build-monitoring-header-spec.md
-    echo "Job:        ${job_name}"
-    echo "Build:      #${build_number}"
-    echo "Status:     ${COLOR_GREEN}SUCCESS${COLOR_RESET}"
-    echo "Trigger:    ${trigger_display}"
-    echo "Commit:     ${commit_display}"
-    echo "            ${_CORRELATION_COLOR}${_CORRELATION_SYMBOL} ${_CORRELATION_DESC}${COLOR_RESET}"
-    echo "Started:    $(format_timestamp "$timestamp")"
-
-    # Display Build Info section if console output is available
-    if [[ -n "$console_output" ]]; then
-        display_build_metadata "$console_output"
-    fi
-
-    echo ""
-    echo "Console:    ${url}console"
+    _print_build_header "$job_name" "$build_number" "${COLOR_GREEN}SUCCESS${COLOR_RESET}" \
+        "$trigger_type" "$trigger_user" "$commit_sha" "$commit_msg" "$correlation_status" \
+        "$timestamp" "$agent" "$url"
 
     # Display all stages
     # Spec: full-stage-print-spec.md, Section: Display Functions
@@ -185,31 +239,18 @@ display_failure_output() {
     url=$(echo "$build_json" | jq -r '.url // empty')
 
     # Format display components
-    local trigger_display commit_display
-    trigger_display=$(_format_trigger_display "$trigger_type" "$trigger_user")
-    commit_display=$(_format_commit_display "$commit_sha" "$commit_msg")
-    _format_correlation_display "$correlation_status"
+    local agent=""
+    if [[ -n "$console_output" ]]; then
+        _parse_build_metadata "$console_output"
+        agent="${_META_AGENT:-}"
+    fi
 
     # Display banner
     log_banner "failure"
 
-    # Display build details (header fields first, matching monitored output)
-    # Spec: bug-build-monitoring-header-spec.md
-    echo "Job:        ${job_name}"
-    echo "Build:      #${build_number}"
-    echo "Status:     ${COLOR_RED}${result}${COLOR_RESET}"
-    echo "Trigger:    ${trigger_display}"
-    echo "Commit:     ${commit_display}"
-    echo "            ${_CORRELATION_COLOR}${_CORRELATION_SYMBOL} ${_CORRELATION_DESC}${COLOR_RESET}"
-    echo "Started:    $(format_timestamp "$timestamp")"
-
-    # Display build metadata (user, agent, pipeline)
-    if [[ -n "$console_output" ]]; then
-        display_build_metadata "$console_output"
-    fi
-
-    echo ""
-    echo "Console:    ${url}console"
+    _print_build_header "$job_name" "$build_number" "${COLOR_RED}${result}${COLOR_RESET}" \
+        "$trigger_type" "$trigger_user" "$commit_sha" "$commit_msg" "$correlation_status" \
+        "$timestamp" "$agent" "$url"
 
     # Display all stages (includes not-executed stages for failed builds)
     # Spec: full-stage-print-spec.md, Section: Display Functions
@@ -519,10 +560,11 @@ display_building_output() {
     url=$(echo "$build_json" | jq -r '.url // empty')
 
     # Format display components
-    local trigger_display commit_display
-    trigger_display=$(_format_trigger_display "$trigger_type" "$trigger_user")
-    commit_display=$(_format_commit_display "$commit_sha" "$commit_msg")
-    _format_correlation_display "$correlation_status"
+    local agent=""
+    if [[ -n "$console_output" ]]; then
+        _parse_build_metadata "$console_output"
+        agent="${_META_AGENT:-}"
+    fi
 
     # Display banner
     log_banner "building"
@@ -533,32 +575,14 @@ display_building_output() {
         echo ""
     fi
 
-    # Display build details (before stages, per unified format)
-    # Spec: unify-follow-log-spec.md, Section 2 (Build Header)
-    echo "Job:        ${job_name}"
-    echo "Build:      #${build_number}"
-    echo "Status:     ${COLOR_YELLOW}BUILDING${COLOR_RESET}"
-    echo "Trigger:    ${trigger_display}"
-
-    # Skip Commit/correlation lines when commit is unknown or empty (deferred header)
-    if [[ -n "$commit_sha" && "$commit_sha" != "unknown" ]]; then
-        echo "Commit:     ${commit_display}"
-        echo "            ${_CORRELATION_COLOR}${_CORRELATION_SYMBOL} ${_CORRELATION_DESC}${COLOR_RESET}"
+    local header_url=""
+    if [[ -n "$commit_sha" && "$commit_sha" != "unknown" && -n "$agent" ]]; then
+        header_url="$url"
     fi
 
-    echo "Started:    $(format_timestamp "$timestamp")"
-
-    # Display Build Info section if console output is available
-    if [[ -n "$console_output" ]]; then
-        display_build_metadata "$console_output"
-    fi
-
-    # Display Console URL only when Commit is already known.
-    # If Commit is deferred, Console URL is printed later after deferred fields.
-    if [[ -n "$commit_sha" && "$commit_sha" != "unknown" ]]; then
-        echo ""
-        echo "Console:    ${url}console"
-    fi
+    _print_build_header "$job_name" "$build_number" "${COLOR_YELLOW}BUILDING${COLOR_RESET}" \
+        "$trigger_type" "$trigger_user" "$commit_sha" "$commit_msg" "$correlation_status" \
+        "$timestamp" "$agent" "$header_url"
 }
 
 # =============================================================================

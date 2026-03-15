@@ -501,7 +501,7 @@ WRAPPER_END
     [[ "$commit_line" -lt "$console_line" ]]
 }
 
-@test "push_agent_in_build_info" {
+@test "push_agent_in_header" {
     cd "${TEST_REPO}"
 
     echo "Agent display test" >> README.md
@@ -515,8 +515,8 @@ WRAPPER_END
     run bash "${TEST_TEMP_DIR}/buildgit_wrapper.sh" 2>&1
 
     assert_success
-    assert_output --partial "=== Build Info ==="
-    assert_output --partial "Agent:       agent8_sixcore"
+    refute_output --partial "=== Build Info ==="
+    assert_output --partial "Agent:      agent8_sixcore"
 }
 
 # -----------------------------------------------------------------------------

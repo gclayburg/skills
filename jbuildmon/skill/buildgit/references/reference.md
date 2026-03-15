@@ -79,14 +79,8 @@ To ssh://scranton2:2233/home/git/phandlemono.git
 Job:        phandlemono-IT
 Build:      #41
 Status:     BUILDING
-Trigger:    Automated (git push)
+Trigger:    SCM change
 Started:    2026-02-21 09:13:43
-
-=== Build Info ===
-  Started by:  buildtriggerdude
-  Pipeline:    Jenkinsfile from git ssh://git@scranton2:2233/home/git/phandlemono.git
-==================
-
 Console:    http://palmer.garyclayburg.com:18080/job/phandlemono-IT/41/console
 
 
@@ -353,17 +347,11 @@ $ buildgit status --all
 Job:        phandlemono-IT
 Build:      #39
 Status:     SUCCESS
-Trigger:    Manual (started by Ralph AI Read Only)
-Commit:     4ae2fc1 - "fix: resolve port 9222 conflict and remove deliberate build failures"
+Trigger:    Manual by Ralph AI Read Only
+Commit:     4ae2fc1  fix: resolve port 9222 conflict and remove deliberate build failures
             ✓ Your commit (HEAD)
 Started:    2026-02-20 20:23:56
-
-=== Build Info ===
-  Started by:  Ralph AI Read Only
-  Agent:       agent8_sixcore
-  Pipeline:    Jenkinsfile from git ssh://git@scranton2:2233/home/git/phandlemono.git
-==================
-
+Agent:      agent8_sixcore
 Console:    http://palmer.garyclayburg.com:18080/job/phandlemono-IT/39/console
 
 # Stage agent labels are resolved per stage from Jenkins "Running on ..." lines.
@@ -433,17 +421,11 @@ Job phandlemono-IT #40 has been running for unknown
 Job:        phandlemono-IT
 Build:      #40
 Status:     BUILDING
-Trigger:    Manual (started by Ralph AI Read Only)
-Commit:     4ae2fc1 - "fix: resolve port 9222 conflict and remove deliberate build failures"
+Trigger:    Manual by Ralph AI Read Only
+Commit:     4ae2fc1  fix: resolve port 9222 conflict and remove deliberate build failures
             ✓ Your commit (HEAD)
 Started:    2026-02-21 09:02:43
-
-=== Build Info ===
-  Started by:  Ralph AI Read Only
-  Agent:       agent8_sixcore
-  Pipeline:    Jenkinsfile from git ssh://git@scranton2:2233/home/git/phandlemono.git
-==================
-
+Agent:      agent8_sixcore
 Console:    http://palmer.garyclayburg.com:18080/job/phandlemono-IT/40/console
 [09:02:49] ℹ   Stage: [agent8_sixcore] Declarative: Checkout SCM (<1s)
 [09:02:49] ℹ   Stage: [agent8_sixcore] Checkout (<1s)

@@ -1,11 +1,11 @@
 ## Condense build header and fix trigger/commit display
 
 - **Date:** `2026-03-14T15:42:48-06:00`
-- **References:** `specs/todo/commit-msg-print.md`
+- **References:** `specs/done-reports/commit-msg-print.md`
 - **Supersedes:** none
 - **Plan:** `none`
 - **Chunked:** `false`
-- **State:** `DRAFT`
+- **State:** `IMPLEMENTED`
 
 ## Problem Statement
 

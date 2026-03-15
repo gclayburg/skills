@@ -51,6 +51,14 @@ output_json() {
 
     # Build base JSON
     local json_output
+    local trigger_user_value="$trigger_user"
+    local commit_message_value="$commit_msg"
+    if [[ "$trigger_user_value" == "unknown" ]]; then
+        trigger_user_value=""
+    fi
+    if [[ "$commit_message_value" == "unknown" ]]; then
+        commit_message_value=""
+    fi
     json_output=$(jq -n \
         --arg job "$job_name" \
         --argjson build_number "$build_number" \
@@ -60,9 +68,9 @@ output_json() {
         --arg timestamp "$(format_timestamp_iso "$timestamp")" \
         --arg url "$url" \
         --arg trigger_type "$trigger_type" \
-        --arg trigger_user "$trigger_user" \
+        --arg trigger_user "$trigger_user_value" \
         --arg sha "$commit_sha" \
-        --arg message "$commit_msg" \
+        --arg message "$commit_message_value" \
         --argjson in_local_history "$in_local_history" \
         --argjson reachable_from_head "$reachable_from_head" \
         --argjson is_head "$is_head" \
@@ -81,6 +89,7 @@ output_json() {
                 type: $trigger_type,
                 user: $trigger_user
             },
+            triggerUser: $trigger_user,
             commit: {
                 sha: $sha,
                 message: $message,
@@ -88,6 +97,7 @@ output_json() {
                 reachable_from_head: $reachable_from_head,
                 is_head: $is_head
             },
+            commitMessage: $message,
             console_url: $console_url
         }')
 

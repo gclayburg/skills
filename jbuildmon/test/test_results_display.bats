@@ -1125,6 +1125,8 @@ Line 8 of stack trace"
     echo "$output" | jq -e '.test_results.passed == 32' >/dev/null
     echo "$output" | jq -e '.test_results.failed == 1' >/dev/null
     echo "$output" | jq -e '.test_results.failed_tests | length == 1' >/dev/null
+    echo "$output" | jq -e '.triggerUser == "testuser"' >/dev/null
+    echo "$output" | jq -e '.commitMessage == "Test commit"' >/dev/null
 }
 
 # -----------------------------------------------------------------------------

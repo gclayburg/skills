@@ -35,17 +35,11 @@ To ssh://scranton2.garyclayburg.com:2233/home/git/upbanner.git
 Job:        upbanner
 Build:      #158
 Status:     BUILDING
-Trigger:    Automated (git push)
-Commit:     06af8bd - "fix with timeout"
+Trigger:    SCM change
+Commit:     06af8bd  fix auth timeout
             ✓ Your commit (HEAD)
 Started:    2026-02-21 13:11:34
-
-=== Build Info ===
-  Started by:  buildtriggerdude
-  Agent:       agent1paton
-  Pipeline:    Jenkinsfile from git ssh://git@scranton2:2233/home/git/upbanner.git
-==================
-
+Agent:      agent1paton
 Console:    http://palmer.garyclayburg.com:18080/job/upbanner/158/console
 
 [13:11:38] ℹ   Stage: [agent1paton   ] Declarative: Checkout SCM (2s)
@@ -95,14 +89,8 @@ To ssh://scranton2:2233/home/git/phandlemono.git
 Job:        phandlemono-IT
 Build:      #41
 Status:     BUILDING
-Trigger:    Automated (git push)
+Trigger:    SCM change
 Started:    2026-02-21 09:13:43
-
-=== Build Info ===
-  Started by:  buildtriggerdude
-  Pipeline:    Jenkinsfile from git ssh://git@scranton2:2233/home/git/phandlemono.git
-==================
-
 Console:    http://palmer.garyclayburg.com:18080/job/phandlemono-IT/41/console
 
 

@@ -75,9 +75,7 @@ Some random output
 
     run detect_trigger_type "$console_output"
     assert_success
-    # Should output "automated" and "scm-trigger"
-    assert_output --partial "automated"
-    assert_output --partial "scm-trigger"
+    assert_output --partial "scm"
 }
 
 # -----------------------------------------------------------------------------
@@ -90,9 +88,34 @@ Some random output
 
     run detect_trigger_type "$console_output"
     assert_success
-    # Should output "automated" and "timer"
-    assert_output --partial "automated"
     assert_output --partial "timer"
+}
+
+@test "detect_trigger_type_from_build_json_prefers_api_user_cause" {
+    local build_json='{"actions":[{"_class":"hudson.model.CauseAction","causes":[{"_class":"hudson.model.Cause$UserIdCause","userName":"Ralph AI Read Only"}]}]}'
+
+    run detect_trigger_type_from_build_json "$build_json"
+    assert_success
+    assert_line --index 0 "manual"
+    assert_line --index 1 "Ralph AI Read Only"
+}
+
+@test "detect_trigger_type_from_build_json_maps_branch_indexing_to_scm" {
+    local build_json='{"actions":[{"_class":"hudson.model.CauseAction","causes":[{"_class":"jenkins.branch.BranchIndexingCause"}]}]}'
+
+    run detect_trigger_type_from_build_json "$build_json"
+    assert_success
+    assert_line --index 0 "scm"
+    assert_line --index 1 "unknown"
+}
+
+@test "detect_trigger_type_from_build_json_manual_with_empty_user_keeps_manual" {
+    local build_json='{"actions":[{"_class":"hudson.model.CauseAction","causes":[{"_class":"hudson.model.Cause$UserIdCause","userName":""}]}]}'
+
+    run detect_trigger_type_from_build_json "$build_json"
+    assert_success
+    assert_line --index 0 "manual"
+    assert_line --index 1 ""
 }
 
 # -----------------------------------------------------------------------------
@@ -105,7 +128,5 @@ Some random output
 
     run detect_trigger_type "$console_output"
     assert_success
-    # Should output "automated" and "upstream"
-    assert_output --partial "automated"
     assert_output --partial "upstream"
 }

@@ -483,31 +483,19 @@ _extract_running_agent_from_console() {
 _parse_build_metadata() {
     local console_output="$1"
 
-    # Extract user who started the build
-    _META_STARTED_BY=$(echo "$console_output" | grep -m1 "^Started by user " | sed 's/^Started by user //') || true
-
-    # Extract Jenkins agent
+    _META_STARTED_BY=""
     _META_AGENT=$(_extract_running_agent_from_console "$console_output") || true
-
-    # Extract pipeline source (pipeline name + git URL)
-    # Format: "Obtained <pipeline-name> from git <url>"
-    _META_PIPELINE=$(echo "$console_output" | grep -m1 "^Obtained .* from git " | sed 's|^Obtained ||') || true
+    _META_PIPELINE=""
 }
 
-# Display build metadata from console output (user, agent, pipeline)
-# Usage: display_build_metadata "$console_output"
-# Outputs: Formatted build info section
+# Compatibility wrapper for older call sites. New condensed headers print Agent
+# inline and do not use a boxed Build Info section.
 display_build_metadata() {
     local console_output="$1"
 
     _parse_build_metadata "$console_output"
 
-    echo ""
-    echo "${COLOR_CYAN}=== Build Info ===${COLOR_RESET}"
-    [[ -n "$_META_STARTED_BY" ]] && echo "  Started by:  $_META_STARTED_BY"
-    [[ -n "$_META_AGENT" ]] && echo "  Agent:       $_META_AGENT"
-    [[ -n "$_META_PIPELINE" ]] && echo "  Pipeline:    $_META_PIPELINE"
-    echo "${COLOR_CYAN}==================${COLOR_RESET}"
+    [[ -n "$_META_AGENT" ]] && echo "Agent:      $_META_AGENT"
 }
 
 # Full failure analysis orchestration
@@ -623,9 +611,49 @@ analyze_failure() {
 # Default trigger user that indicates automated builds (can be overridden)
 : "${CHECKBUILD_TRIGGER_USER:=buildtriggerdude}"
 
+# Normalize a possibly multi-line string to a single first line.
+_first_line_only() {
+    local value="$1"
+    printf '%s\n' "$value" | sed -n '1{s/\r$//;p;}'
+}
+
+# Detect trigger type from Jenkins build API actions/causes.
+# Usage: detect_trigger_type_from_build_json "$build_json"
+# Returns: Outputs two lines: type and username
+detect_trigger_type_from_build_json() {
+    local build_json="$1"
+    local cause_info=""
+
+    if [[ -n "$build_json" ]]; then
+        cause_info=$(printf '%s\n' "$build_json" | jq -r '
+            [ .actions[]? | .causes[]? ] as $causes
+            | if ($causes | length) == 0 then
+                "unknown\nunknown"
+              elif ($causes | map(select((._class // "") | test("UserIdCause$"))) | length) > 0 then
+                ($causes | map(select((._class // "") | test("UserIdCause$"))) | first) as $cause
+                | "manual\n\($cause.userName // "")"
+              elif ($causes | map(select((._class // "") | test("SCMTriggerCause$|BranchIndexingCause$"))) | length) > 0 then
+                "scm\nunknown"
+              elif ($causes | map(select((._class // "") | test("TimerTriggerCause$"))) | length) > 0 then
+                "timer\nunknown"
+              elif ($causes | map(select((._class // "") | test("UpstreamCause$"))) | length) > 0 then
+                "upstream\nunknown"
+              else
+                "unknown\nunknown"
+              end
+        ' 2>/dev/null | sed -n '1,2p') || true
+    fi
+
+    if [[ -n "$cause_info" ]]; then
+        printf '%s\n' "$cause_info"
+    else
+        printf 'unknown\nunknown\n'
+    fi
+}
+
 # Detect trigger type from console output
 # Usage: detect_trigger_type "$console_output"
-# Returns: Outputs two lines: type ("automated" or "manual") and username
+# Returns: Outputs two lines: type and username
 #          Returns 0 always; outputs 'unknown' if trigger cannot be determined
 detect_trigger_type() {
     local console_output="$1"
@@ -637,16 +665,16 @@ detect_trigger_type() {
     if [[ -z "$started_by_line" ]]; then
         # Check for other trigger patterns
         if echo "$console_output" | grep -q "^Started by an SCM change" 2>/dev/null; then
-            echo "automated"
-            echo "scm-trigger"
+            echo "scm"
+            echo "unknown"
             return 0
         elif echo "$console_output" | grep -q "^Started by timer" 2>/dev/null; then
-            echo "automated"
             echo "timer"
+            echo "unknown"
             return 0
         elif echo "$console_output" | grep -q "^Started by upstream project" 2>/dev/null; then
-            echo "automated"
             echo "upstream"
+            echo "unknown"
             return 0
         fi
         echo "unknown"
@@ -657,6 +685,7 @@ detect_trigger_type() {
     # Extract username
     local username
     username=$(echo "$started_by_line" | sed 's/^Started by user //')
+    username=$(_first_line_only "$username")
 
     # Compare against trigger user (case-insensitive, portable)
     local username_lower trigger_lower
@@ -664,7 +693,7 @@ detect_trigger_type() {
     trigger_lower=$(echo "$CHECKBUILD_TRIGGER_USER" | tr '[:upper:]' '[:lower:]')
 
     if [[ "$username_lower" == "$trigger_lower" ]]; then
-        echo "automated"
+        echo "scm"
         echo "$username"
     else
         echo "manual"
@@ -673,20 +702,72 @@ detect_trigger_type() {
     return 0
 }
 
+# Extract commit message from Jenkins build JSON.
+_extract_commit_message_from_build_json() {
+    local build_info="$1"
+    local sha="$2"
+    local message=""
+
+    if [[ -z "$build_info" ]]; then
+        return 0
+    fi
+
+    if [[ -n "$sha" ]]; then
+        message=$(printf '%s\n' "$build_info" | jq -r --arg sha "$sha" '
+            [
+                (.changeSets[]?.items[]?),
+                (.changeSet.items[]?)
+            ]
+            | flatten
+            | map(select(((.commitId // .id // "") | ascii_downcase) | startswith($sha | ascii_downcase)))
+            | .[0].msg // empty
+        ' 2>/dev/null | sed -n '1p') || true
+    fi
+
+    if [[ -z "$message" ]]; then
+        message=$(printf '%s\n' "$build_info" | jq -r '
+            [
+                (.changeSets[]?.items[]?.msg),
+                (.changeSet.items[]?.msg)
+            ]
+            | flatten
+            | map(select(. != null and . != ""))
+            | .[0] // empty
+        ' 2>/dev/null | sed -n '1p') || true
+    fi
+
+    [[ -n "$message" ]] && _first_line_only "$message"
+}
+
+_extract_commit_message_from_git() {
+    local sha="$1"
+    if [[ -z "$sha" || "$sha" == "unknown" ]]; then
+        return 0
+    fi
+    git log --format=%s -1 "$sha" 2>/dev/null | sed -n '1{s/\r$//;p;}'
+}
+
 # Extract triggering commit SHA and message from build
-# Usage: extract_triggering_commit "job-name" "build-number" ["$console_output"]
+# Usage: extract_triggering_commit "job-name" "build-number" ["$build_json"] ["$console_output"]
 # Returns: Outputs two lines: SHA and commit message (each may be "unknown" if not found)
 extract_triggering_commit() {
     local job_name="$1"
     local build_number="$2"
-    local console_output="${3:-}"
+    local build_info="${3:-}"
+    local console_output="${4:-}"
 
     local sha=""
     local message=""
 
+    if [[ -n "$build_info" && "${build_info#\{}" == "$build_info" ]]; then
+        console_output="$build_info"
+        build_info=""
+    fi
+
     # Method 1: Try to get from build API (lastBuiltRevision.SHA1)
-    local build_info
-    build_info=$(get_build_info "$job_name" "$build_number")
+    if [[ -z "$build_info" ]]; then
+        build_info=$(get_build_info "$job_name" "$build_number")
+    fi
 
     if [[ -n "$build_info" ]]; then
         # Look for GitSCM action with lastBuiltRevision
@@ -730,8 +811,10 @@ extract_triggering_commit() {
         console_output=$(get_console_output "$job_name" "$build_number")
     fi
 
+    message=$(_extract_commit_message_from_build_json "$build_info" "$sha")
+
     # Extract commit message from console
-    if [[ -n "$console_output" ]]; then
+    if [[ -z "$message" && -n "$console_output" ]]; then
         # Try "Commit message: "<message>""
         message=$(echo "$console_output" | grep -m1 'Commit message:' 2>/dev/null | \
             sed -E 's/.*Commit message:[[:space:]]*//' | sed -E 's/^["'"'"'](.*)["'"'"']$/\1/') || true
@@ -742,6 +825,14 @@ extract_triggering_commit() {
             message=$(echo "$console_output" | grep -m1 "^${sha:0:7}" 2>/dev/null | \
                 sed -E "s/^[a-f0-9]+[[:space:]]+//") || true
         fi
+    fi
+
+    if [[ -z "$message" ]]; then
+        message=$(_extract_commit_message_from_git "$sha")
+    fi
+
+    if [[ -n "$message" ]]; then
+        message=$(_first_line_only "$message")
     fi
 
     # Output results (unknown if not found)

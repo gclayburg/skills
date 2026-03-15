@@ -110,7 +110,7 @@ teardown() {
         echo '{"building":true,"result":null,"timestamp":1706889863000,"url":"http://jenkins.example.com/job/ralph1/80/"}'
     }
     get_console_output() { echo "Started by user testuser"; }
-    detect_trigger_type() { echo "automated"; echo "scm-trigger"; }
+    detect_trigger_type() { echo "scm"; echo "scm-trigger"; }
     extract_triggering_commit() { echo "abc1234"; echo "test commit"; }
     correlate_commit() { echo "your_commit"; }
     get_current_stage() { echo "Unit Tests"; }
@@ -135,11 +135,11 @@ teardown() {
 }
 
 # =============================================================================
-# Test Cases: Build Info section in banner
+# Test Cases: Condensed header in banner
 # =============================================================================
 
 # Spec: unify-follow-log-spec.md, Section 2 (Build Header)
-@test "banner_shows_build_info_section" {
+@test "banner_shows_condensed_header_fields" {
     get_build_info() {
         echo '{"building":true,"result":null,"timestamp":1706889863000,"url":"http://jenkins.example.com/job/ralph1/80/"}'
     }
@@ -148,7 +148,7 @@ teardown() {
 Running on agent2paton in /var/jenkins/workspace/ralph1
 Obtained Jenkinsfile from git ssh://git@scranton2:2233/home/git/ralph1.git"
     }
-    detect_trigger_type() { echo "automated"; echo "scm-trigger"; }
+    detect_trigger_type() { echo "scm"; echo "scm-trigger"; }
     extract_triggering_commit() { echo "abc1234"; echo "test commit"; }
     correlate_commit() { echo "your_commit"; }
     get_current_stage() { echo "Build"; }
@@ -156,9 +156,11 @@ Obtained Jenkinsfile from git ssh://git@scranton2:2233/home/git/ralph1.git"
 
     run _display_build_in_progress_banner "ralph1" "80"
     assert_success
-    assert_output --partial "=== Build Info ==="
-    assert_output --partial "Started by:  buildtriggerdude"
-    assert_output --partial "Agent:       agent2paton"
+    refute_output --partial "=== Build Info ==="
+    refute_output --partial "Started by:"
+    assert_output --partial "Trigger:    SCM change"
+    assert_output --partial "Agent:      agent2paton"
+    assert_output --partial "Console:    http://jenkins.example.com/job/ralph1/80/console"
 }
 
 # =============================================================================

@@ -15,6 +15,7 @@ All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are do
 
 ### Fixed
 - **stdout/stderr routing for monitoring output** — Normal `status`, `push`, and `build` output now goes to stdout, so redirects like `buildgit build > out.log` capture queue updates, stage progress, failure details, and verbose diagnostics. stderr is reserved for invalid input, Jenkins communication failures, and TTY redraw artifacts.
+- **Condensed full-output build headers** — Full snapshot and follow-mode headers now use Jenkins API trigger causes, collapse trigger/user into one `Trigger:` line, show commit subjects inline on `Commit:`, promote `Agent:` to a top-level field, and drop the old boxed Build Info section.
 
 ## [1.2.0] - 2026-03-10
 

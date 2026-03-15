@@ -79,24 +79,24 @@ Obtained Jenkinsfile from git ssh://git@scranton2:2233/home/git/ralph1.git"
 # Spec: unify-follow-log-spec.md, Trigger Types
 @test "header_shows_trigger_automated" {
     run display_building_output "ralph1" "80" "$MOCK_BUILD_JSON" \
-        "automated" "scm-trigger" "b372452abc" "test123" "your_commit"
+        "scm" "scm-trigger" "b372452abc" "test123" "your_commit"
     assert_success
-    assert_output --partial "Trigger:    Automated (git push)"
+    assert_output --partial "Trigger:    SCM change"
 }
 
 @test "header_shows_trigger_manual" {
     run display_building_output "ralph1" "80" "$MOCK_BUILD_JSON" \
         "manual" "jsmith" "b372452abc" "test123" "your_commit"
     assert_success
-    assert_output --partial "Trigger:    Manual (started by jsmith)"
+    assert_output --partial "Trigger:    Manual by jsmith"
 }
 
 # Spec: unify-follow-log-spec.md, Field Descriptions
 @test "header_shows_commit" {
     run display_building_output "ralph1" "80" "$MOCK_BUILD_JSON" \
-        "automated" "scm-trigger" "b372452abcdef" "test123" "your_commit"
+        "scm" "scm-trigger" "b372452abcdef" "test123" "your_commit"
     assert_success
-    assert_output --partial 'Commit:     b372452 - "test123"'
+    assert_output --partial 'Commit:     b372452  test123'
 }
 
 @test "header_shows_correlation" {
@@ -160,7 +160,8 @@ Obtained Jenkinsfile from git ssh://git@scranton2:2233/home/git/ralph1.git"
 
 @test "header_shows_console_url_with_known_commit" {
     run display_building_output "ralph1" "80" "$MOCK_BUILD_JSON" \
-        "automated" "scm-trigger" "b372452abc" "test123" "your_commit"
+        "scm" "scm-trigger" "b372452abc" "test123" "your_commit" "" \
+        "$MOCK_CONSOLE_OUTPUT"
     assert_success
     assert_output --partial "Console:"
 }
@@ -180,28 +181,26 @@ Obtained Jenkinsfile from git ssh://git@scranton2:2233/home/git/ralph1.git"
 # Spec: unify-follow-log-spec.md, Section 2 (Build Header)
 @test "header_shows_build_info_section" {
     run display_building_output "ralph1" "80" "$MOCK_BUILD_JSON" \
-        "automated" "scm-trigger" "b372452abc" "test123" "your_commit" "" \
+        "scm" "scm-trigger" "b372452abc" "test123" "your_commit" "" \
         "$MOCK_CONSOLE_OUTPUT"
     assert_success
-    assert_output --partial "=== Build Info ==="
-    assert_output --partial "Started by:  buildtriggerdude"
-    assert_output --partial "Agent:       agent2paton"
-    assert_output --partial "Pipeline:    Jenkinsfile from git ssh://git@scranton2:2233/home/git/ralph1.git"
+    refute_output --partial "=== Build Info ==="
+    refute_output --partial "Started by:"
+    refute_output --partial "Pipeline:"
+    assert_output --partial "Agent:      agent2paton"
 }
 
 @test "header_shows_console_url_after_build_info" {
     run display_building_output "ralph1" "80" "$MOCK_BUILD_JSON" \
-        "automated" "scm-trigger" "b372452abc" "test123" "your_commit" "" \
+        "scm" "scm-trigger" "b372452abc" "test123" "your_commit" "" \
         "$MOCK_CONSOLE_OUTPUT"
     assert_success
     # Console URL should appear in output
     assert_output --partial "Console:    http://jenkins.example.com:8080/job/ralph1/80/console"
-    # Build Info should appear before Console URL
-    # Extract line numbers to verify ordering
-    local build_info_line console_line
-    build_info_line=$(echo "$output" | grep -n "=== Build Info ===" | head -1 | cut -d: -f1)
+    local agent_line console_line
+    agent_line=$(echo "$output" | grep -n "^Agent:" | head -1 | cut -d: -f1)
     console_line=$(echo "$output" | grep -n "Console:" | head -1 | cut -d: -f1)
-    [[ "$build_info_line" -lt "$console_line" ]]
+    [[ "$agent_line" -lt "$console_line" ]]
 }
 
 # =============================================================================
@@ -229,10 +228,9 @@ Obtained Jenkinsfile from git ssh://git@scranton2:2233/home/git/ralph1.git"
 
 @test "header_without_console_output" {
     run display_building_output "ralph1" "80" "$MOCK_BUILD_JSON" \
-        "automated" "scm-trigger" "b372452abc" "test123" "your_commit"
+        "scm" "scm-trigger" "b372452abc" "test123" "your_commit"
     assert_success
-    # Should NOT contain Build Info section
     refute_output --partial "=== Build Info ==="
-    # Should still contain Console URL (commit is known)
-    assert_output --partial "Console:"
+    refute_output --partial "Agent:"
+    refute_output --partial "Console:"
 }

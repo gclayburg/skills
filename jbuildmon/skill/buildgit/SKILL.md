@@ -123,6 +123,7 @@ For failures, summarize the failed stage name, error logs, and test failure deta
 When a failure needs more detail, prefer `scripts/buildgit -v status --json` for structured failed-test stdout and `scripts/buildgit status --console-text <stage>` after `scripts/buildgit status --list-stages`.
 `--console-text <stage>` accepts exact, case-insensitive, and unique partial stage matches. If the requested parent stage has no direct log text, it walks descendant substages and emits their logs in pipeline order.
 Normal build/status output goes to stdout, including queue updates, stage progress, completion summaries, and verbose diagnostics. stderr is reserved for invalid input, Jenkins communication failures, and transient TTY redraw sequences.
+Full header output is condensed: `Trigger:` merges cause plus user (`Manual by …`, `SCM change`, `Timer`, `Upstream`), `Commit:` includes the subject line when available, and `Agent:` is a top-level field instead of a boxed Build Info section.
 
 For snapshot mode defaults, `scripts/buildgit status` prints one-line output by default on both TTY and non-TTY stdout (TTY adds color).
 - Monitoring commands (`push`, `build`, `status -f`) print prior-jobs + estimated build time before monitoring starts

@@ -207,28 +207,47 @@ _status_multi_build_check() {
 }
 
 # Extract trigger, commit, and correlation info from a build
-# Usage: _extract_build_context "job-name" "build-number" "console_output"
+# Usage: _extract_build_context "job-name" "build-number" ["build_json"] ["console_output"]
 # Sets globals: _BC_TRIGGER_TYPE, _BC_TRIGGER_USER,
 #               _BC_COMMIT_SHA, _BC_COMMIT_MSG, _BC_CORRELATION_STATUS
 _extract_build_context() {
     local job_name="$1"
     local build_number="$2"
-    local console_output="$3"
+    local build_json="${3:-}"
+    local console_output="${4:-}"
 
-    # Detect trigger type
-    if [[ -n "$console_output" ]]; then
+    if [[ -n "$build_json" && "${build_json#\{}" == "$build_json" ]]; then
+        console_output="$build_json"
+        build_json=""
+    fi
+
+    _BC_TRIGGER_TYPE="unknown"
+    _BC_TRIGGER_USER="unknown"
+    if [[ -n "$build_json" ]]; then
+        local trigger_info
+        trigger_info=$(detect_trigger_type_from_build_json "$build_json")
+        local IFS=$'\n'
+        set -- $trigger_info
+        _BC_TRIGGER_TYPE="${1:-unknown}"
+        _BC_TRIGGER_USER="${2:-unknown}"
+    fi
+
+    if [[ "$_BC_TRIGGER_TYPE" == "unknown" && -n "$console_output" ]]; then
         local trigger_info
         trigger_info=$(detect_trigger_type "$console_output")
-        IFS=$'\n' read -r _BC_TRIGGER_TYPE _BC_TRIGGER_USER <<< "$trigger_info"
-    else
-        _BC_TRIGGER_TYPE="unknown"
-        _BC_TRIGGER_USER="unknown"
+        local IFS=$'\n'
+        set -- $trigger_info
+        _BC_TRIGGER_TYPE="${1:-unknown}"
+        _BC_TRIGGER_USER="${2:-unknown}"
     fi
 
     # Extract triggering commit
     local commit_info
-    commit_info=$(extract_triggering_commit "$job_name" "$build_number" "$console_output")
-    IFS=$'\n' read -r _BC_COMMIT_SHA _BC_COMMIT_MSG <<< "$commit_info"
+    commit_info=$(extract_triggering_commit "$job_name" "$build_number" "$build_json" "$console_output")
+    local IFS=$'\n'
+    set -- $commit_info
+    _BC_COMMIT_SHA="${1:-unknown}"
+    _BC_COMMIT_MSG="${2:-unknown}"
 
     # Correlate commit with local history
     _BC_CORRELATION_STATUS=$(correlate_commit "$_BC_COMMIT_SHA")
@@ -282,7 +301,7 @@ _jenkins_status_check() {
     console_output=$(get_console_output "$job_name" "$build_number" 2>/dev/null) || true
 
     # Extract trigger, commit, and correlation context
-    _extract_build_context "$job_name" "$build_number" "$console_output"
+    _extract_build_context "$job_name" "$build_number" "$build_json" "$console_output"
 
     # Determine output based on build status
     local exit_code
