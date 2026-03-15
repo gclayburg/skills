@@ -8,6 +8,9 @@
   1. **fd 3 inheritance:** Always add `3>&-` before `2>&1` when launching subprocesses via `run bash -c`: `run bash -c "bash script.sh 3>&- 2>&1"`. For background processes: `cmd > out.txt 2>&1 3>&- &`.
   2. **Internal pipe patterns:** Code using `jq | head -1` causes SIGPIPE when `head` exits early. Combined with `set -euo pipefail` in wrapper scripts, this kills the process. **Always add `trap '' PIPE`** after `set -euo pipefail` in test wrapper heredoc scripts.
 
+## Shell Compatibility
+- **All scripts must be compatible with macOS default bash (v3.2).** Do not use bash 4+ features like `readarray`, associative arrays (`declare -A`), `${var,,}` case conversion, or `|&` pipe syntax. The CI server runs Linux (bash 5+), but local dev is macOS. Scripts must work on both.
+
 ## Changes
 - any changes to the 'buildgit status' command must ensure that 'buildgit status', 'buildgit status -f', and 'buildgit status --json' are always consistent with each other.  If you change one of these, they all should be changed to match.
 

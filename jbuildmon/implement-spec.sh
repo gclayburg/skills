@@ -247,6 +247,8 @@ if [[ "$MODE" != "merge" && "$MODE" != "delete-all" ]]; then
     echo "Using codex credentials from $AUTH_FILE"
 fi
 
+MACOS_COMPAT_REMINDER="IMPORTANT: All shell scripts must work on macOS bash 3.2 AND Linux bash 5+. Do NOT use bash 4+ features: readarray/mapfile, declare -A (associative arrays), \${var,,}/\${var^^} (case conversion), |& (pipe stderr), declare -n/local -n (namerefs). The test suite includes bash_compat.bats which will catch these. You are running on Linux but this code MUST also run on macOS."
+
 run_codex() {
     # run_codex <sandbox> <model> <prompt> [output_file]
     # Runs codex, optionally tee-ing to a file.
@@ -529,7 +531,7 @@ if [[ "$MODE" == "redo" ]]; then
         echo
         echo "Starting codex (redo)..."
         echo
-        DEFAULT_REDO_PROMPT="implement the DRAFT spec %SPEC% . After implementation is complete and all tests pass, run 'buildgit push jenkins' to push your changes and verify the Jenkins CI build succeeds with no test failures. If the build fails, fix the issues and push again."
+        DEFAULT_REDO_PROMPT="implement the DRAFT spec %SPEC% . After implementation is complete and all tests pass, run 'buildgit push jenkins' to push your changes and verify the Jenkins CI build succeeds with no test failures. If the build fails, fix the issues and push again. ${MACOS_COMPAT_REMINDER}"
         PROMPT=$(resolve_prompt "$DEFAULT_REDO_PROMPT")
         if [[ -n "$REDO_EXTRA" ]]; then
             PROMPT="$PROMPT $REDO_EXTRA"
@@ -588,7 +590,7 @@ if [[ "$MODE" == "bugfix" ]]; then
     echo
     echo "Starting codex (bugfix)..."
     echo
-    DEFAULT_BUGFIX_PROMPT="The spec %SPEC% was just implemented. There is an issue you need to fix. Fix the code for this issue. Make sure you test your fix by adding tests where necessary. After the fix is complete and all tests pass, run 'buildgit push jenkins' to push your changes and verify the Jenkins CI build succeeds with no test failures. If the build fails, fix the issues and push again."
+    DEFAULT_BUGFIX_PROMPT="The spec %SPEC% was just implemented. There is an issue you need to fix. Fix the code for this issue. Make sure you test your fix by adding tests where necessary. After the fix is complete and all tests pass, run 'buildgit push jenkins' to push your changes and verify the Jenkins CI build succeeds with no test failures. If the build fails, fix the issues and push again. ${MACOS_COMPAT_REMINDER}"
     PROMPT=$(resolve_prompt "$DEFAULT_BUGFIX_PROMPT")
     PROMPT="$PROMPT Bug: $BUGFIX_TEXT"
     run_codex "$SANDBOX_NAME" "$MODEL" "$PROMPT"
@@ -646,7 +648,11 @@ if [[ "$MODE" != "redo" ]]; then
     done
 
     # Deduplicate
-    readarray -t COMMIT_FILES < <(printf '%s\n' "${COMMIT_FILES[@]}" | sort -u)
+    DEDUPED=()
+    while IFS= read -r f; do
+        DEDUPED+=("$f")
+    done < <(printf '%s\n' "${COMMIT_FILES[@]}" | sort -u)
+    COMMIT_FILES=("${DEDUPED[@]}")
 
     echo "Files to commit:"
     for f in "${COMMIT_FILES[@]}"; do
@@ -751,7 +757,9 @@ When done:
 2. Report how many (n) non-completed chunks remain and give a brief one-line summary of each remaining chunk.
 3. The final line of your output MUST be exactly: REMAINING_CHUNKS=n
 
-STOP after completing the single chunk. Do not continue to the next chunk."
+STOP after completing the single chunk. Do not continue to the next chunk.
+
+${MACOS_COMPAT_REMINDER}"
         PROMPT=$(resolve_prompt "$DEFAULT_RALPH_PROMPT")
 
         run_codex "$SANDBOX_NAME" "$MODEL" "$PROMPT" "$TEMP_OUTPUT"
@@ -836,7 +844,7 @@ else
     # =============================================================================
     echo "Starting codex..."
     echo
-    DEFAULT_RUN_PROMPT="implement the DRAFT spec %SPEC% . After implementation is complete and all tests pass, run 'buildgit push jenkins' to push your changes and verify the Jenkins CI build succeeds with no test failures. If the build fails, fix the issues and push again."
+    DEFAULT_RUN_PROMPT="implement the DRAFT spec %SPEC% . After implementation is complete and all tests pass, run 'buildgit push jenkins' to push your changes and verify the Jenkins CI build succeeds with no test failures. If the build fails, fix the issues and push again. ${MACOS_COMPAT_REMINDER}"
     PROMPT=$(resolve_prompt "$DEFAULT_RUN_PROMPT")
     #PROMPT="add a blank line to a file named nonsensebuidltrigger.md, commit it, and then push it using 'buildgit push jenkins'.  After the build is complete, verify the build was successful and the test results are displayed."
     run_codex "$SANDBOX_NAME" "$MODEL" "$PROMPT"
