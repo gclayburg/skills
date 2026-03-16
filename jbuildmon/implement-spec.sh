@@ -232,6 +232,8 @@ if [[ "$RALPH_LOOP" == "true" && ! "$SPEC" =~ -plan\.md$ ]]; then
     exit 1
 fi
 
+START_EPOCH=$(date +%s)
+
 # =============================================================================
 # Credential check (only needed for run mode)
 # =============================================================================
@@ -695,7 +697,7 @@ if [[ "$MODE" != "redo" ]]; then
         echo "Reusing existing sandbox '$SANDBOX_NAME'"
     else
         echo "Creating sandbox..."
-        docker sandbox create --name "$SANDBOX_NAME" codex "$WORKTREE_DIR" "$GIT_DIR"
+        docker sandbox create --template registry:5000/codex-sandbox-buildgit:latest --name "$SANDBOX_NAME" codex "$WORKTREE_DIR" "$GIT_DIR"
         echo "Configuring network..."
         configure_network "$SANDBOX_NAME"
     fi
@@ -849,3 +851,29 @@ else
     #PROMPT="add a blank line to a file named nonsensebuidltrigger.md, commit it, and then push it using 'buildgit push jenkins'.  After the build is complete, verify the build was successful and the test results are displayed."
     run_codex "$SANDBOX_NAME" "$MODEL" "$PROMPT"
 fi
+
+# =============================================================================
+# Summary report
+# =============================================================================
+END_EPOCH=$(date +%s)
+ELAPSED=$((END_EPOCH - START_EPOCH))
+ELAPSED_MIN=$((ELAPSED / 60))
+ELAPSED_SEC=$((ELAPSED % 60))
+
+echo
+echo "============================================================"
+echo "  implement-spec.sh summary"
+echo "============================================================"
+echo "Branch:    $BRANCH"
+echo "Worktree:  $WORKTREE_DIR"
+echo "Sandbox:   $SANDBOX_NAME"
+printf "Elapsed:   %dm %ds\n" "$ELAPSED_MIN" "$ELAPSED_SEC"
+echo
+echo "Files changed on branch:"
+if git -C "$WORKTREE_DIR" rev-parse --verify main >/dev/null 2>&1; then
+    DIFF_BASE="main"
+else
+    DIFF_BASE="HEAD~1"
+fi
+git -C "$WORKTREE_DIR" diff --name-only "$DIFF_BASE"..HEAD 2>/dev/null | sed 's/^/  /' || echo "  (unable to determine changed files)"
+echo "============================================================"

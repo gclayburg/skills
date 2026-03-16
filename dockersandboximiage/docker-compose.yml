@@ -1,6 +1,11 @@
 services:
-  codex-sandbox:
+  claude-sandbox:
     build:
       context: .
       dockerfile: Dockerfile
     image: registry:5000/docker-sandbox-buildgit:latest
+  codex-sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile.codex
+    image: registry:5000/codex-sandbox-buildgit:latest

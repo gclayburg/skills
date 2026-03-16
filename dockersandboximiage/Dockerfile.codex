@@ -1,0 +1,10 @@
+FROM docker/sandbox-templates:codex
+
+USER root
+
+# parallel needed for faster bats-core testing
+RUN apt-get update && apt-get install -y \
+    parallel \
+    && rm -rf /var/lib/apt/lists/*
+
+USER agent
