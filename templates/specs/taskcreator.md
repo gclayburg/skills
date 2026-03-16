@@ -45,6 +45,7 @@ Use these instructions for breaking down a large specification.  The main object
   - Java should use Junit 5 or Spock tests in Groovy
   - Typescript should use Jest
   - Groovy should use Spock
+  - Bash shell scripts should use bats-core
 
 ## Definition of done
 - all unit tests written as a part of this task have been executed and they pass
