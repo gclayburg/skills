@@ -75,3 +75,4 @@ These files represent completed specifications in the specs/ directory.  This li
 - 2026-03-14_standardize-stdout-stderr-spec.md  route normal status/monitoring output to stdout, keep only actual command or Jenkins communication failures on stderr, and preserve clean redirected logs for `status`, `push`, and `build`
 - 2026-03-14_condense-build-header-spec.md  condense full-output build headers, unify trigger/user display from Jenkins API causes, show commit subjects inline, and promote Agent to a top-level header field
 - 2026-03-14_status-follow-probe-all-branches-spec.md  add `status -f --probe-all` so multibranch follow mode can latch onto the next build from any branch and then monitor that detected branch job
+- 2026-03-16_test-fail-need-results-still-spec.md  hierarchical test results display with downstream build aggregation, per-job breakdown, right-aligned Totals row, and one-line mode aggregated counts
