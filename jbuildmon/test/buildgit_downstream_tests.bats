@@ -892,3 +892,62 @@ teardown() {
     assert_output --partial "Tests=!err!"
     assert_output --partial "Could not retrieve test results (communication error)"
 }
+
+# =============================================================================
+# detect_all_downstream_builds regex tests
+# Spec: 2026-03-16_test-fail-need-results-still-spec.md, Section 1.1
+# =============================================================================
+
+@test "detect_all_downstream_builds matches plain pipeline downstream" {
+    local console='[2026-03-16T18:33:52.651Z] Starting building: phandlemono-handle #66
+[2026-03-16T18:33:52.658Z] Starting building: phandlemono-signalboot #63'
+
+    run detect_all_downstream_builds "$console"
+    assert_success
+    assert_line --index 0 "phandlemono-handle 66"
+    assert_line --index 1 "phandlemono-signalboot 63"
+}
+
+@test "detect_all_downstream_builds matches multibranch pipeline downstream" {
+    # Multibranch downstream builds use "job » branch #N" format
+    local console='[2026-03-17T02:50:36.001Z] Starting building: phandlemono-handle » main #8
+[2026-03-17T02:50:36.008Z] Starting building: phandlemono-signalboot » main #8'
+
+    run detect_all_downstream_builds "$console"
+    assert_success
+    assert_line --index 0 "phandlemono-handle/main 8"
+    assert_line --index 1 "phandlemono-signalboot/main 8"
+}
+
+@test "detect_all_downstream_builds handles mixed plain and multibranch" {
+    local console='[2026-03-16T18:33:52.651Z] Starting building: plain-job #42
+[2026-03-17T02:50:36.001Z] Starting building: multi-job » feature-x #7'
+
+    run detect_all_downstream_builds "$console"
+    assert_success
+    assert_line --index 0 "plain-job 42"
+    assert_line --index 1 "multi-job/feature-x 7"
+}
+
+@test "detect_all_downstream_builds returns empty for no downstream builds" {
+    local console='[Pipeline] echo
+Some random console output with no downstream builds'
+
+    run detect_all_downstream_builds "$console"
+    assert_success
+    assert_output ""
+}
+
+@test "detect_all_downstream_builds ignores surrounding console noise" {
+    local console='[Pipeline] build
+[2026-03-17T02:50:26.232Z] Triggering phandlemono-handle build...
+[Pipeline] build
+[2026-03-17T02:50:36.001Z] Starting building: phandlemono-handle » main #8
+[2026-03-17T02:52:47.433Z] Build phandlemono-handle » main #8 completed: SUCCESS
+some other text Starting building but not a real match'
+
+    run detect_all_downstream_builds "$console"
+    assert_success
+    # Only the real "Starting building:" line should match
+    assert_output "phandlemono-handle/main 8"
+}

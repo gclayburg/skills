@@ -206,14 +206,19 @@ if [[ ! "$SPEC" =~ -plan\.md$ ]]; then
             echo "Create an implementation plan and update the Plan: header before implementing." >&2
             exit 1
         fi
-        # Resolve plan path relative to the spec file's directory
+        # Resolve plan path: try as-is, relative to spec dir, or basename in spec dir
         spec_dir=$(dirname "$SPEC")
         if [[ -f "$plan_val" ]]; then
             PLAN_FILE="$plan_val"
         elif [[ -f "$spec_dir/$plan_val" ]]; then
             PLAN_FILE="$spec_dir/$plan_val"
+        elif [[ -f "$spec_dir/$(basename "$plan_val")" ]]; then
+            PLAN_FILE="$spec_dir/$(basename "$plan_val")"
         else
             echo "Error: spec is marked Chunked: true but plan file not found: $plan_val" >&2
+            echo "  Tried: $plan_val" >&2
+            echo "  Tried: $spec_dir/$plan_val" >&2
+            echo "  Tried: $spec_dir/$(basename "$plan_val")" >&2
             exit 1
         fi
         echo "Plan detected: $PLAN_FILE"

@@ -18,11 +18,18 @@ check_build_failed() {
 # Detect all downstream builds from console output
 # Usage: detect_all_downstream_builds "$console_output"
 # Returns: Space-separated pairs on each line: "job-name build-number"
+# Handles both plain pipeline ("Starting building: job #N") and
+# multibranch pipeline ("Starting building: job » branch #N") formats.
+# For multibranch, returns "job/branch build-number" so callers can
+# use jenkins_job_path() directly.
 detect_all_downstream_builds() {
     local console_output="$1"
 
-    # Search for pattern: Starting building: <job-name> #<build-number>
-    echo "$console_output" | grep -oE 'Starting building: [^ ]+ #[0-9]+' 2>/dev/null | \
+    # Match both formats:
+    #   Starting building: phandlemono-handle #68
+    #   Starting building: phandlemono-handle » main #8
+    echo "$console_output" | grep -oE 'Starting building: [^ ]+ (» [^ ]+ )?#[0-9]+' 2>/dev/null | \
+        sed -E 's/Starting building: ([^ ]+) » ([^ ]+) #([0-9]+)/\1\/\2 \3/' | \
         sed -E 's/Starting building: ([^ ]+) #([0-9]+)/\1 \2/' || true
 }
 
