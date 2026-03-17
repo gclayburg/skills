@@ -1,0 +1,28 @@
+{
+  "passCount": 14,
+  "failCount": 1,
+  "skipCount": 0,
+  "suites": [
+    {
+      "name": "signalboot-suite",
+      "cases": [
+        {
+          "className": "signalboot.tests.IntegrationTests",
+          "name": "boots successfully",
+          "status": "PASSED",
+          "duration": 0.28,
+          "age": 0
+        },
+        {
+          "className": "signalboot.tests.IntegrationTests",
+          "name": "handles missing config",
+          "status": "FAILED",
+          "duration": 0.42,
+          "age": 1,
+          "errorDetails": "Expected config file to exist",
+          "errorStackTrace": "java.lang.AssertionError: missing config\n\tat signalboot.tests.IntegrationTests.handlesMissingConfig(IntegrationTests.java:51)"
+        }
+      ]
+    }
+  ]
+}

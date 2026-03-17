@@ -4,6 +4,17 @@ All notable changes to **jbuildmon** (Jenkins Build Monitor / `buildgit`) are do
 
 ## [Unreleased] - 1.4.0-dev
 
+### Added
+- **Hierarchical downstream test results** — Full snapshot output (`status --all`) and monitoring completion output now expand `=== Test Results ===` into a per-job tree for parent and downstream builds, with recursive indentation, right-aligned counts, a Totals row, and combined failed-test details.
+- **Downstream test aggregation in JSON** — `buildgit status --json` now adds a `test_results.breakdown` array for multi-job pipelines while keeping top-level totals aggregated across parent and downstream jobs.
+
+### Changed
+- **Aggregated `Tests=` counts in one-line output** — `buildgit status`, `status --line`, and other one-line paths now report parent-plus-downstream totals for multi-component pipelines instead of only the parent job's `testReport`.
+
+### Fixed
+- **Missing parent `testReport` no longer hides downstream results** — Builds whose parent Jenkins job returns 404 for `testReport` now still show downstream pass/fail/skip counts and totals instead of `Tests=?/?/?` / `(no test results available)`.
+- **Large Jenkins test reports during aggregation** — Downstream collection now streams report JSON into `jq`, avoiding `Argument list too long` failures on oversized test payloads.
+
 ## [1.3.0] - 2026-03-15
 
 ### Added

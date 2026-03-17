@@ -126,6 +126,50 @@ Finished: FAILURE
 [09:13:48] ℹ Duration: 0s
 ```
 
+## Hierarchical downstream test results
+
+For multi-component pipelines, full output now keeps the parent job row and adds one row per downstream build, then reports aggregate totals:
+
+```bash
+$ buildgit --job phandlemono-IT status 73 --all
+...
+=== Test Results ===
+phandlemono-IT       Total:  ? | Passed:  ? | Failed: ? | Skipped: ?
+  Build SignalBoot   Total: 15 | Passed: 14 | Failed: 1 | Skipped: 0
+  Build Handle       Total: 83 | Passed: 83 | Failed: 0 | Skipped: 0
+--------------------
+Totals                     98 | Passed: 97 | Failed: 1 | Skipped: 0
+====================
+```
+
+The compact line output uses those same aggregate totals:
+
+```bash
+$ buildgit --job phandlemono-IT status 73
+FAILURE     #73 id=a916068 Tests=97/1/0 Took 4m 9s on 2026-03-16T12:37:47-0600 (1 hour ago)
+
+$ buildgit --job phandlemono-IT status 75
+SUCCESS     #75 id=c7c0c96 Tests=98/0/0 Took 5m 41s on 2026-03-16T13:02:11-0600 (1 hour ago)
+```
+
+JSON output stays top-level compatible and adds a per-job `breakdown` array only when downstream builds exist:
+
+```bash
+$ buildgit --job phandlemono-IT status 73 --json | jq '.test_results'
+{
+  "total": 98,
+  "passed": 97,
+  "failed": 1,
+  "skipped": 0,
+  "failed_tests": [...],
+  "breakdown": [
+    {"job":"phandlemono-IT","build_number":73,"total":null,"passed":null,"failed":null,"skipped":null},
+    {"job":"phandlemono-signalboot","stage":"Build SignalBoot","build_number":63,"total":15,"passed":14,"failed":1,"skipped":0},
+    {"job":"phandlemono-handle","stage":"Build Handle","build_number":66,"total":83,"passed":83,"failed":0,"skipped":0}
+  ]
+}
+```
+
 ## Custom format string (--format)
 
 ```bash
@@ -398,7 +442,11 @@ Console:    http://palmer.garyclayburg.com:18080/job/phandlemono-IT/39/console
 [09:00:09] ℹ   Stage: [agent8_sixcore] Declarative: Post Actions (<1s)
 
 === Test Results ===
-  Total: 19 | Passed: 19 | Failed: 0 | Skipped: 0
+phandlemono-IT      Total: 19 | Passed: 19 | Failed: 0 | Skipped: 0
+  Build SignalBoot  Total: 15 | Passed: 15 | Failed: 0 | Skipped: 0
+  Build Handle      Total: 64 | Passed: 64 | Failed: 0 | Skipped: 0
+--------------------
+Totals                    98 | Passed: 98 | Failed: 0 | Skipped: 0
 ====================
 
 Finished: SUCCESS

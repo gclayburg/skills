@@ -1,11 +1,11 @@
 ## Hierarchical Test Results with Downstream Aggregation
 
 - **Date:** `2026-03-16T14:44:03-0600`
-- **References:** `specs/todo/test-fail-need-results-still.md`
+- **References:** `specs/done-reports/test-fail-need-results-still.md`
 - **Supersedes:** none
 - **Plan:** `specs/2026-03-16_test-fail-need-results-still-plan.md`
 - **Chunked:** `true`
-- **State:** `DRAFT`
+- **State:** `IMPLEMENTED`
 
 ## Overview
 

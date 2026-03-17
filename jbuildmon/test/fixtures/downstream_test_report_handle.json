@@ -1,0 +1,19 @@
+{
+  "passCount": 83,
+  "failCount": 0,
+  "skipCount": 0,
+  "suites": [
+    {
+      "name": "handle-suite",
+      "cases": [
+        {
+          "className": "handle.tests.BuildTests",
+          "name": "builds package",
+          "status": "PASSED",
+          "duration": 0.15,
+          "age": 0
+        }
+      ]
+    }
+  ]
+}

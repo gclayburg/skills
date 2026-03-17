@@ -449,13 +449,45 @@ _status_line_for_build_json() {
             tests_display="!err!"
             tests_comm_error=true
             _note_test_results_comm_failure "$job_name" "$build_number"
-        elif [[ -n "$test_results_json" ]]; then
-            passed=$(echo "$test_results_json" | jq -r '.passCount // 0')
-            failed=$(echo "$test_results_json" | jq -r '.failCount // 0')
-            skipped=$(echo "$test_results_json" | jq -r '.skipCount // 0')
-            if [[ "$passed" =~ ^[0-9]+$ && "$failed" =~ ^[0-9]+$ && "$skipped" =~ ^[0-9]+$ ]]; then
-                tests_display="${passed}/${failed}/${skipped}"
-                tests_fail_count="$failed"
+        else
+            local console_output downstream_lines
+            console_output=$(get_console_output "$job_name" "$build_number" 2>/dev/null || true)
+            downstream_lines=""
+            if [[ -n "$console_output" ]]; then
+                downstream_lines=$(detect_all_downstream_builds "$console_output")
+            fi
+
+            if [[ -n "$downstream_lines" ]]; then
+                local collected_results collected_rc=0 totals
+                if collected_results=$(collect_downstream_test_results "$job_name" "$build_number" "$console_output"); then
+                    collected_rc=0
+                else
+                    collected_rc=$?
+                    collected_results=""
+                fi
+
+                if [[ "$collected_rc" -eq 2 ]]; then
+                    tests_display="!err!"
+                    tests_comm_error=true
+                    _note_test_results_comm_failure "$job_name" "$build_number"
+                elif [[ -n "$collected_results" ]]; then
+                    totals=$(aggregate_test_totals "$collected_results")
+                    passed=$(echo "$totals" | sed -n '2p')
+                    failed=$(echo "$totals" | sed -n '3p')
+                    skipped=$(echo "$totals" | sed -n '4p')
+                    if [[ "$passed" =~ ^[0-9]+$ && "$failed" =~ ^[0-9]+$ && "$skipped" =~ ^[0-9]+$ ]]; then
+                        tests_display="${passed}/${failed}/${skipped}"
+                        tests_fail_count="$failed"
+                    fi
+                fi
+            elif [[ -n "$test_results_json" ]]; then
+                passed=$(echo "$test_results_json" | jq -r '.passCount // 0')
+                failed=$(echo "$test_results_json" | jq -r '.failCount // 0')
+                skipped=$(echo "$test_results_json" | jq -r '.skipCount // 0')
+                if [[ "$passed" =~ ^[0-9]+$ && "$failed" =~ ^[0-9]+$ && "$skipped" =~ ^[0-9]+$ ]]; then
+                    tests_display="${passed}/${failed}/${skipped}"
+                    tests_fail_count="$failed"
+                fi
             fi
         fi
     fi

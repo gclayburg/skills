@@ -196,18 +196,22 @@ display_success_output() {
 
     # Display test results for SUCCESS builds
     # Spec: show-test-results-always-spec.md, Section 1.1
-    local test_results_json test_results_rc=0
-    if test_results_json=$(fetch_test_results "$job_name" "$build_number"); then
-        test_results_rc=0
-    else
-        test_results_rc=$?
-        test_results_json=""
+    local test_results_console_output collected_results collected_rc=0
+    test_results_console_output="$console_output"
+    if [[ -z "$test_results_console_output" ]]; then
+        test_results_console_output=$(get_console_output "$job_name" "$build_number" 2>/dev/null || true)
     fi
-    if [[ "$test_results_rc" -eq 2 ]]; then
+    if collected_results=$(collect_downstream_test_results "$job_name" "$build_number" "$test_results_console_output"); then
+        collected_rc=0
+    else
+        collected_rc=$?
+        collected_results=""
+    fi
+    if [[ "$collected_rc" -eq 2 ]]; then
         _note_test_results_comm_failure "$job_name" "$build_number"
         display_test_results_comm_error
     else
-        display_test_results "$test_results_json"
+        display_hierarchical_test_results "$collected_results"
     fi
 
     # Finished line and duration
@@ -520,22 +524,23 @@ _display_failure_diagnostics() {
 
     # 3. Test results (always shown, placeholder if no report)
     # Spec: show-test-results-always-spec.md, Section 1
-    local test_results_json test_results_rc=0
-    if test_results_json=$(fetch_test_results "$job_name" "$build_number"); then
-        test_results_rc=0
+    local collected_results collected_rc=0 parent_test_json=""
+    if collected_results=$(collect_downstream_test_results "$job_name" "$build_number" "$console_output"); then
+        collected_rc=0
+        parent_test_json=$(echo "$collected_results" | jq -r '.[0].test_json // empty')
     else
-        test_results_rc=$?
-        test_results_json=""
+        collected_rc=$?
+        collected_results=""
     fi
-    if [[ "$test_results_rc" -eq 2 ]]; then
+    if [[ "$collected_rc" -eq 2 ]]; then
         _note_test_results_comm_failure "$job_name" "$build_number"
         display_test_results_comm_error
     else
-        display_test_results "$test_results_json"
+        display_hierarchical_test_results "$collected_results"
     fi
 
     # 4. Error log section (respects --console and test failure suppression)
-    _display_error_log_section "$job_name" "$build_number" "$console_output" "$test_results_json"
+    _display_error_log_section "$job_name" "$build_number" "$console_output" "$parent_test_json"
 }
 
 # Display in-progress build output (unified header format)

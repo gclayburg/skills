@@ -73,6 +73,23 @@ Finished: SUCCESS
 [13:14:47] ℹ Duration: 3m 2s
 ```
 
+For pipelines that trigger downstream component jobs, the test summary now expands into a hierarchy and the one-line `Tests=` field uses the same aggregate totals:
+
+```bash
+=== Test Results ===
+phandlemono-IT      Total: 19 | Passed: 19 | Failed: 0 | Skipped: 0
+  Build SignalBoot  Total: 15 | Passed: 14 | Failed: 1 | Skipped: 0
+  Build Handle      Total: 83 | Passed: 83 | Failed: 0 | Skipped: 0
+--------------------
+Totals                    98 | Passed: 97 | Failed: 1 | Skipped: 0
+====================
+
+$ buildgit --job phandlemono-IT status 73
+FAILURE     #73 id=a916068 Tests=97/1/0 Took 4m 9s on 2026-03-16T12:37:47-0600 (1 hour ago)
+```
+
+`buildgit status --json` reports the same totals and adds a per-job `test_results.breakdown` array when downstream builds are present.
+
 If there was an error, you'll get more detail about what went wrong.  compile?  build? test? something else?
 Here is one that failed with a bad Jenkinsfile:
 

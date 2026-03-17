@@ -1,0 +1,19 @@
+{
+  "passCount": 15,
+  "failCount": 0,
+  "skipCount": 0,
+  "suites": [
+    {
+      "name": "signalboot-suite",
+      "cases": [
+        {
+          "className": "signalboot.tests.IntegrationTests",
+          "name": "boots successfully",
+          "status": "PASSED",
+          "duration": 0.28,
+          "age": 0
+        }
+      ]
+    }
+  ]
+}

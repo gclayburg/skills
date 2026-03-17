@@ -4,10 +4,10 @@
 
 ## Contents
 
-- [ ] **Chunk 1: Downstream test result collection and aggregation library**
-- [ ] **Chunk 2: Hierarchical test results display for `--all` mode**
-- [ ] **Chunk 3: One-line mode and JSON mode downstream aggregation**
-- [ ] **Chunk 4: Monitoring mode integration and manual test plan verification**
+- [x] **Chunk 1: Downstream test result collection and aggregation library**
+- [x] **Chunk 2: Hierarchical test results display for `--all` mode**
+- [x] **Chunk 3: One-line mode and JSON mode downstream aggregation**
+- [x] **Chunk 4: Monitoring mode integration and manual test plan verification**
 
 ## Chunk Detail
 
@@ -129,8 +129,11 @@ See spec [Downstream Build Detection](./2026-03-16_test-fail-need-results-still-
 
 #### Implementation Log
 
-<!-- Filled in by the implementing agent after completing this chunk.
-     Summarize: files changed, key decisions, anything the finalize step needs to know. -->
+- Added downstream collection helpers in `jbuildmon/skill/buildgit/scripts/lib/jenkins-common/api_test_results.sh`: `collect_downstream_test_results`, `aggregate_test_totals`, `has_downstream_builds`, plus small internal helpers for recursive collection and stage-label mapping.
+- Reused the existing downstream console parsing and `_downstream_stage_job_match_score` matching path instead of introducing a second stage-association strategy; exact stage-log matches win, then fuzzy stage-name matching falls back, then the downstream job name is used.
+- Parent `fetch_test_results` communication failures now abort collection with exit code `2`; downstream communication failures keep the node in the result tree with empty `test_json` so later display code can render `?` placeholders.
+- Added `jbuildmon/test/buildgit_downstream_tests.bats` with coverage for no-downstream, multi-downstream, recursive depth tracking, aggregation, stage-name mapping, and parent/child communication error handling.
+- Added fixtures `jbuildmon/test/fixtures/downstream_test_report_handle.json`, `jbuildmon/test/fixtures/downstream_test_report_signalboot.json`, and `jbuildmon/test/fixtures/downstream_test_report_signalboot_fail.json` for downstream aggregation tests.
 
 ---
 
@@ -278,8 +281,10 @@ See spec [Hierarchical Display Format](./2026-03-16_test-fail-need-results-still
 
 #### Implementation Log
 
-<!-- Filled in by the implementing agent after completing this chunk.
-     Summarize: files changed, key decisions, anything the finalize step needs to know. -->
+- Added `display_hierarchical_test_results()` plus small internal helpers in `jbuildmon/skill/buildgit/scripts/lib/jenkins-common/api_test_results.sh` to render multi-job `--all` test output with aligned columns, per-line colors, a Totals row, and aggregated failed-test details.
+- Refactored the shared failed-test detail rendering so both single-job and hierarchical paths use the same truncation, age-indicator, and footer behavior without duplicating formatting logic.
+- Updated `jbuildmon/skill/buildgit/scripts/lib/jenkins-common/output_render.sh` so `display_success_output()` fetches console text when needed and both success/failure `--all` paths call downstream collection plus hierarchical rendering; failure diagnostics still pass the parent test JSON into `_display_error_log_section` to preserve existing suppression behavior in this chunk.
+- Extended `jbuildmon/test/buildgit_downstream_tests.bats` with hierarchical display coverage for passing/failing trees, alignment, fallback-to-single-job behavior, failed-test details, per-line coloring, and the two `--all` integration call sites.
 
 ---
 
@@ -382,8 +387,10 @@ See spec [One-Line Mode](./2026-03-16_test-fail-need-results-still-spec.md#4-one
 
 #### Implementation Log
 
-<!-- Filled in by the implementing agent after completing this chunk.
-     Summarize: files changed, key decisions, anything the finalize step needs to know. -->
+- Updated `jbuildmon/skill/buildgit/scripts/lib/buildgit/status_parsing_and_format.sh` so `_status_line_for_build_json()` keeps the existing single-job path but, when console output shows downstream builds, aggregates parent + downstream totals for the `Tests=pass/fail/skip` field; parent test-report communication failures still short-circuit to `!err!` without attempting downstream collection.
+- Added `format_hierarchical_test_results_json()` in `jbuildmon/skill/buildgit/scripts/lib/jenkins-common/api_test_results.sh` to emit the existing single-job JSON unchanged, or a multi-job object with top-level totals, concatenated `failed_tests`, and a per-job `breakdown` array using `null` counts for missing reports.
+- Updated `jbuildmon/skill/buildgit/scripts/lib/jenkins-common/json_output.sh` to call downstream collection plus hierarchical JSON formatting for completed builds while preserving the existing `test_results: null` sentinel for completed builds with no report and the existing `testResultsError: "communication_failure"` behavior.
+- Extended `jbuildmon/test/buildgit_downstream_tests.bats` with direct coverage for one-line aggregation, parent-404 aggregation, single-job fallback, JSON `breakdown` presence/absence, JSON/oneline total consistency, and parent communication-error short-circuit behavior.
 
 ---
 
@@ -475,8 +482,17 @@ See spec [Monitoring Mode](./2026-03-16_test-fail-need-results-still-spec.md#6-m
 
 #### Implementation Log
 
-<!-- Filled in by the implementing agent after completing this chunk.
-     Summarize: files changed, key decisions, anything the finalize step needs to know. -->
+- Updated `jbuildmon/skill/buildgit/scripts/buildgit` so `_handle_build_completion()` now fetches console output for successful monitored builds, collects downstream test results, and renders them through `display_hierarchical_test_results`; parent test-report communication failures still surface the existing comm-error path.
+- Fixed a large-report regression in `jbuildmon/skill/buildgit/scripts/lib/jenkins-common/api_test_results.sh`: the collector now streams `test_json` into `jq` over stdin instead of passing it via `--arg`, which avoids `Argument list too long` on large Jenkins test reports during monitoring completion.
+- Extended `jbuildmon/test/buildgit_downstream_tests.bats` with monitoring-path coverage for multi-job completion output, single-job fallback behavior, parent communication failure handling in `_handle_build_completion()`, and a regression test for oversized parent test reports. The large-report regression now writes collector output to a temp file instead of relying on bats `run` output capture, which avoids CI-only truncation/parsing issues on oversized JSON payloads.
+- Re-ran the full unit suite after the change: `jbuildmon/test/bats/bin/bats jbuildmon/test/` passed with `920` tests.
+- Ran the manual test plan commands against Jenkins. `phandlemono-IT` build `73` showed hierarchical totals `98/97/1/0`, build `75` showed `98/98/0/0`, one-line and JSON totals matched, and `status -n 5` showed aggregated downstream counts for builds `73` and `75`.
+- Notable manual-plan nuance: the exact Test 8 helper command in `2026-03-16_test-fail-need-results-still-test-plan.md` raises a Python `TypeError` when the latest `ralph1/...` build has `"test_results": null`; raw JSON still confirms there is no `breakdown` field, so the no-downstream JSON shape remains unchanged.
+- First Jenkins validation push surfaced the large-report regression above on `ralph1/2026-03-16_test-fail-need-resu #6`; the fix and regression test were added before the final push/verification.
+- Second Jenkins validation push surfaced a CI-only failure in the new regression test on `ralph1/2026-03-16_test-fail-need-resu #7`; replacing `echo` with `printf` was not sufficient because the bats capture path itself was the problem.
+- Third local/test iteration switched the large-report regression test to write the collector output to a temp file and inspect that file with `jq`; this is the version intended for the final verification push after local `920`-test success.
+- Third Jenkins validation push surfaced one more portability issue on `ralph1/2026-03-16_test-fail-need-resu #9`: the regression test used `python3`, which was not installed on that CI shard. The final version generates the oversized JSON fixture with `jq` instead, keeping the test compatible with the existing CI toolchain.
+- Performance spot-checks on this branch were acceptable: `status` without downstream took about `0.316s`, `status 75` on `phandlemono-IT` took about `0.639s`, and `status -n 5` on `phandlemono-IT` took about `2.600s`.
 
 ---
 

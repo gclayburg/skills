@@ -173,25 +173,30 @@ output_json() {
     fi
 
     if [[ "$is_completed" == "true" ]]; then
-        local test_report_json test_report_rc=0
-        if test_report_json=$(fetch_test_results "$job_name" "$build_number"); then
+        local collected_results test_report_rc=0
+        if [[ -z "$console_output" ]]; then
+            console_output=$(get_console_output "$job_name" "$build_number" 2>/dev/null || true)
+        fi
+        if collected_results=$(collect_downstream_test_results "$job_name" "$build_number" "$console_output"); then
             test_report_rc=0
         else
             test_report_rc=$?
-            test_report_json=""
+            collected_results=""
         fi
 
         if [[ "$test_report_rc" -eq 2 ]]; then
             _note_test_results_comm_failure "$job_name" "$build_number"
             json_output=$(echo "$json_output" | jq '. + {test_results: null, testResults: null, testResultsError: "communication_failure"}')
-        elif [[ -n "$test_report_json" ]]; then
+        elif [[ -n "$collected_results" ]]; then
             local test_results_formatted
-            test_results_formatted=$(format_test_results_json "$test_report_json")
+            test_results_formatted=$(format_hierarchical_test_results_json "$collected_results")
 
             if [[ -n "$test_results_formatted" ]]; then
                 json_output=$(echo "$json_output" | jq \
                     --argjson test_results "$test_results_formatted" \
                     '. + {test_results: $test_results}')
+            else
+                json_output=$(echo "$json_output" | jq '. + {test_results: null}')
             fi
         else
             # No test report available - include null sentinel
@@ -203,9 +208,11 @@ output_json() {
         # Spec: console-on-unstable-spec.md, Section 3 (JSON output)
         if [[ "$is_failed" == "true" ]]; then
             local has_test_failures=false
-            if [[ -n "$test_report_json" ]]; then
+            if [[ -n "$collected_results" ]]; then
                 local fail_count
-                fail_count=$(echo "$test_report_json" | jq -r '.failCount // 0') || fail_count=0
+                fail_count=$(echo "$collected_results" | jq -r '
+                    [.[] | select(.test_json != "") | .test_json | fromjson | (.failCount // 0)] | add // 0
+                ') || fail_count=0
                 if [[ "$fail_count" -gt 0 ]]; then
                     has_test_failures=true
                 fi

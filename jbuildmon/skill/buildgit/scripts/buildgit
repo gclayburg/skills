@@ -967,18 +967,21 @@ _handle_build_completion() {
     else
         # Display test results for SUCCESS builds
         # Spec: show-test-results-always-spec.md, Section 1.2
-        local test_results_json test_results_rc=0
-        if test_results_json=$(fetch_test_results "$job_name" "$build_number"); then
-            test_results_rc=0
+        local console_output
+        console_output=$(get_console_output "$job_name" "$build_number" 2>/dev/null) || true
+
+        local collected_results collected_rc=0
+        if collected_results=$(collect_downstream_test_results "$job_name" "$build_number" "$console_output"); then
+            collected_rc=0
         else
-            test_results_rc=$?
-            test_results_json=""
+            collected_rc=$?
+            collected_results=""
         fi
-        if [[ "$test_results_rc" -eq 2 ]]; then
+        if [[ "$collected_rc" -eq 2 ]]; then
             _note_test_results_comm_failure "$job_name" "$build_number"
             display_test_results_comm_error
         else
-            display_test_results "$test_results_json"
+            display_hierarchical_test_results "$collected_results"
         fi
     fi
 
